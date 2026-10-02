@@ -1,0 +1,276 @@
+﻿:root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light;
+
+  /*
+   * 数据可视化分类色。与 tailwind.config.js 的 viz.* 保持一致 ——
+   * 图表里的宽度/渐变要在 style 属性中计算，拿不到 tailwind 类名，
+   * 所以同一组值在这里再暴露一份 CSS 变量。改色时两处都要改。
+   * 已通过色觉安全校验，按固定顺序取用，不要循环复用。
+   */
+  --viz-1: #6d28d9;
+  --viz-2: #0891b2;
+  --viz-3: #ea580c;
+  --viz-4: #059669;
+  --viz-5: #b45309;
+
+  /* Semantic color tokens for non-Tailwind contexts (inline styles, markdown, etc.) */
+  --color-canvas: #f7f6f2;
+  --color-surface: #ffffff;
+  --color-ink: #0b0d12;
+  --color-muted: #6b7280;
+  --color-border: #e6e4df;
+  --color-accent-600: #6d28d9;
+
+  /* 次级文本、只读区、分隔线 —— 之前写死 hex，深色下不切换 */
+  --color-ink-soft: #3a3f4a;
+  --color-subtle: #faf9f6;
+  --color-divider: #f0eeea;
+
+  /* 品牌紫浅色档 —— 用于 hover/active/选中态底色，深色下需要更暗的底 */
+  --color-accent-50: #f5f3ff;
+  --color-accent-100: #ede9fe;
+  --color-accent-200: #ddd6fe;
+
+  /* 状态语义色 —— 之前写死浅色 hex，深色下 badge/提示全部白底 */
+  --color-success-bg: #ecfdf5;
+  --color-success-fg: #047857;
+  --color-success-line: #a7f3d0;
+  --color-warning-bg: #fffbeb;
+  --color-warning-fg: #b45309;
+  --color-warning-line: #fde68a;
+  --color-danger-bg: #fef2f2;
+  --color-danger-fg: #b91c1c;
+  --color-danger-line: #fecaca;
+  --color-info-bg: #eff6ff;
+  --color-info-fg: #1d4ed8;
+  --color-info-line: #bfdbfe;
+  --color-neutral-bg: #f3f4f6;
+  --color-neutral-fg: #4b5563;
+  --color-neutral-line: #e5e7eb;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-canvas: #0f1117;
+  --color-surface: #1a1d27;
+  --color-ink: #e5e7eb;
+  --color-muted: #9ca3af;
+  --color-border: #2d3140;
+  --color-accent-600: #a78bfa;
+
+  --color-ink-soft: #9ca3af;
+  --color-subtle: #161b26;
+  --color-divider: #1e2330;
+
+  --color-accent-50: #1e1530;
+  --color-accent-100: #2a1f4a;
+  --color-accent-200: #3b2a66;
+
+  --color-success-bg: #0a2a1f;
+  --color-success-fg: #34d399;
+  --color-success-line: #134e3a;
+  --color-warning-bg: #2a2010;
+  --color-warning-fg: #fbbf24;
+  --color-warning-line: #5c4519;
+  --color-danger-bg: #2a1111;
+  --color-danger-fg: #f87171;
+  --color-danger-line: #5c1d1d;
+  --color-info-bg: #0e1a2e;
+  --color-info-fg: #60a5fa;
+  --color-info-line: #1e3a5f;
+  --color-neutral-bg: #1e2330;
+  --color-neutral-fg: #9ca3af;
+  --color-neutral-line: #2d3140;
+
+  --viz-1: #a78bfa;
+  --viz-2: #22d3ee;
+  --viz-3: #fb923c;
+  --viz-4: #34d399;
+  --viz-5: #fbbf24;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * 全局焦点环。WCAG 2.1 要求键盘可达 —— 用 focus-visible 而非 focus，
+   * 这样鼠标点击不会留下焦点框，但 Tab 导航时清晰可见。
+   */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px rgba(109, 40, 217, 0.42);
+    border-radius: 4px;
+  }
+
+  /*
+   * 跳转到主内容（WCAG 2.4.1 Bypass Blocks）。
+   * 键盘用户第一个 Tab 命中的就是这个链接，跳过侧边栏直达内容区。
+   */
+  .skip-link {
+    position: fixed;
+    top: -100px;
+    left: 8px;
+    z-index: 9999;
+    padding: 8px 16px;
+    background: var(--color-accent-600, #7c3aed);
+    color: white;
+    font-size: 14px;
+    border-radius: 0 0 8px 8px;
+    text-decoration: none;
+    transition: top 0.2s;
+  }
+  .skip-link:focus-visible {
+    top: 0;
+    outline: none;
+    box-shadow: 0 0 0 2px white;
+  }
+
+  /* 屏幕阅读器专用内容（WCAG 1.3.1）：视觉隐藏但可被辅助技术读取 */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /*
+   * 输入框 placeholder 颜色。
+   * 浏览器默认 placeholder 灰度不随主题切换，深色下经常糊在暗底上看不清。
+   * 这里统一用 muted 变量，两个主题下都有足够对比度。
+   */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-muted, #6b7280);
+    opacity: 0.7;
+  }
+
+  /* 尊重"减少动态效果"系统偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .eo-card {
+    @apply bg-surface border border-border rounded-xl shadow-card;
+  }
+  .eo-label {
+    @apply font-mono text-caption uppercase tracking-wider text-muted;
+  }
+  .eo-th {
+    @apply font-mono text-caption uppercase tracking-wider text-muted font-semibold;
+  }
+  .eo-input {
+    @apply w-full px-3 py-2 text-sm text-ink bg-surface border border-border rounded-md outline-none transition-colors
+      focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20
+      disabled:bg-subtle disabled:text-muted disabled:cursor-not-allowed;
+  }
+  /* 表格纵向比对靠等宽数字：金额、编号、日期一律用它 */
+  .eo-num {
+    @apply font-mono tabular-nums;
+  }
+  /* 宽内容（表格 / 图表）自身滚动，避免撑破页面产生横向滚动条 */
+  .eo-scroll-x {
+    @apply overflow-x-auto;
+    scrollbar-width: thin;
+  }
+}
+
+/* Scrollbars */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(11, 13, 18, 0.16);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(11, 13, 18, 0.28);
+  background-clip: content-box;
+}
+/* 深色模式下滚动条用浅色，否则在深色背景上几乎看不见 */
+.dark *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  background-clip: content-box;
+}
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+  background-clip: content-box;
+}
+.eo-scroll-dark::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  background-clip: content-box;
+}
+
+.markdown-body h1 { font-size: 1.5em; font-weight: bold; margin: 0.5em 0; }
+.markdown-body h2 { font-size: 1.25em; font-weight: bold; margin: 0.5em 0; }
+.markdown-body h3 { font-size: 1.1em; font-weight: bold; margin: 0.5em 0; }
+.markdown-body p { margin: 0.5em 0; }
+.markdown-body ul { list-style-type: disc; padding-left: 1.5em; }
+.markdown-body ol { list-style-type: decimal; padding-left: 1.5em; }
+.markdown-body code { background: var(--color-canvas); padding: 0.125em 0.25em; border-radius: 4px; font-family: monospace; }
+.markdown-body pre { background: var(--color-canvas); padding: 0.75em; border-radius: 6px; overflow-x: auto; }
+.markdown-body blockquote { border-left: 4px solid var(--color-border); padding-left: 1em; color: var(--color-muted); }
+.markdown-body table { width: 100%; border-collapse: collapse; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--color-border); padding: 0.5em; }
+.markdown-body a { color: var(--color-accent-600); }
+/* 首尾段不带外边距，否则聊天气泡上下会多出一截空白 */
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+/*
+ * 宽表格/长代码不能把气泡撑破。提示词已要求模型不要输出表格和代码块，
+ * 但那是"要求"不是"保证"，布局这一层得自己兜住。
+ */
+.markdown-body table { display: block; overflow-x: auto; max-width: 100%; }
+.markdown-body pre { max-width: 100%; }
+.markdown-body code { overflow-wrap: anywhere; }
+
+/*
+ * 紧凑版：给页面助手那个 384px 宽的悬浮气泡用。
+ * 标题在这个宽度里显示成大字号很突兀（提示词已禁止用标题，
+ * 这里是模型偶尔不听话时的兜底），统一压到接近正文大小。
+ */
+.markdown-compact h1,
+.markdown-compact h2,
+.markdown-compact h3,
+.markdown-compact h4 { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; }
+.markdown-compact p { margin: 0.35em 0; }
+.markdown-compact ul,
+.markdown-compact ol { padding-left: 1.15em; margin: 0.35em 0; }
+.markdown-compact li { margin: 0.15em 0; }
+.markdown-compact blockquote { padding-left: 0.6em; margin: 0.35em 0; }
+

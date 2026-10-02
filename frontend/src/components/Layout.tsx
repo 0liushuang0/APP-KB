@@ -1,0 +1,341 @@
+﻿import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
+import {
+  LayoutDashboard,
+  Users,
+  ClipboardList,
+  FileText,
+  DollarSign,
+  Package,
+  Truck,
+  FolderKanban,
+  ScrollText,
+  Headset,
+  FolderOpen,
+  Files,
+  Bot,
+  Settings,
+  Menu,
+  X,
+  Zap,
+  PanelLeftClose,
+  PanelLeft,
+  LogOut,
+  Layers,
+  Calculator,
+  SlidersHorizontal,
+  BookOpen,
+  Workflow,
+  HelpCircle,
+} from 'lucide-react'
+import { useAuthStore } from '../store/authStore'
+import { useThemeStore } from '../store/themeStore'
+import { useSystemNameStore } from '../store/systemNameStore'
+import ThemeToggle from './ThemeToggle'
+import FullscreenToggle from './FullscreenToggle'
+import NotificationBell from './NotificationBell'
+import { PageActionsContext } from '../contexts/PageActionsContext'
+import { PageAssistantProvider } from '../contexts/PageAssistantContext'
+import AssistantWidget from './AssistantWidget'
+
+type NavItem = { path: string; label: string; icon: typeof LayoutDashboard; teamOnly?: boolean }
+type NavGroup = { label: string; items: NavItem[] }
+
+const navGroups: NavGroup[] = [
+  {
+    label: 'AI 工作台',
+    items: [
+      { path: '/', label: '业务概览', icon: Workflow },
+      { path: '/ai-assistant', label: '智能问答', icon: Bot },
+    ],
+  },
+  {
+    label: '客户业务',
+    items: [
+      { path: '/customers', label: '客户中心', icon: Users },
+      { path: '/manufacturing', label: '制造业务协同', icon: Workflow },
+      { path: '/requirements', label: '客户需求', icon: ClipboardList },
+      { path: '/proposals', label: '技术方案', icon: FileText },
+      { path: '/quotations', label: '报价管理', icon: DollarSign },
+      { path: '/contracts', label: '合同管理', icon: ScrollText },
+      { path: '/projects', label: '项目跟踪', icon: FolderKanban },
+      { path: '/after-sales', label: '售后管理', icon: Headset },
+    ],
+  },
+  {
+    label: '产品方案',
+    items: [
+      { path: '/products', label: '产品管理', icon: Package },
+      { path: '/solutions', label: '标准方案', icon: Layers },
+    ],
+  },
+  {
+    label: '知识供应',
+    items: [
+      { path: '/documents', label: '业务资料', icon: Files },
+      { path: '/customer-docs', label: '客户资料', icon: FolderOpen },
+      { path: '/knowledge', label: '知识资料', icon: BookOpen },
+      { path: '/param-templates', label: '需求模板', icon: SlidersHorizontal },
+      { path: '/calc-tools', label: '工程计算', icon: Calculator },
+      { path: '/suppliers', label: '供应管理', icon: Truck },
+      { path: '/help', label: '帮助中心', icon: HelpCircle },
+    ],
+  },
+]
+
+const allNavItems = navGroups.flatMap((g) => g.items)
+const labelByPath: Record<string, string> = Object.fromEntries(allNavItems.map((n) => [n.path, n.label]))
+const groupByPath: Record<string, string> = Object.fromEntries(
+  navGroups.flatMap((g) => g.items.map((n) => [n.path, g.label])),
+)
+
+export default function Layout() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { user, clearAuth, appMode } = useAuthStore()
+  const initTheme = useThemeStore((s) => s.initTheme)
+  const systemName = useSystemNameStore((s) => s.name)
+  const adminTitle = useSystemNameStore((s) => s.adminTitle)
+  const systemSubtitle = useSystemNameStore((s) => s.subtitle)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const [pageActions, setPageActions] = useState<ReactNode>(null)
+  // 路由切换时把内容区滚回顶部：滚动容器是常驻 <main>，不重置的话
+  // 从长列表页跳到别的页面会停在原来的滚动位置。
+  const mainRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 })
+  }, [location.pathname])
+
+  useEffect(() => {
+    initTheme()
+  }, [initTheme])
+
+  // 单人模式下隐藏组织与权限相关入口
+  const visibleGroups = navGroups
+    .map((g) => ({ ...g, items: g.items.filter((n) => !(n.teamOnly && appMode === 'single')) }))
+    .filter((g) => g.items.length > 0)
+
+  const isActive = (path: string) => {
+    if (path === '/') return location.pathname === '/'
+    if (path === '/settings') return location.pathname === '/settings'
+    // /products 不应在 /products/tree 时高亮
+    if (path === '/products') return location.pathname === '/products'
+    return location.pathname === path || location.pathname.startsWith(`${path}/`)
+  }
+
+  const activeItem = allNavItems.find((n) => isActive(n.path))
+  // /settings 及子页不在导航列表里，单独映射，避免退回「AI 工作台 / 智能问答」
+  const isSettings = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
+  const currentLabel = isSettings ? '系统设置' : labelByPath[location.pathname] || activeItem?.label || '智能问答'
+  const currentGroup = isSettings ? '系统' : (activeItem && groupByPath[activeItem.path]) || 'AI 工作台'
+
+  const handleLogout = async () => {
+    // 先调后端清除 httpOnly Cookie
+    try {
+      await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch {
+      // 即使后端调用失败也要清除本地状态
+    }
+    // 标记显式退出：登录页不再自动登录，防止被拉回主界面
+    sessionStorage.setItem('aikb-skip-auto-login', '1')
+    // 再清本地状态
+    clearAuth()
+    navigate('/login', { replace: true })
+  }
+
+  const displayName = adminTitle || user?.nickname || user?.username || 'Admin'
+  const initials = displayName.slice(0, 1).toUpperCase()
+
+  return (
+    <div className="h-screen flex overflow-hidden bg-canvas">
+      {/* WCAG 2.4.1 跳转链接：键盘用户第一个 Tab 命中，跳过侧边栏直达内容 */}
+      <a href="#main-content" className="skip-link">
+        跳转到主内容
+      </a>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+      )}
+
+      {/* Mobile trigger */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        className="lg:hidden fixed top-3 left-3 z-30 p-2 bg-surface border border-border rounded-lg shadow-card"
+        title={"打开菜单"}
+        aria-label="打开菜单"
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed lg:static inset-y-0 left-0 z-50 flex flex-col bg-gradient-to-b from-sidebar-800 to-sidebar-900 border-r border-white/5 eo-scroll-dark transition-all duration-300 ease-out ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } ${collapsed ? 'w-0 lg:w-[68px]' : 'w-[220px]'}`}
+      >
+        {/* Brand */}
+        <div className={`flex items-center gap-2.5 h-14 px-4 border-b border-white/[0.06] flex-shrink-0 ${collapsed ? 'lg:justify-center lg:px-0' : ''}`}>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-600 to-accent-400 flex items-center justify-center flex-shrink-0 shadow-[0_4px_12px_rgba(109,40,217,.35)]">
+            <Zap size={17} className="text-white" fill="white" />
+          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="font-serif text-body font-semibold text-gray-50 leading-tight truncate">{systemName}</div>
+              <div className="font-mono text-[9px] uppercase tracking-wider text-white/35 truncate">
+                {systemSubtitle}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto eo-scroll-dark py-2">
+          {visibleGroups.map((group, gi) => (
+            <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+              {collapsed ? (
+                gi > 0 && <div className="mx-3 mb-2 border-t border-white/[0.06]" />
+              ) : (
+                <div className="px-5 pb-1.5 font-mono text-caption uppercase tracking-wider text-white/30">
+                  {group.label}
+                </div>
+              )}
+              {group.items.map((item) => {
+                const Icon = item.icon
+                const active = isActive(item.path)
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setMobileOpen(false)}
+                    title={collapsed ? item.label : undefined}
+                    aria-current={active ? 'page' : undefined}
+                    className={`group flex items-center gap-3 mx-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      collapsed ? 'lg:justify-center lg:px-0' : ''
+                    } ${
+                      active
+                        ? 'bg-gradient-to-r from-accent-500/25 to-accent-500/10 text-white font-semibold'
+                        : 'text-white/60 hover:text-white hover:bg-surface/[0.04] font-medium'
+                    }`}
+                  >
+                    <Icon
+                      size={18}
+                      className={`flex-shrink-0 ${active ? 'text-accent-300' : 'text-white/40 group-hover:text-white/70'}`}
+                    />
+                    {!collapsed && <span className="truncate">{item.label}</span>}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
+        </nav>
+
+        {/* User */}
+        <div className="border-t border-white/[0.06] p-3 flex-shrink-0">
+          <div className={`flex items-center gap-2.5 ${collapsed ? 'lg:justify-center' : ''}`}>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-500 to-accent-300 flex items-center justify-center text-body-sm font-bold text-white flex-shrink-0">
+              {initials}
+            </div>
+            {!collapsed && (
+              <div className="min-w-0 flex-1">
+                <div className="text-body-sm font-semibold text-gray-50 truncate">{displayName}</div>
+                <div className="text-caption text-white/40 truncate">
+                  {user?.roles?.[0]?.name || (appMode === 'single' ? '超级管理员' : '用户')}
+                </div>
+              </div>
+            )}
+            <Link
+              to="/settings"
+              onClick={() => setMobileOpen(false)}
+              title="设置"
+              aria-label="设置"
+              className="w-7 h-7 flex items-center justify-center rounded-md text-white/45 hover:text-white hover:bg-surface/5 transition-colors flex-shrink-0"
+            >
+              <Settings size={15} />
+            </Link>
+            {!collapsed && (
+              <button
+                onClick={handleLogout}
+                title="退出登录"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-white/35 hover:text-white hover:bg-surface/5 transition-colors flex-shrink-0"
+              >
+                <LogOut size={15} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile close */}
+        <button
+          type="button"
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden absolute top-3 right-3 text-white/50 hover:text-white"
+          title={"关闭菜单"}
+          aria-label="关闭菜单"
+        >
+          <X size={20} />
+        </button>
+      </aside>
+
+      {/* Main column */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Topbar */}
+        <header className="h-14 flex-shrink-0 flex items-center gap-2 pl-14 pr-2 sm:px-3 bg-surface border-b border-border">
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            className="hidden lg:flex w-8 h-8 items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas transition-colors flex-shrink-0"
+            title={"折叠侧边栏"}
+            aria-label="折叠侧边栏"
+          >
+            {collapsed ? <PanelLeft size={17} /> : <PanelLeftClose size={17} />}
+          </button>
+          <div className="hidden sm:flex items-center gap-1.5 text-body-sm flex-shrink-0">
+            <span className="text-muted">{currentGroup}</span>
+            <span className="text-border">/</span>
+            <span className="font-serif text-heading-sm font-semibold text-accent-600 leading-none">{currentLabel}</span>
+          </div>
+          <div className="flex-1" />
+          {/* 页面操作区（搜索/标签/新建）居中偏右，紧贴主题 */}
+          {pageActions && (
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {pageActions}
+            </div>
+          )}
+          {/* 主题/放大/通知 固定最右侧 */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <ThemeToggle />
+            <FullscreenToggle />
+            <NotificationBell />
+          </div>
+        </header>
+
+        {/* Content —— scrollbar-gutter:stable 预留滚动条宽度，
+            避免不同页面/标签内容高矮不一时滚动条出现/消失导致内容左右跳动 */}
+        <main ref={mainRef} id="main-content" role="main" aria-label="主内容区" className="flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+          {/*
+            pb-24：为右下角 AI 助手悬浮球留出安全空间，
+            否则分页控件的"下一页"按钮会被悬浮球遮住。
+            悬浮球 56px + bottom-6 间距 24px + 缓冲 = 96px（pb-24）。
+          */}
+          <div className="p-2 sm:p-3 h-full w-full pb-24">
+            <PageActionsContext.Provider value={setPageActions}>
+              <PageAssistantProvider>
+                <Outlet />
+                {/*
+                  AI 助手统一在这里渲染：页面只需用 useRegisterPageAssistant 声明
+                  "我这儿有什么"，不必各自挂一遍组件。没注册上下文的页面不显示。
+                */}
+                <AssistantWidget />
+              </PageAssistantProvider>
+            </PageActionsContext.Provider>
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}

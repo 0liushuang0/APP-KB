@@ -1,0 +1,1253 @@
+2024年常用外购件品牌及交货期
+为保证外购件交货期及产品质量，各技术人员在做方案时应优先按照以下表格中常用供应商进行对外购件品牌进行约定（正常情况下请务必填写3家以上品牌，并备注“或同等品牌”）。若客户有特殊需求时应提前沟通确认。
+序号	名称	品牌	货期	备注
+1.	油缸	高配	优瑞纳斯、力士乐、派克	120-150天	进口品牌5-7个月
+		标配	北京索普、太重榆次、广东天恒、邵阳维克	90-120天	
+		特殊	宝山油缸（宝武配套）、诚立（武钢配套）	90天	
+2.	气缸	高配	亚德客、SMC、CKD	45天	设计前需与采购人员确定品牌，每家尺寸不同,特殊型号90-120天
+		标配	肇庆方大	30天	
+3.	液压阀	高配	力士乐、伊顿、派克	100天	特殊型号180天
+		标配	榆次油研、北京华德	90天	
+4.	液压管接头	高配	伊顿、欧际、派克	45天	
+		标配	国产	10天	
+5.	气动阀、接头	高配	亚德客、SMC、 CKD	30天	设计前需与采购人员确定品牌，每家尺寸不同
+		标配	肇庆方大、浙江新潮	10天	
+6.	电机	进口	西门子、ABB、SEW 	90-150天	
+		高配	佳木斯、湘电、大中电机	75天	
+		标配	中车电机、皖南电机	75天	
+7.	减速电机	高配	SEW、西门子	75天	
+		标配	宁波东力、江苏国贸、江苏泰隆	60天	
+8.	减速机	高配	弗兰德、SEW	90天	
+		标配	宁波东力、南高齿、郑机所（非标）	75天	
+9.	升降机	高配	力姆泰克	90天	
+		标配	杭州诺顿、平湖华明、上海闻广	45天	
+10.	制动器	标配	焦作制动器	30天	
+11.	丝杠导轨	标配	HIWIN、PMI、 THK、汉江		特殊型号150天
+12.	普通联轴器	标配	武汉正通、武汉精匠	30天	
+13.	液压螺母	高配	Amtec	120天	优先选用博亚
+		标配	襄阳博亚	60天	
+14.	剪切轴承	精密	SKF、FAG、INA、TIMKEN	120天	特殊型号180天
+		高配	NSK、NTN、KOYO、FYH 	100天	特殊型号180天
+		标配	哈瓦洛、人本、天马、帝达贝	60天	
+15.	包胶辊、镀铬辊	标配	沈阳东阳、河北大亚、太仓月生（镀铬）、上海君山（碳化钨、镀铬）	75天	
+16.	拖链	高配	上海江川	30天	
+		标配	沧州盛昊	15天	
+17.	防护罩	标配	沧州盛昊	45天	
+18.	电缆	标配	远东、上海起帆、世匠	20天	特殊型号50天
+19.	传感器	标配	倍加福、西克（2个月）、
+海茵兰茨（1个月）、
+T&R（5-6个月）、
+库伯勒、巴鲁夫（2个月）、
+保盟（3-4个月）、
+宜科（1个月）		
+20.	控制元件	标配	西门子（3-6个月）、
+AB、ABB（3-6个月）
+汇川（2个月）		特殊型号除外
+
+矫直机组设备供应商					
+序号	产品类型	名称	配置	博亚供应商	备注
+1	机械部分	转向辊(镀铬辊)	标配	太仓月生或同等品牌	
+2	机械部分	包胶辊 	标配	沈阳东阳/河北大亚或同等品牌	
+3	机械部分	轴承 Bearing	精密	瑞典SKF、德国FAG、德国INA、美国TIMKEN	
+4	机械部分	轴承 Bearing	高配	日本NSK、日本NTN、日本KOYO、FYH	
+5	机械部分	轴承 Bearing	标配	哈瓦洛、人本、天马、帝达贝	
+6	机械部分	"球笼联轴器
+Ball cage coupling joint"	标配	博亚精工BOYA	
+7	机械部分	制动器(液压、气动)	标配	焦作制动器	
+8	机械部分	升降机 Elevator	高配	力姆泰克	
+9	机械部分	升降机 Elevator	标配	杭州诺顿、平湖华明、上海闻广	
+10	流体部分	"液压缸
+Hydraulic cylinders"	高配	德国Rexroth、美国派克Parker、优瑞纳斯	
+11	流体部分	"液压缸
+Hydraulic cylinders"	标配	北京索普、太重榆次、广东天恒、邵阳维克	
+12	流体部分	"液压缸
+Hydraulic cylinders"	特殊	宝山液压(宝武配套)、诚立(武钢配偶)	
+13	流体部分	液压阀Hydraulic valves	高配	力士乐、伊顿、派克	
+14	流体部分	液压阀Hydraulic valves	标配	榆次油研、北京华德	
+15	流体部分	液压管接头	高配	伊顿、欧际、派克	
+16	流体部分	液压管接头	标配	国产	
+17	流体部分	气缸Pneumatic Cylinders	高配	亚德客、日本SMC、日本CKD	
+18	流体部分	气缸Pneumatic Cylinders	标配	肇庆方大、浙江新潮	
+19	流体部分	气动阀、接头/Pneumatic valves	高配	亚德客、SMC、 CKD	
+20	流体部分	气动阀、接头/Pneumatic valves	标配	肇庆方大、浙江新潮	
+21	电器部分	"变速电机
+AC Variable speed motor"	进口	德国SIEMENS、瑞士ABB、德国SEW 	
+22	电器部分	"变速电机
+AC Variable speed motor"	高配	佳木斯、湘潭电机、大中电机	
+23	电器部分	"变速电机
+AC Variable speed motor"	标配	中车电机、皖南电机	
+24	电器部分	伺服电机Servo motor	高配	德国SIEMENS	
+25	电器部分	减速电机AC geared motor	高配	德国SEW、德国西门子	
+26	电器部分	减速电机AC geared motor	标配	宁波东力	
+27	电器部分	"接近开关
+Proximity switch"	标配	德国SICK、德国P+F、德国IFM	
+28	电器部分	编码器Encoder	标配	德国倍加福P+F、德国西克SICk	
+29	电器部分	"低压元器件
+Low-voltage component"	标配	德国SIEMENS、法国Schneider	
+30	电器部分	"按钮、指示灯
+Button, indicator"	标配	德国SIEMENS/和泉	
+31	电器部分	PLC	标配	德国SIEMENS S7-1500系列	
+32	电器部分	变频器transducer	标配	德国SIEMENS S120	
+33					
+34					
+35					
+36					
+37					
+38					
+39					
+40					
+39					
+40					
+为保证外购件交货期及产品质量，各技术人员在做方案时应优先按照以下表格中常用供应商进行对外购件品牌进行约定（正常情况下请务必填写3家以上品牌，并备注“或同等品牌”）					
+					
+					
+					
+					
+					
+矫直机设备供应商					
+序号	产品类型	名称	配置	博亚供应商	备注
+1	机械部分	转向辊(镀铬辊)	标配	太仓月生或同等品牌	
+2	机械部分	包胶辊 	标配	沈阳东阳/河北大亚或同等品牌	
+3	机械部分	轴承 Bearing	精密	瑞典SKF、德国FAG、德国INA、美国TIMKEN	
+4	机械部分	轴承 Bearing	高配	日本NSK、日本NTN、日本KOYO、FYH	
+5	机械部分	轴承 Bearing	标配	哈瓦洛、人本、天马、帝达贝	
+6	机械部分	"球笼联轴器
+Ball cage coupling joint"	标配	博亚精工BOYA	
+7	机械部分	升降机 Elevator	高配	力姆泰克	
+8	机械部分	升降机 Elevator	标配	杭州诺顿、平湖华明、上海闻广	
+9	流体部分	"液压缸
+Hydraulic cylinders"	高配	德国Rexroth、美国派克Parker、优瑞纳斯	
+10	流体部分	"液压缸
+Hydraulic cylinders"	标配	北京索普、太重榆次、广东天恒、邵阳维克	
+11	流体部分	"液压缸
+Hydraulic cylinders"	特殊	宝山液压(宝武配套)、诚立(武钢配偶)	
+12	流体部分	液压阀Hydraulic valves	高配	力士乐、伊顿、派克	
+13	流体部分	液压阀Hydraulic valves	标配	榆次油研、北京华德	
+14	流体部分	液压管接头	高配	伊顿、欧际、派克	
+15	流体部分	液压管接头	标配	国产	
+16	流体部分	气缸Pneumatic Cylinders	高配	亚德客、日本SMC、日本CKD	
+17	流体部分	气缸Pneumatic Cylinders	标配	肇庆方大、浙江新潮	
+18	流体部分	气动阀、接头/Pneumatic valves	高配	亚德客、SMC、 CKD	
+19	流体部分	气动阀、接头/Pneumatic valves	标配	肇庆方大、浙江新潮	
+20	电器部分	减速电机AC geared motor	高配	德国SEW、德国西门子	
+21	电器部分	减速电机AC geared motor	标配	宁波东力	
+22	电器部分	"接近开关
+Proximity switch"	标配	德国SICK、德国P+F、德国IFM	
+23	电器部分	编码器Encoder	标配	德国倍加福P+F、德国西克SICk	
+24					
+25					
+26					
+27					
+28					
+29					
+30					
+31					
+32					
+33					
+34					
+35					
+36					
+37					
+38					
+39					
+40					
+39					
+40					
+为保证外购件交货期及产品质量，各技术人员在做方案时应优先按照以下表格中常用供应商进行对外购件品牌进行约定（正常情况下请务必填写3家以上品牌，并备注“或同等品牌”）					
+					
+圆盘剪配套件供应商					
+序号	产品类型	名称	配置	博亚供应商	备注
+1	机械部分	包胶辊、包胶隔环	标配	沈阳东阳/河北大亚或同等品牌	
+2	机械部分	轴承 Bearing	精密	瑞典SKF、德国FAG、德国INA、美国TIMKEN	刀箱轴承
+3	机械部分	轴承 Bearing	高配	日本NSK、日本NTN、日本KOYO、FYH	
+4	机械部分	轴承 Bearing	标配	哈瓦洛、人本、天马、帝达贝	
+5	机械部分	球笼联轴器Ball cage coupling joint	标配	博亚精工BOYA	
+6	机械部分	滚珠丝杠副/直线导轨副	标配	台湾HIWIN、台湾PMI、 THK、汉江	
+7	机械部分	精密减速箱Precision reduction box	高配	台湾liming或同级别以上品牌	
+8	机械部分	圆盘刀、碎边刀	标配	茅山、华盛	
+9	流体部分	"液压缸
+Hydraulic cylinders"	高配	德国Rexroth、美国派克Parker、优瑞纳斯	
+10	流体部分	"液压缸
+Hydraulic cylinders"	标配	北京索普、太重榆次、广东天恒、邵阳维克	
+11	流体部分	"液压缸
+Hydraulic cylinders"	特殊	宝山液压(宝武配套)、诚立(武钢配偶)	
+12	流体部分	薄型油缸Thin cylinder	标配	"康百世/嘉刚
+Cambest/Jiagang"	
+13	流体部分	液压阀Hydraulic valves	高配	力士乐、伊顿、派克	
+14	流体部分	液压阀Hydraulic valves	标配	榆次油研、北京华德	
+15	流体部分	液压管接头	高配	伊顿、欧际、派克	
+16	流体部分	液压管接头	标配	国产	
+17	流体部分	气缸Pneumatic Cylinders	高配	亚德客、日本SMC、日本CKD、德国FESTO、英国诺冠NORGREN	
+18	流体部分	气缸Pneumatic Cylinders	标配	肇庆方大、浙江新潮	
+19	流体部分	气动阀、接头/Pneumatic valves	高配	亚德客、日本SMC、日本CKD、德国FESTO、英国诺冠NORGREN	
+20	流体部分	气动阀、接头/Pneumatic valves	标配	肇庆方大、浙江新潮	
+21	流体部分	液压螺母hydraulic nut	标配	博亚精工BOYA	
+22	电器部分	伺服电机Servo motor	高配	德国SIEMENS、瑞士ABB	内置编码器
+23	电器部分	"减速电机(主电机 Main motor)
+AC geared motor"	高配	德国SEW、德国西门子	
+24	电器部分	"减速电机(主电机 Main motor)
+AC geared motor"	标配	宁波东力	
+25	电器部分	"光电开关/接近开关
+Proximity switch"	标配	德国SICK、德国P+F、德国IFM	防护等级IP67
+26	电器部分	编码器Encoder	标配	德国倍加福P+F、德国西克SICk	
+27	电器部分	"低压元器件
+Low-voltage component"	标配	德国SIEMENS、法国Schneider	
+28	电器部分	"按钮、指示灯
+Button, indicator"	标配	德国SIEMENS、法国Schneider、和泉	
+29	电器部分	PLC	标配	德国SIEMENS S7-1500系列	
+30	电器部分	变频器transducer	标配	德国SIEMENS	
+31	电器部分				
+32	电器部分				
+
+辊涂机配套件供应商					
+序号	产品类型	名称	配置	博亚供应商	备注
+1	机械部分	取料辊(镀铬辊) Pick up roll	标配	太仓月生或同等品牌	
+2	机械部分	涂覆辊 Application Roll	标配	沈阳东阳/河北大亚或同等品牌	
+3	机械部分	轴承 Bearing	精密	瑞典SKF、德国FAG、德国INA、美国TIMKEN	
+4	机械部分	轴承 Bearing	高配	日本NSK、日本NTN、日本KOYO、FYH	
+5	机械部分	轴承 Bearing	标配	哈瓦洛、人本、天马、帝达贝	
+6	机械部分	球笼联轴器Ball cage coupling joint	标配	博亚精工BOYA	
+7	机械部分	滚珠丝杠/直线导轨	标配	台湾HIWIN、台湾PMI、 THK、汉江	
+8	机械部分	升降机 Elevator	高配	力姆泰克	
+9	机械部分	升降机 Elevator	标配	杭州诺顿、平湖华明、上海闻广	
+10	流体部分	"液压缸
+Hydraulic cylinders"	高配	德国Rexroth、美国派克Parker、优瑞纳斯	
+11	流体部分	"液压缸
+Hydraulic cylinders"	标配	北京索普、太重榆次、广东天恒、邵阳维克	
+12	流体部分	"液压缸
+Hydraulic cylinders"	特殊	宝山液压(宝武配套)、诚立(武钢配偶)	
+13	流体部分	液压阀Hydraulic valves	高配	力士乐、伊顿、派克	
+14	流体部分	液压阀Hydraulic valves	标配	榆次油研、北京华德	
+15	流体部分	液压管接头	高配	伊顿、欧际、派克	
+16	流体部分	液压管接头	标配	国产	
+17	流体部分	气动阀、接头/Pneumatic valves	高配	亚德客、SMC、 CKD	
+18	流体部分	气动阀、接头/Pneumatic valves	标配	肇庆方大、浙江新潮	
+19	流体部分	隔膜泵diaphragm pump	标配	固瑞克/英格索兰	
+20	电器部分	伺服电机Servo motor	高配	德国SIEMENS	
+21	电器部分	"减速电机(主电机 Main motor)
+AC geared motor"	高配	德国SEW、德国西门子	
+22	电器部分	"减速电机(主电机 Main motor)
+AC geared motor"	标配	宁波东力	
+23	电器部分	"光电开关/接近开关
+Proximity switch"	标配	德国SICK、德国P+F、德国T&R	防护等级IP67
+24	电器部分	编码器Encoder	标配	德国倍加福P+F、德国西克SICk	
+25	电器部分	"低压元器件
+Low-voltage component"	标配	德国SIEMENS、法国Schneider	
+26	电器部分	"按钮、指示灯
+Button, indicator"	标配	德国SIEMENS/和泉	
+27	电器部分	PLC	标配	德国SIEMENS S7-1500系列	
+28	电器部分	变频器transducer	标配	德国SIEMENS	
+29	电器部分				
+30	电器部分				
+
+Item
+ No	Line
+产线	Equipment
+设备名称	Supplier of Key Equipment, Parts, Electrica and Instrument Control
+关键设备、部件、电控及仪控供应商	Supplier of Key Equipment, Parts, Electrica and Instrument Control
+关键设备、部件、电控及仪控供应商	Supplier of Key Equipment, Parts, Electrica and Instrument Control
+关键设备、部件、电控及仪控供应商	Supplier of Key Equipment, Parts, Electrica and Instrument Control
+关键设备、部件、电控及仪控供应商	Supplier of Key Equipment, Parts, Electrica and Instrument Control
+关键设备、部件、电控及仪控供应商	Supplier of Key Equipment, Parts, Electrica and Instrument Control
+关键设备、部件、电控及仪控供应商	Supplier of Key Equipment, Parts, Electrica and Instrument Control
+关键设备、部件、电控及仪控供应商	Other Comments
+1	CBL	welder
+焊机	MIEBACH	TMEIC	Baohan
+宝悍	KAIQI	　	　	　	　
+2	CBL	Induction heater
+感应加热器	INDUCTOTHERM	AJAX	DKK	Primetals-ABP	　	　	　	　
+3	CBL	Gear box
+齿轮箱	Flender	SEW	NORD	SUMITOMO	NGC
+南高齿	TAIER
+泰尔重工	　	　
+4	CBL	Coupling with drum teeth
+鼓形齿联轴器	Flender	KTR	Voith Turbo	Maina 麦那	NAJICO
+中村自工	　	　	　
+5	CBL	Universal shaft
+万向联轴器	Voith Turbo	GWB	Maina	NAJICO
+中村自工	博亚精工　	　	　	　
+6	CBL	Pneumatic brake
+气动制动器 	SUNTES
+三阳	Twiflex
+多福	Sibre
+西伯瑞	河南焦作　	　	　	　	　
+7	CBL	Uncoiler, coiler
+开卷机、卷取机	BLHI
+常州宝菱	TAIER
+泰尔重工	Maanshan Beiguang
+马鞍山北光	MCC-SFRE
+中冶陕压	Changzhou Jingling Equipment Manufacturing Co,Ltd.
+常州精棱设备制造有限公司	　	　	　
+8	CBL	Swivel joint of unwinder and rewinder
+开卷卷取的旋转接头	GAT	DEUBLIN
+ 杜博林	PARKER	　	　	　	　	　
+9	CBL	Notcher, doubledeck shears,flying shears,emergency shears
+月牙剪、飞剪、双层剪，事故剪	BLHI
+常州宝菱	Suzhoug Baolian
+苏州宝联重工	MCC-SFRE
+中冶陕压	Toyo Hamono	SMS	　	　	　
+10	CBL	Blade
+剪刃	Nanjing Maoshan
+南京茅山	Nanjing Jinyu
+南京金宇	　	　	　	　	　	　
+11	CBL	Bearing
+轴承	FAG	SKF	TIMKEN	NSK	JTEKT	　	　	　
+12	CBL	Semi-split bearing seat
+半剖式轴承座	SKF	FAG	TIMKEN	NSK	　	　	　	　
+13	CBL	Polyurethane roller
+聚氨酯类衬胶辊	Shengyang Dongyang
+沈阳东阳	Kelleburg
+科雷伯格	Nanjing Rubber Factorty
+南京金三力	Zhanjiang Zhengyang
+湛江政阳	　	　	　	　
+14	CBL	Butterfly Valve,Ball valve
+蝶阀,球阀	Chinasufa
+中核苏阀	Shentong
+神通	Neway
+纽威	　	　	　	　	　
+15	CBL	Tin oil lubrication station
+稀油润滑站	Bonan
+博南	Jiangsu Nanfang
+江苏南方	by oem	　	　	　	　	　
+16	CBL	Hydraulic system (including hydraulic stand)
+液压系统（含液压站）	Rexroth	HYDAC	Parker	Shanghai Cosure
+上海科先	　	　	　	　
+17	CBL	Hydraulic valve液压阀	Rexroth	Parker	　	　	　	　	　	　
+18	CBL	Hyraulic cylinder
+液压缸	Uranus
+优瑞纳斯	Hengli hydraulics
+恒力液压	Rexroth	PARKER	　	　	　	　
+19	CBL	Hyraulic cylinder seal
+液压油缸密封	NOK	PARKER	Merkel	　	　	　	　	　
+20	CBL	High pressure ball valve
+高压球阀	HYDAC	MHA
+美尔基安	PISTER
+皮斯特	　	　	　	　	　
+21	CBL	Screw pump
+螺杆泵 	SETTIMA	Danfoss	Rexroth	　	　	　	　	　
+22	CBL	Hydraulic  main pump
+液压主泵	Parker	Danfoss	Rexroth	　	　	　	　	　
+23	CBL	Hydraulic motor
+液压马达	Danfoss	Rexroth	Kawasaki
+川崎	　	　	　	　	　
+24	CBL	Servo-hydraulic valve
+伺服阀	MOOG	Rexroth	EMG	　	　	　	　	　
+25	CBL	Hydraulic station filter
+液压站过滤器	HYDAC	Pall	Rexroth	　	　	　	　	　
+26	CBL	Hydraulic  hose
+液压软管	Parker	Gates	BRIDGESTONE
+普利司通	Eaton
+伊顿	　	　	　	　
+27	CBL	Hydraulic  joint
+液压接头	Parker	Eaton
+伊顿	Fastor	Nitto
+日东	　	　	　	　
+28	CBL	Enery Accumulator
+蓄能器	HYDAC	EPE/EPOLL	　	　	　	　	　	　
+29	CBL	cylinder (pneumatic)
+气缸 	SMC	FESTO	NORGREN	Nippon	Nihon	　	　	　
+30	CBL	Pneumatic Components 
+气动元件 	SMC	FESTO	NORGREN	CKD	　	　	　	　
+31	CBL	Robotic arm for labeling robot 贴标机器人	信诺Signode	SINOAUDE	zheda jingyi
+浙达精益	FANUC	tebulo	KUKA	　	　
+32	CBL	Automatic straping
+自动打包机	Itipack	SINOAUDE	zheda jingyi
+浙达精益	Beijing Jike
+北京机科	　	　	　	　
+33	CBL	Automatic Destraping
+自动拆捆机	Itipack	SINOAUDE	zheda jingyi
+浙达精益	KOHAN KOGYO	GENERICA	WISDRI	　	　
+34	CBL	Electronical and instrument control system
+电控及仪控系统	Siemens	ABB	Rockwell	Hitachi	Schneider	　	 	　
+35	CBL	AC Motor（Variable-speed）
+交流电机（调速）	SIEMENS	ABB	　	　	 	　	　	　
+36	CBL	AC Gear Motor（Variable-speed）
+交流齿轮电机（调速）	SEW	SIEMENS	 	 	 	　	　	　
+37	CBL	AC Motor（pumps & fans）（Variable-speed）
+交流电机（风机/泵类）（调速）	SIEMENS	ABB	 	 	 	　	　	　
+38	CBL	Constant speed motor
+恒速电机	SIEMENS	ABB	中车尚驱	佳木斯	布鲁克	　	　	　
+39	CBL	low voltage drive
+低压传动	SIEMENS	ABB	HITACHI	TMEIC	INVOVANCE
+汇川	　	　	　
+40	CBL	PLC
+可编程控制器	SIEMENS	ABB	HITACHI	TMEIC	 	　	　	　
+41	CBL	safety PLC
+安全PLC	SIEMENS	Pilz	 	 	 	　	　	　
+42	CBL	PC and server
+电脑和服务器	SIEMENS	Dell	HP	ABB	 	　	　	　
+43	CBL	switches
+交换机	SIEMENS	Cisco	 	 	 	　	　	　
+44	CBL	Power supply module
+电源模块	Weidmueller	SIEMENS	Phoenix	 	 	　	　	　
+45	CBL	SCADA Package
+数据采集以及监控系统	SIEMENS	ABB	HITACHI	TMEIC	　	　	　	　
+46	CBL	PDA
+数据采集	IBA	 	 	 	 	　	　	　
+47	CBL	Load Center
+负荷中心	SIEMENS	ABB	Schneider	 	 	　	　	　
+48	CBL	MCC
+电机控制中心	SIEMENS	ABB	Schneider	 	 	　	　	　
+49	CBL	Electrolytic rectifier
+整流器	INJET	 	 	 	 	　	　	　
+50	CBL	Thyristor convertor for heating
+调功柜	INJET	 	 	 	 	　	　	　
+51	CBL	Electric heater
+电阻带	Kanthal	 	 	 	 	　	　	　
+52	CBL	Connecting Terminal
+接线端子	WAGO	Phoenix	Weidmueller	 	 	　	　	　
+53	CBL	rotary encoder（incremental）
+旋转编码器（增量）	Leine linde	HUBNER	TR	　	 	　	　	　
+54	CBL	Transformer（Middle Voltage变压器（中压））	HITACHI Energy 	TBEA	SIEMENS	Hua Peng	　	　	　	　
+55	CBL	SC6 network cable
+超六类网线	SIEMENS	 	 	 	 	　	　	　
+56	CBL	Network cable connector
+网线连接器	SIEMENS	 	 	 	 	　	　	　
+57	CBL	touch screen
+触摸屏	SIEMENS	ABB	HITACHI	TMEIC	 	　	　	　
+58	CBL	Transformer（Low Voltage dry type）
+变压器（低压干变）	SIEMENS	ABB	Schneider	 	 	　	　	　
+59	CBL	UPS
+不间断电源	Emerson	 	 	 	 	　	　	　
+60	CBL	Soft-Starter
+软启动器	SIEMENS	ABB	Schneider	 	 	　	　	　
+61	CBL	Circuit Breaker
+断路器	ABB	SIEMENS	Schneider	 	 	　	　	　
+62	CBL	Relay
+继电器	Omron 	Schneider	SIEMENS	ABB	 	　	　	　
+63	CBL	Contactor
+接触器	Schneider	SIEMENS	ABB	　	 	　	　	　
+64	CBL	safety relay
+安全继电器	pilz	SIEMENS	 	 	 	　	　	　
+65	CBL	isolation switch
+隔离开关	SIEMENS	ABB	Schneider	 	 	　	　	　
+66	CBL	fuses
+熔断器	SIEMENS	ABB	Schneider	 	 	　	　	　
+67	CBL	switch with Lock
+锁开关	SIEMENS	Schneider	Schmersal	 	 	　	　	　
+68	CBL	button、switch，lamp
+按钮、开关、指示灯	SIEMENS	Schneider	ABB	 	 	　	　	　
+69	CBL	Maintenance power box
+检修电源箱	MENNEKES	 	 	 	 	　	　	　
+70	CBL	Proximity switches
+接近开关	IFM	Pepperl+Fuchs	Sick	Turck	　	　	　	　
+71	CBL	photoelectric switches
+光电开关	Sick	Pepperl+Fuchs	KEYENCE	Banner	 	　	　	　
+72	CBL	Linear Displacement Sensors
+线性位移传感器	MTS	TR	BALLUFF	 	 	　	　	　
+73	CBL	rotary encoder（absolute）
+旋转编码器（绝对值）	Leine linde	Sick	MTS	 	 	　	　	　
+74	CBL	Pull rope encoder
+拉绳编码器	Sick	TR	Pepperl+Fuchs	 	 	　	　	　
+75	CBL	Pull rope switch
+拉绳开关	SIEMENS	Sick	Banner	 	 	　	　	　
+76	CBL	ultrasonic sensors
+超声波测距仪	Pepperl+Fuchs	Sick	 	 	 	　	　	　
+77	CBL	vibration sensor
+振动传感器	Holthausen	Pepperl+Fuchs	IFM	　	 	　	　	　
+78	CBL	laser distance meter
+激光测距仪	Pepperl+Fuchs	Sick	KEYENCE	 	 	　	　	　
+79	CBL	position and limit switch
+行程开关	Schneider	Schmersal	SIEMENS	Omron 	 	　	　	　
+80	CBL	Light barrier
+光栅	Sick	Pepperl+Fuchs	pilz	SIEMENS	 	　	　	　
+81	CBL	Barcode reader
+条形码阅读器	 Symbol	honeywell	Sick	 	 	　	　	　
+82	CBL	ATS
+自动电源转换开关	ABB	Schneider	 	 	 	　	　	　
+83	CBL	X-Ray thickness Meter
+X射线测厚仪	IMS	ThermoFisher	　	　	　	　	　	　
+84	CBL	Width gauge
+测宽仪	IMS	EMG	ABB	　	　	　	　	　
+85	CBL	Pyrometer meter
+板温计	Williamson	　	　	　	　	　	　	　
+86	CBL	Steering unit
+纠偏单元	EMG	Maxcess FIFE	　Shanghai Cosure
+上海科先	　	　	　	　	　
+87	CBL	Coil weigher
+钢卷称重	Mettler-Toledo	　	　	　	　	　	　	　
+88	CBL	Integrative temperature transmitter
+一体化温度变送器	Emerson	YOKOGAWA	IFM	E+H	　	　	　	　
+89	CBL	temperature transmitter
+温度变送器	Emerson	WIKA	YOKOGAWA	　	　	　	　	　
+90	CBL	temperature element
+温度元件（热电阻、热电偶）	WIKA	E+H	Emerson	　	　	　	　	　
+91	CBL	bimetal thermometer
+双金属温度计	SYJT
+上仪	Chuanyi
+川仪	Shanghai Jingpu
+上海精普	Beijing Brightly
+北京布莱迪	　	　	　	　
+92	CBL	Servo level gauge
+伺服液位计	Honeywell	E+H	　	　	　	　	　	　
+93	CBL	ultrasonic level gauge
+超声波液位计	EMERSON	E+H	SIEMENS	KROHNE	　	　	　	　
+94	CBL	radar level transmitter
+雷达液位计	EMERSON	E+H	VEGA	YOKOGAWA	SIEMENS	　	　	　
+95	CBL	Float level switch
+浮球液位开关	Chuanyi
+川仪	Shanghai Xingshen
+上海星申	KROHNE
+克罗尼	　	　	　	　	　
+96	CBL	Conductivity and PH meter
+电导率和PH计	E+H	HACH	YOKOGAWA	Emerson	　	　	　	　
+97	CBL	Pressure sensor（hydraulic）
+压力传感器(液压)	Rexroth	Hydac	IFM	　	　	　	　	　
+98	CBL	Pressure Switches (liquid)
+压力开关（测量液体）	IFM	E+H	WIKA	　	　	　	　	　
+99	CBL	Pressure Switches (gas)
+压力开关（测量气体)	Festo	IFM	E+H	　	　	　	　	　
+100	CBL	pressure transmitter
+压力/差压变送器	Emerson	 YOKOGAWA	ABB	Siemens	E+H	　	　	　
+101	CBL	Pressure gauge
+压力表	WIKA	SYJT
+上仪	Chuanyi
+川仪	Shanghai Jingpu
+上海精普	Beijing Brightly
+北京布莱迪	　	　	　
+102	CBL	Flow switch
+流量开关	IFM	E+H	KROHNE	ABB	　	　	　	　
+103	CBL	Control valve
+控制阀门	Fisher	Samson	Flowserve	Krom	Masoneilan	　	　	　
+104	CBL	shut-off valves
+切断阀	Emerson	Flowserve	Samson	Koso	　	　	　	　
+105	CBL	electric actuator
+电动执行器	ROTORK	AUMA	Bernard
+伯纳德	　	　	　	　	　
+106	CBL	solenoid valve
+电磁阀	ASCO	Norgren	SMC	FESTO	　	　	　	　
+107	CBL	Valve positioner
+阀门定位器	Fisher	Samson	Siemens	　	　	　	　	　
+
+
+序号	设备及配套件名称	供货厂商	备注
+1	感应加热器"	INDUCTOTHERM	、AJAX、DKK、Primetals-ABP	　
+2	齿轮箱	Flender、SEW、NORD	SUMITOMO、
+南高齿、泰尔重工	　
+3	鼓形齿联轴器	Flender、KTR、Voith Turbo、麦那、中村自工	　
+4	万向联轴器	Voith Turbo、GWB、Maina、中村自工"	　
+5	月牙剪、飞剪、双层剪，事故剪	常州宝菱、苏州宝联重工、中冶陕压、To Hamono、SMS	　
+6	剪刃	南京茅山、南京金宇	　
+8	轴承	FAG、SKF、TIMKEN、NSK、JTEKT	　
+9	半剖式轴承座	FAG、SKF、TIMKEN、NSK	　
+10	聚氨酯类衬胶辊	沈阳东阳、科雷伯格、南京金三立、湛江政阳	　
+11	贴标机器人	信诺、SINOAUDE、浙达精益、FANUC、tebuio、KUKA	　
+12	自动打包机	Itipack、SINOAUDE、浙达精益、北京机科	　
+13	自动捆绑机	Itipack、SINOAUDE、浙达精益、KOHAN KOGYO、GENERICA、WISDRI	　
+14	交流电机（调速）	西门子、ABB	　
+14	交流齿轮电机（调速）	SEW、西门子	　
+15	交流电机（风机/泵类）（调速）
+	西门子、ABB	　
+17	恒速电机"	西门子、ABB、中车尚驱、佳木斯、布鲁克	　
+
+
+13.1.2 流体设备配套件供货商
+序号	设备及配套件名称	供货厂商	备注
+1	激光焊机	MIEBACH、TMEIC、Baohan宝悍、KAIQI	　
+2	气动制动器	三阳、多福、西伯瑞	　
+3	开卷机、卷取机	常州宝菱、泰尔重工、马鞍山北光、中冶陕压、
+常州精棱设备制造有限公司"	　
+4	开卷卷取的旋转接头	GAT、杜博林、PARKER	涨缩油缸、旋转接头须由同 一厂家制造装配。　
+5	蝶阀,球阀	中核苏阀、神通、纽威"	　
+6	稀油润滑站	博南、江苏南方、by oem	　
+8	液压系统（含液压站）	Rexroth、HYDAC、Parker、上海科先	　
+9	液压阀	Rexroth、Parker	
+10	液压缸	优瑞纳斯、恒力液压、Rexroth、PARKER	　
+11	液压油缸密封	NOK、PARKER、Merkel	　
+12	高压球阀	HYDAC、美尔基安、皮斯特	　
+13	螺杆泵	SETTIMA、Danfoss、Rexroth	　
+14	液压主泵"	Parker、Danfoss、Rexroth	　
+14	液压马达	Danfoss、Rexroth、川崎	　
+15	伺服阀	MOOG、Rexroth、EMG	　
+17	液压站过滤器	HYDAC、Pall、Rexroth	　
+18	液压软管	Parker、Gates、普利司通、伊顿"	　
+19	液压接头	Parker、伊顿、Fastor、日东	　
+20	蓄能器	HYDAC、EPE/EPOLL	　
+21	气缸	SMC、FESTO、NORGREN、Nippon、Nihon	　
+22	气动元件	SMC、FESTO、NORGREN、CKD	　
+
+13.1.3 电气设备供货商
+序号	设备名称	生产厂商	备注
+1	电控及仪控系统"	西门子、ABB、Rockwell、Hitachi、Schneider	　
+2	低压传动	西门子、ABB、HITACHI、TMEIC、汇川	　
+3	PLC 	西门子、ABB、HITACHI、TMEIC	　
+4	安全PLC	西门子、Pilz	　
+5	电脑和服务器	西门子、Dell、HP、ABB	　
+6	交换机	西门子、Cisco	　
+7	电源模块	Weidmueller、西门子、Phoenix	　
+8	数据采集以及监控系统	西门子、ABB、HITACHI、TMEIC	　
+9	PDA数据采集	IBA	　
+10	负荷中心	西门子、ABB、Schneider	　
+11	MCC电机控制中心	西门子、ABB、Schneider	　
+12	整流器	INJET	　
+13	调功柜	INJET	　
+14	电阻带	Kanthal	低压
+15	接线端子	WAGO、Phoenix、Weidmueller	　
+16	旋转编码器（增量）	Leine linde、HUBNER、TR	　
+17	Transformer（Middle Voltage变压器（中压））	"HITACHI Energy、TBEA、西门子、Hua Peng	　
+18	超六类网线	西门子	　
+19	网线连接器	西门子	　
+20	触摸屏	西门子、ABB、HITACHI、TMEIC	　
+21	变压器（低压干变）	西门子、ABB、Schneider	　
+22	UPS
+不间断电源	Emerson	　
+23	软启动器	西门子、ABB、Schneider	　
+24	断路器	ABB、西门子、Schneider	　
+25	继电器	Omron 、Schneider、西门子、ABB	　
+26	接触器	Schneider	、西门子、ABB	　
+27	安全继电器	Pilz、西门子	　
+28	隔离开关	西门子、ABB、Schneider	　
+29	熔断器	西门子、ABB、Schneider	　
+30	锁开关	西门子、ABB、Schneider	　
+31	按钮、开关、指示灯	西门子、ABB、Schneider	　
+32	检修电源箱	MENNEKES	　
+33	接近开关	IFM、Pepperl+Fuchs、Sick、Turck	　
+34	光电开关	Sick、Pepperl+Fuchs、KEYENCE、Banner	　
+35	线性位移传感器	MTS、TR、BALLUFF	　
+36	旋转编码器（绝对值）	Leine linde、Sick、MTS	　
+37	拉绳编码器	Sick、TR、Pepperl+Fuchs	　
+38	拉绳开关	西门子、Sick、Banner	　
+39	超声波测距仪	Pepperl+Fuchs、Sick	　
+40	振动传感器	Holthausen、Pepperl+Fuchs、IFM	　
+41	激光测距仪	Pepperl+Fuchs、Sick、KEYENCE	
+42	行程开关	Schneider	、Schmersal、西门子、Omron	
+43	光栅	Sick、Pepperl+Fuchs、pilz、西门子	
+44	条形码阅读器	Symbol、honeywell、Sick	
+45	自动电源转换开关	ABB、Schneider	
+46	X射线测厚仪	IMS、ThermoFisher	
+47	测宽仪	IMS、EMG、ABB	
+48	板温计	Williamson	
+49	纠偏单元	EMG、Maxcess FIFE、上海科先	
+50	钢卷称重	Mettler-Toledo	
+51	一体化温度变送器	Emerson、YOKOGAWA、IFM、E+H	
+52	温度变送器	Emerson、WIKA、YOKOGAWA	
+53	温度元件（热电阻、热电偶）	WIKA、E+H、Emerson	
+54	双金属温度计	上仪、川仪、上海精普、北京布莱迪	
+55	伺服液位计	Honeywell、E+H	
+56	超声波液位计	EMERSON、E+H、西门子、KROHNE	
+57	雷达液位计	EMERSON、E+H、VEGA、YOKOGAWA、西门子	
+58	浮球液位开关	川仪、上海星申、克罗尼"	
+59	电导率和PH计	E+H、HACH、YOKOGAWA、Emerson	
+60	压力传感器(液压)	Rexroth、Hydac、IFM	
+61	压力开关（测量液体）	IFM、E+H、WIKA	
+62	压力开关（测量气体)	Festo、IFM、E+H	
+63	压力/差压变送器	Emerson、YOKOGAWA、ABB、西门子、E+H	
+64	压力表	WIKA、上仪、川仪、上海精普、北京布莱迪"	
+65	流量开关	IFM、E+H、KROHNE、ABB	
+66	控制阀门	Fisher、Samson、Flowserve、Krom、asoneilan	
+67	切断阀	Emerson、Flowserve、Samson、Koso	
+68	电动执行器	ROTORK、AUMA、伯纳德"	
+69	电磁阀	ASCO、Norgren、SMC、FESTO	
+70	阀门定位器	Fisher、Samson、西门子	
+
+13.1.4焊机设备供应商
+序号	设备或配套件名称	制造厂家	备注
+1	双切剪剪盒	南京茅山	
+2	液压阀（液压比例阀，伺服阀）	Rexroth、PARKER	
+3	其它液压元件	Rexroth、PARKER	
+4	标准液压缸	韶关液压、广东天恒、北京金自天成	
+5	气动元件（干燥器，气动电磁阀，气缸，气动比例压力阀）	SMC	
+6	直线导轨	THK、Rexroth	
+7	激光器及光纤	TRUMPF、IPG	
+8	齿轮电机	SEW、弗兰德	
+					
+					
+					
+					
+                   
+序号	名   称	子供货商名称
+1	圆盘剪	1.GEORG
+2.CMI 
+3.奥钢联
+4.SMS
+博亚
+2	拉矫机	SVAI、SMS、
+ANDERITZ、达涅利
+博亚
+3	焊机	武汉凯奇、武汉宝焊、
+成都焊研、SVAI
+4	涂油机（原装进口）	1.美国GFG
+2.德国DUMA
+3.奥钢联
+4.RAVARINI(意大利)
+5	频闪仪	1.美国UNILUX
+2.多乐Dreloo
+3品拓
+6	开卷机、卷取机	宝菱重工、陕压重工、哈机联、
+SVAI、SMS、二重；
+7	称重装置（供货商负责在甲方所在地计量部门检定）(传感器和二次仪表为进口或合资品牌)	1.托利多、2.申克、
+3.济南金钟、 4.北京首昌；
+8	CPC、EPC	1.EMG、
+2.FIFE、
+9	交流变频电机	1.湘潭电机、2.上海电机、3.上海南洋，
+4.佳木斯电机、5.大连伯顿
+10	减速机	江阴减速机、苏冶、
+重齿、宁波东力， 
+11	齿轮电机	SEW、住友、
+SIEMENS、DEMAG；
+12	液压马达	Parker、Vicrers、
+Demfoss、力士乐；
+13	进口轴承	SKF，FAG ，铁木肯
+INA 
+14	国产轴承（钢卷车和非传动辊子）	哈尔滨轴承有限公司
+瓦房店轴承股份有限公司
+洛阳轴承股份有限公司
+瓦房店冶矿轴承股份有限公司
+15	气缸	济南华能（品牌:杰菲特）、烟台未来、
+无锡华通、江苏永坚；
+16	气动元件	Norgren、Festo、
+SMC、Rexroth；
+17	液压缸（所有密封均采用进口件：：parker/Mnerkel/aig/rexnoth）	韶关液压件厂、天津尤瑞纳斯、
+韶关伟光、天津四方
+18	干油润滑	启东江海液压润滑设备厂
+启东润滑设备有限公司
+启东南方润滑设备有限公司
+19	液压设备总成（泵站、阀台）	上海立新、北京索普、北京华德
+海门油威力、启东南方；
+上海宝菱（液压机电设备成套厂）
+20	液压泵	REXROTH
+PARKER
+VICKERS
+21	液压阀	1.REXROTH(力士乐)
+2.PARKER
+3.VICKERS
+22	循环用螺杆泵	海林柯、阿维乐、
+黄山工业泵、天津工业泵
+23	蓄能器	Hydac、olaer、SCHWERLL、EPE
+24	过滤器（包括滤芯）	Internomen、Hydac、 PALL、PENTAIR
+25	编码器	Baumer、ELCO、
+P+F、T&R；
+26	接近开关、光电开关	P+F、SICK、
+TURCK、ELCO、IFM
+27	万向联轴器
+齿形联轴器	1.常州锦成
+2.江阴联轴器厂
+3.泰尔重工
+4.襄阳宇清
+28	衬聚胺脂辊/
+衬胶辊	1.南京金三力有限公司
+2.昆山长虹
+3.苏州宝苏矿冶设备有限公司
+4.沈阳东阳
+29	液压/气动制动器	焦作制动器股份有限公司
+江西华伍起重电器有限责任公司
+30	气囊式刮刀	南通申东、上海东新、
+营口东源
+31	助卷皮带（要求无接头)	SIEGLING、AMMERAAL、
+RAPPLON、HABASIT
+32	液压系统主要附件
+（压力开关、温度开关、液位计、球阀）	Hydac、STAUFF、
+PARKER、BARKSDALE；
+33	齿轮箱、辊子轴承密封件	PARKER、MERKEL、B+S、NOK、AIG;
+34	液压缸密封件	Parker，Merkel，aig，rexroth
+序号	名   称	子供货商名称
+1	圆盘剪（原装进口）	1.GEORG
+2.CMI 
+3.奥钢联
+4.SMS
+2	拉矫机（原装进口）	SVAI、SMS、
+ANDERITZ、达涅利
+3	焊机	武汉凯奇、武汉宝焊、
+成都焊研、SVAI
+4	涂油机（原装进口）	1.美国GFG
+2.德国DUMA
+3.奥钢联
+4.RAVARINI(意大利)
+5	频闪仪	1.美国UNILUX
+2.多乐Dreloo
+6	开卷机、卷取机	宝菱重工、陕压重工、哈机联、
+SVAI、SMS、二重；
+7	称重装置（供货商负责在甲方所在地计量部门检定）
+(传感器和二次仪表为进口或合资品牌)	1.托利多、2.申克、
+3.济南金钟、 4.北京首昌；
+8	CPC、EPC	1.EMG、
+2.FIFE、
+9	交流变频电机	1.湘潭电机、2.上海电机、3.上海南洋，
+4.佳木斯电机、5.大连伯顿
+10	减速机	江阴减速机、苏冶、
+重齿、宁波东力， 
+11	齿轮电机	SEW、住友、
+SIEMENS、DEMAG；
+12	液压马达	Parker、Vicrers、
+Demfoss、力士乐；
+13	进口轴承	SKF，FAG ，铁木肯
+INA 
+14	国产轴承（钢卷车和非传动辊子）	哈尔滨轴承有限公司
+瓦房店轴承股份有限公司
+洛阳轴承股份有限公司
+瓦房店冶矿轴承股份有限公司
+15	气缸	济南华能（品牌:杰菲特）、烟台未来、
+无锡华通、江苏永坚；
+16	气动元件	Norgren、Festo、
+SMC、Rexroth；
+17	液压缸（所有密封均采用进口件：：parker/Mnerkel/aig/rexnoth）	韶关液压件厂、天津尤瑞纳斯、
+韶关伟光、天津四方
+18	干油润滑	启东江海液压润滑设备厂
+启东润滑设备有限公司
+启东南方润滑设备有限公司
+19	液压设备总成（泵站、阀台）	上海立新、北京索普、北京华德
+海门油威力、启东南方；
+上海宝菱（液压机电设备成套厂）
+20	液压泵	REXROTH
+PARKER
+VICKERS
+21	液压阀	1.REXROTH(力士乐)
+2.PARKER
+3.VICKERS
+22	循环用螺杆泵	海林柯、阿维乐、
+黄山工业泵、天津工业泵
+23	蓄能器	Hydac、olaer、SCHWERLL、EPE
+24	过滤器（包括滤芯）	Internomen、Hydac、 PALL、PENTAIR
+25	编码器	Baumer、ELCO、
+P+F、T&R；
+26	接近开关、光电开关	P+F、SICK、
+TURCK、ELCO、IFM
+27	万向联轴器
+齿形联轴器	1.常州锦成
+2.江阴联轴器厂
+3.泰尔重工
+4.襄阳宇清
+28	衬聚胺脂辊/
+衬胶辊	1.南京金三力有限公司
+2.昆山长虹
+3.苏州宝苏矿冶设备有限公司
+4.沈阳东阳
+29	液压/气动制动器	焦作制动器股份有限公司
+江西华伍起重电器有限责任公司
+30	气囊式刮刀	南通申东、上海东新、
+营口东源
+31	助卷皮带（要求无接头)	SIEGLING、AMMERAAL、
+RAPPLON、HABASIT
+32	液压系统主要附件
+（压力开关、温度开关、液位计、球阀）	Hydac、STAUFF、
+PARKER、BARKSDALE；
+33	齿轮箱、辊子轴承密封件	PARKER、MERKEL、B+S、NOK、AIG;
+34	液压缸密封件	Parker，Merkel，aig，rexroth
+
+
+生产线成套供应商					
+序号	产品类型	设备、系统、配套件、材料名称	供应商	备注	
+1	生产线	热镀锌机组工艺技术总成套	西马克（中国）、Andritz或同等		
+2	生产线	机组电控成套	西马克（中国）、普瑞特（中国）、ABB（中国）		
+3	生产线				
+4	生产线				
+5					
+6					
+7					
+8					
+9					
+10					
+11					
+12					
+13					
+14					
+15					
+16					
+17					
+18					
+19					
+20					
+21					
+22					
+23					
+24		整机设备供应商																																																																																																																																																																																																																																																												
+序号	产品类型	名称	博亚供应商	货期	备注	国内其他厂家	国外其他厂家																																																																																																																																																																																																																																																					
+1	机械部分	开卷机/收卷机	陕亚、衡重、泰尔重工			常州精菱																																																																																																																																																																																																																																																						
+2	机械部分	助卷器	陕亚、衡重、泰尔重工																																																																																																																																																																																																																																																									
+7	机械产品	焊机	武汉凯奇、成都焊研																																																																																																																																																																																																																																																									
+8	机械产品	拉矫机																																																																																																																																																																																																																																																										
+9	机械产品	圆盘剪																																																																																																																																																																																																																																																										
+10	机械产品	涂油机	欧爱泰克				DUMA、GFG																																																																																																																																																																																																																																																					
+11	仪表产品	钢卷秤	METTLER TOLEDO																																																																																																																																																																																																																																																									
+12	机械产品	打捆机	派克威、深圳大工人				信诺																																																																																																																																																																																																																																																					
+13	流体产品	液压系统成套	北京华德、邵阳维克、太重榆次、北京无极液压、上海立新				"德国：力士乐REXROTH 贺德克HYDAC
+美国：伊顿威格士EATON(VICKERS)、派克 Parker、穆格MOOG
+日本：油研YUKEN"																																																																																																																																																																																																																																																					
+14	流体产品	稀有润滑成套	启东润滑、启东南方、常州华立																																																																																																																																																																																																																																																									
+15	仪表产品	纠偏系统	EMG																																																																																																																																																																																																																																																									
+16	仪表产品	退火炉、冷却塔、辊涂烘干总成套	Drever、SELAS或同等																																																																																																																																																																																																																																																									
+17	仪表产品	炉箅	Drever、SELAS、上海东新或同等																																																																																																																																																																																																																																																									
+18	机械产品	锌锅	阿贾克斯Ajax、应达Inductotherm或同等																																																																																																																																																																																																																																																									
+19	机械产品	气刀	DUMA、FOEN、新日铁																																																																																																																																																																																																																																																									
+20	机械产品	合金化炉	应达Inductotherm、阿贾克斯Ajax或同等																																																																																																																																																																																																																																																									
+21	机械产品	焊机	武汉宝悍、米巴赫（德国）、提迈克（日本）																																																																																																																																																																																																																																																									
+22	机械产品	清洗段成套设备	西马克工程（中国）、Andritz、大连兴波、湖北鼎信、首燕机械																																																																																																																																																																																																																																																									
+23	机械产品	光整机集成	西马克（中国）、达涅利、Andritz																																																																																																																																																																																																																																																									
+24	机械部分	光整机牌坊	太重、二重、陕压、上重																																																																																																																																																																																																																																																									
+25	机械部分	光整机工作辊	中钢邢台、常州轧辊或同等																																																																																																																																																																																																																																																									
+26	机械部分	光整机支撑辊	一重、二重、中钢邢台、常州轧辊																																																																																																																																																																																																																																																									
+27	机械部分	光整机AGC	西马克工程（中国）、金自天成、韶关液压																																																																																																																																																																																																																																																									
+28	机械产品	辊涂机	西马克（中国）、Andritz、西重所、博亚																																																																																																																																																																																																																																																									
+29	机械产品	圆盘剪	西马克（中国）、Andritz、普瑞特（中国）、博亚																																																																																																																																																																																																																																																									
+30	机械产品	飞剪	西马克（中国）、Andritz、博亚、西重所																																																																																																																																																																																																																																																									
+31	机械产品	静电涂油机	DUMA、GFG、欧爱泰克或同等																																																																																																																																																																																																																																																									
+32	机械产品	打捆机	Signode、ITIPACK、钢板工业（日本）																																																																																																																																																																																																																																																									
+33	机械产品	机组液压系统成套	广研所、北京华德、榆次油研																																																																																																																																																																																																																																																									
+34	机械产品	自动拆捆带机器人	首钢安川或同等																																																																																																																																																																																																																																																									
+35	机械产品	自动捞锌渣机器人	北京安腾达或同等																																																																																																																																																																																																																																																									
+36	机械产品	自动取样制样机器人	首钢安川或同等																																																																																																																																																																																																																																																									
+37	机械产品	自动贴标签机器人	北京安腾达或同等																																																																																																																																																																																																																																																									
+38																																																																																																																																																																																																																																																												
+39																																																																																																																																																																																																																																																												
+40																																																																																																																																																																																																																																																												
+41																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																																																																																																																																																																																																																												
+																																																机械部分配套件供应商										
+序号	产品类型	名称	配置	博亚供应商	货期	备注	国内其他厂家	国外其他厂家		
+1	机械部分	"球笼联轴器
+Ball cage coupling joint "	标配	博亚精工BOYA			博亚精工	/		
+	机械部分	齿式联轴器	标配				九江新联、无锡万向、泰尔重工	"比利时:艾斯克ESCO
+意大利：MAINA、CONCORD TRANS-MOTO"		
+2	机械部分	常规联轴器	标配	武汉正通、武汉精匠	30天					
+3	机械产品	轴承	精密	瑞典SKF、德国FAG、德国INA、美国TIMKEN	120天	特殊型号180天,圆盘剪轴承				
+	机械产品		高配	日本NSK、日本NTN、日本KOYO、FYH	100天	特殊型号180天				
+	机械产品		标配	哈瓦洛、人本、天马、帝达贝	60天					
+4	机械产品	"齿轮箱/减速机
+Gearbox/Reducer"	高配	德国弗兰德FLENDER、德国SEW	90天			"德国：诺德NORD
+韩国：三洋Sanyang
+意大利：布雷维尼Brevini、邦飞利Bonfiglioli"		
+	机械产品		标配	宁波东力、南高齿、郑机所(非标)	75天		江苏泰隆、江苏国贸、山东华丽			
+5	机械产品	齿轮	标配	宁波东力、南高齿、重齿				/		
+6	机械产品	升降机	高配	力姆泰克	90天		浙江杰牌			
+	机械产品		标配	杭州诺顿、平湖华明、上海闻广	45天					
+7	机械产品	制动器(液压、气动)	标配	焦作制动器	30天		江西华伍			
+8	机械产品	包胶辊	标配	沈阳东阳、河北大亚	75天		"安徽科雷伯格胶辊有限公司
+宝苏矿冶、河北亚华、昆山昌荣、城南橡塑、娄底宝苏、金山力"			
+9	机械产品	镀铬辊	标配	太仓月生、上海君山	75天					
+10	机械产品	碳化钨辊	标配	上海君山	75天					
+11	机械产品	皮带（含磁力皮带）					"艾艾公司
+上海澳森"	西格林		
+12	机械产品	滚珠丝杠/直线导轨	标配	台湾HIWIN、台湾PMI、 THK、汉江		特殊型号150天				
+13	机械产品	"卷筒
+drum/Tension rell"								
+14	机械产品	橡胶套筒					"亿富特（开卷机）
+冈城产业（卷取机，进口）"			
+15	机械产品	刮刀					上海智林/大连胜光/上海东新			
+16	机械产品	剪刃					茅山剪刃、华盛			
+17	机械产品	动力拖揽	高配	上海江川	30天		"齐齐哈尔昂昂溪、
+杭州华萧拖链有限公司、
+沈阳工况链条有限公司、
+杭州萧山佳驰拖链厂、
+河北得利机床附件制造有限公司、
+烟台首重"			
+	机械产品		标配	沧州盛昊	15天					
+18	机械产品	防护罩	标配	沧州盛昊	45天					
+19	机械产品	传动链条					"诸暨链条厂
+浙江金盾链条厂
+诸暨特种链条厂"			
+20										
+21										
+22										
+23										
+24										
+25										
+26										
+27										
+28										
+29										
+30										
+31										
+32										
+33										
+34										
+35										
+36										
+37										
+38										
+39										
+40										
+为保证外购件交货期及产品质量，各技术人员在做方案时应优先按照以下表格中常用供应商进行对外购件品牌进行约定（正常情况下请务必填写3家以上品牌，并备注“或同等品牌”）										
+										
+										
+										
+										
+										
+																																																																																																				流体部分配套件供应商																																																																																																																																																																																																																																																															
+序号	名称	配置	博亚供应商	货期	备注	国内其他供应商	国外	备注																																																																																																																																																																																																																																																							
+1	"液压缸
+Hydraulic cylinders"	高配	德国Rexroth、美国派克Parker、优瑞纳斯	"进口150-210天
+国产120-150天"		北京华德、韶关液压、北京金自天成、榆次高行、江都申达、江山油缸、济南高新华能、恒立液压	"美国伊顿Eaton、
+意大利STOCCHETTA、意大利FOSSA"																																																																																																																																																																																																																																																								
+2	"液压缸
+Hydraulic cylinders"	标配	北京索普、太重榆次、广东天恒、邵阳维克	120-150天																																																																																																																																																																																																																																																											
+3	"液压缸
+Hydraulic cylinders"	特殊	宝山液压(宝武配套)、诚立(武钢配偶)	90天																																																																																																																																																																																																																																																											
+4	"液压泵
+Hydraulic pump"	高配	德国REXROTH 			北京华德、邵阳维克、榆次液压	EATON、MOOG、威格士、PARKER、日本油研																																																																																																																																																																																																																																																								
+5	"液压马达
+Hydraulic motor"						"Deublin、力士乐/EATON(伊顿)
+DANFOSS
+Parker"																																																																																																																																																																																																																																																								
+6	方向阀、压力阀、流量阀、平衡阀等液压阀（含叠加阀、插装阀）、压力补偿阀、整流板 Hydraulic valves	高配	力士乐、伊顿、派克	100天	特殊型号180天		"德国：力士乐REXROTH 
+美国：伊顿威格士EATON(VICKERS)、派克 Parker、穆格MOOG
+日本：油研YUKEN"																																																																																																																																																																																																																																																								
+7	方向阀、压力阀、流量阀、平衡阀等液压阀（含叠加阀、插装阀）、压力补偿阀、整流板 Hydraulic valves	标配	榆次油研、北京华德	90天																																																																																																																																																																																																																																																											
+8	液压管接头	高配	伊顿、欧际、派克	45天																																																																																																																																																																																																																																																											
+9	液压管接头	标配	国产	10天																																																																																																																																																																																																																																																											
+10	比例阀、伺服阀Proportional Valves/Servo Valves					北京华德	"德国：力士乐REXROTH
+美国：伊顿威格士EATON(VICKERS)、穆格MOOG"																																																																																																																																																																																																																																																								
+11	"液压旋转接头
+Hydraulic swivel"					韶关液压、无锡艾可、广东天恒、台湾裕和	Deublin																																																																																																																																																																																																																																																								
+12	气缸Pneumatic Cylinders	高配	亚德客、日本SMC、日本CKD	45天	设计前需与采购人员确定品牌，每家尺寸不同,特殊型号90-120天	烟台气缸、索诺天工	"德国：费斯托FESTO、Schrader
+美国：派克 Parker
+意大利：UNIVER、阿托斯ATOS
+英国：诺冠NORGREN"																																																																																																																																																																																																																																																								
+	气缸Pneumatic Cylinders	标配	肇庆方大、浙江新潮	30天		济南瑞源																																																																																																																																																																																																																																																									
+13	气动阀、接头/Pneumatic valves	高配	亚德客、SMC、 CKD	30天	设计前需与采购人员确定品牌，每家尺寸不同,特殊型号90-120天	索诺天工、诺冠、济南瑞源																																																																																																																																																																																																																																																									
+14	气动阀、接头/Pneumatic valves	标配	肇庆方大、浙江新潮	10天																																																																																																																																																																																																																																																											
+15	蓄能器和安全阀组、检测装置					温州黎明、奉化	HYDAC、STAUFF、																																																																																																																																																																																																																																																								
+16	螺杆泵					黄山工业泵、天津螺杆泵	SEIM、ALLWEILER、																																																																																																																																																																																																																																																								
+17	过滤器					温州黎明	PALL、HYDAC																																																																																																																																																																																																																																																								
+18	板式换热器					四平巨元	Alfa Laval、GEA、Trante（美国传特）																																																																																																																																																																																																																																																								
+19	测压接头、测压软管、压力表						STAUFF、PARKER、HYDAC																																																																																																																																																																																																																																																								
+20	液压和润滑管接头						HYDAC、STAUFF、EMS																																																																																																																																																																																																																																																								
+21	高压阀门						STAUFF、HYDAC																																																																																																																																																																																																																																																								
+22	液压软管						REXROTH、EATON、STAUFF(西德福)、PARKER																																																																																																																																																																																																																																																								
+23	密封圈						PARKER(派克)、MERKEL(麦克)																																																																																																																																																																																																																																																								
+24	管夹					温州黎明	STAUFF																																																																																																																																																																																																																																																								
+25	排污潜水泵					石家庄尊升、上海东方、成都西南																																																																																																																																																																																																																																																									
+26	密封（进口）					艾志工业技术集团公司	"PARKER(派克)、MERKEL(麦克)
+JAMES WALKEN"																																																																																																																																																																																																																																																								
+27	润滑泵					黄山泵业																																																																																																																																																																																																																																																									
+28	液压检测元件（压力继电器、温度继电器等）						HYDAC																																																																																																																																																																																																																																																								
+29	翻板式液位计（开关量和模拟量）						BUHLER、KUEBLER																																																																																																																																																																																																																																																								
+30	干油系统(含分配器）						启东润滑																																																																																																																																																																																																																																																								
+31	稀油润滑总成					启东润滑、启东南方、常州华立	/																																																																																																																																																																																																																																																								
+32	干油泵						林德、德利蒙																																																																																																																																																																																																																																																								
+33	薄型油缸		上海康百世Shanghai Kangbest/嘉刚																																																																																																																																																																																																																																																												
+34	液压螺母	高配	德国AMTEC	120天			德国NORIS																																																																																																																																																																																																																																																								
+35	液压螺母	标配	博亚精工BOYA	60天		常州爱普																																																																																																																																																																																																																																																									
+36	电磁阀 Solenoid valves					台湾UNI-D、	德国霍科德Krome Schroder,																																																																																																																																																																																																																																																								
+37	隔膜泵diaphragm pump		固瑞克/英格索兰																																																																																																																																																																																																																																																												
+38																																																																																																																																																																																																																																																															
+39																																																																																																																																																																																																																																																															
+40																																																																																																																																																																																																																																																															
+41																																																																																																																																																																																																																																																															
+42																																																																																																																																																																																																																											配套件供应商									
+序号	名称	博亚供应商	货期	备注	国内其他品牌	国外其他品牌			
+1	"定速电机
+AC fixed speed motor"	德国西门子、瑞士ABB、德国SEW 	90-150天		"
+上海南洋、上海电机、哈电、安徽电机、
+兰州电机、西安西玛、衡水电机"	日本：东芝Toshiba、日立 Hitachi			
+		佳木斯、湘潭电机、大中电机	75天						
+		中车电机、皖南电机	75天						
+2	"变速电机
+AC Variable speed motor"	德国西门子、瑞士ABB、德国SEW 	90-150天		"
+上海电机厂、哈电、安徽电机、
+兰州电机"	日本：东芝Toshiba、日立 Hitachi			
+		佳木斯、湘潭电机、大中电机	75天						
+		中车电机、皖南电机	75天						
+3	"减速电机
+AC geared motor"	德国SEW、德国西门子	75天		浙江杰牌、上海锐进、	"弗兰德FLENDER、瑞士：ABB,
+意大利：布雷维尼Brevini 罗尔西ROSSI、戴纳密克DINAMIC OIL"			
+		宁波东力、江苏国贸、江苏泰隆	60天						
+4	伺服电机	德国SIEMENS			雷赛	ABB			
+	伺服减速电机				台达	德国伦茨、SEW			
+	伺服系统				台达				
+5	整流单元	德国SIEMENS			/	"
+瑞士：ABB"			
+6	稳压电源	德国SIEMENS			/				
+7	PLC	德国SIEMENS			台达	、三菱			
+8	PLC记数模块	德国SIEMENS							
+9	PLC数字模块	德国SIEMENS							
+10	PLC模拟模块	德国SIEMENS							
+11	"远程IO站
+Remote I/O"	德国SIEMENS							
+12	HMI触摸屏	德国SIEMENS			屏通、威伦、台达				
+13	Profinet电缆	德国SIEMENS							
+14	矢量变频器	德国SIEMENS			台达	"瑞士：ABB
+欧姆龙"			
+15	"断路器、接触器
+Circuit Breaker(CB、MCB、MCCB,ACB),Contactor，Overload，Local push button，Switch"				常熟开关、上海人民、天水长城	"德国：西门子SIEMENS
+瑞士：ABB
+法国：施耐德Schneider"			
+16	"继电器、半固态继电器、定时器
+Relay、Semi-solid Relay、Timers"				常熟开关、上海人民、天水长城	"德国：西门子SIEMENS
+瑞士：ABB
+日本：欧姆龙OMRON
+韩国：奥托尼克斯ATUONICS"			
+17	空气开关、				常熟开关、上海人民、天水长城	"德国：西门子SIEMENS
+瑞士：ABB
+日本：欧姆龙OMRON
+韩国：奥托尼克斯ATUONICS"			
+18	"24VDC电源
+Power Supply DC 24V"					"德国：西门子SIEMENS
+美国：MaxPower"			
+19	保险丝Fuse					"韩国：Smart type
+法国：施耐德Schneider"			
+20	PDA					IBA			
+21	UPS				研华、川仪	索克曼 艾默生、施耐德、维谛、			
+22	端子					菲尼克斯 魏德米勒			
+23	其它低压元件	SIEMENS、Schneider			常熟开关、上海人民、天水长城	ABB、			
+24	控制电源	德国SIEMENS							
+25	"编程及组态软件/自动化软件
+Automation Software"	德国SIEMENS				德国西门子SIEMENS(SIMATIC for PLC,Wincc flexible for HMI，Wincc for PC controls)			
+26	软启动				奥托、西普、雷诺尔				
+27	电抗器				海鹰峰、西门子				
+28	接线箱					施耐德			
+29	软件								
+30	辅助控制柜								
+31	电控柜、操作台、操作箱	博亚精工							
+	"按钮、指示灯
+Button, indicator"	SIEMENS/和泉							
+32	驱动 Drives					"德国：西门子SIEMENS
+瑞士：ABB"			
+33	"风扇冷却电板
+Fan coolling electric panel"					Senki, Laxmi,Batliboi, Flakt			
+34	电缆	远东、上海起帆、世匠	20天	特殊型号50天					
+	控制元件	"西门子（3-6个月）、
+AB、ABB（3-6个月）
+汇川（2个月）"		特殊型号除外					
+	机组供配电								
+	干式变压器	-							
+	低压组件								
+	低压柜及三箱（不含机组电气商范围）	鞍钢电气、北京科锐、江苏大全、鞍山海汇、鞍山天派数控、辽宁科大科信							
+	低压元器件（框架断路器、塑壳断路器、接触器、热继电器等）	ABB、西门子、施耐德							
+	软启动器	ABB、西门子、施耐德							
+	继电器	欧姆龙、西门子、ABB、菲尼克斯(PHOENIX)、施耐德							
+	微型断路器	ABB、西门子、施耐德							
+	操作元件（按钮/开关/指示灯）	ABB、西门子、施耐德							
+	信号隔离器、端子排	菲尼克斯(PHOENIX)、魏德米勒、ABB、西门子							
+	直流24V电源	菲尼克斯、ABB、西门子							
+	电气传动								
+	传动变频系统	Siemens、ABB或同等							
+	VF传动变频系统	Siemens、ABB或同等							
+	基础自动化系统								
+	编程调试工具	HP、Thinkpad或同等							
+	工程师站、操作员站	惠普、联想或同等							
+	服务器	惠普、联想或同等							
+	PLC柜（包括远程I/O站）	SIEMENS、ABB或同等							
+	交换机	华为、普联、海康威视							
+	PDA	IBA或同等							
+	QDR	IBA或同等							
+	激光打印机	惠普、ESPON（爱普生）或同等							
+	电缆								
+	DP线	SIEMENS或同等							
+	电缆	安徽华菱、宝胜集团有限公司、沈阳特种电缆厂、远东电缆							
+																																				
+															配套件供应商					
+序号	名称	国内	供应商	国外	
+1	纠偏系统		EMG、NIRECO（尼立可）或同等	"德国：EMG
+北美：FIFE"	
+2	表面缺陷检测-频闪仪			UNILUX 德雷罗	
+3	流量仪表	川仪		IFM	
+4	宽度检测			EMG	
+5	表面检测				
+6	钢板测厚仪		IMS、Thermo Fisher或同等		
+	镀层测厚仪		IMS、Thermo Fisher、日本理学		
+					
+7	板型检测				
+8	钢卷称	/	Toledo（梅特勒托利多）或同等	METTLER TOLEDO	
+9	表检仪	百事态			
+10	油膜测厚			AMEPA	
+	传感器				
+11	"温度传感器
+Temperature Sensor"	川仪		"瑞士：恩德斯豪斯E+H
+德国：易福门IFM、WIKA"	
+12	"编码器
+Encoder"	长春一光		"德国：霍伯纳HUBNER、图尔克T+R、、德国库伯勒KUBLER、
+意大利：艾西斯ELCIS
+瑞典：莱纳林德LEINE＆LINDE"	
+13	激光测距传感器			西克SICk、图尔克TRUCK	
+14	"光电传感器
+Photo sensor"			"美国：霍尼韦尔Honey Well
+德国：IFM
+日本：欧姆龙OMRON
+韩国：奥托尼克斯Autonis"	
+15	"光电开关/接近开关
+Proximity switch"	天津宜科、南京施科		"美国：霍尼韦尔Honey Well
+德国：易福门IFM、
+日本：欧姆龙OMRON
+韩国：奥托尼克斯Autonis"	
+16	"张力/称重传感器
+Load cell"			"瑞士:ABB
+加拿大：基尔克KELK
+美国：VMC
+韩国：凯士CAS"	
+17	位移传感器	浙大精益		MTS、BALLUFF	
+18	翻板式液位计			BUHLER、KUEBLER	
+19	压力继电器、温度继电器等			HYDAC、STAUFF、BARKSDALE	
+20	"限位开关/行程开关
+Limit Switch"			"法国：施耐德Schneider
+日本：欧姆龙OMRON
+德国:Sick"	
+21	流量开关			贺德克HYDAC、图尔克TURCK、易福门IFM	
+23	"压力传感器(流体)
+Pressure Sensor"			德国：贺德克HYDAC、图尔克TURCK、易福门IFM	
+24	"液位开关/电平开关
+Level Switch"			"瑞士：恩德斯豪斯E+H
+德国：威卡VEGA
+俄罗斯：罗斯蒙特"	
+25	"压力传感器(机械)
+Pressure Sensor"				
+26	频闪仪		UNILUX、德雷罗或同等		
+	清洗段出口表检仪		百斯泰、AMETEC（阿美特克）或同等		
+	在线锌液成分检测仪		TECNAR或同等		
+	在线机械性能检测仪		EMG、AMEPA或同等		
+	在线粗糙度检测仪		EMG、AMEPA或同等		
+	带钢表面清洁度仪		INDWITECH或同等		
+28	张力计				
+29	张力计		ABB、Dr.BRANT或同等		
+30	测厚仪				
+31	测速仪				
+32	测宽仪		EMG、NIRECO（尼立可）或同等		
+33	表面检测仪		百斯泰、AMETEC（阿美特克）或同等		
+34	油墨厚				
+					
+					
+配套件供应商				
+序号	名称	国内	国外	
+1	L1/L2级PC选型表			
+2	L1 HMI操作员站	联想、华为	惠普	
+3	工程师站	联想、华为	惠普、DELL	
+4	服务器	联想、华为	惠普、DELL	
+5	L2 HMI操作站	联想、华为	惠普、DELL、SONY	
+6	标签打印机		Zebra 东芝	
+7	"网络交换机
+Network Switcher"	华为、华三	"德国：菲尼克斯Phoenix、西门子SIEMENS 
+美国：Cisco思科、"	
+9	"计算机
+Computer industrial"		"美国：惠普HP、戴尔DELL
+日本：SONY"	
+10				
+11				
+12				
+配套件供应商				
+序号	名称	国外	国内	
+1	"开卷机
+Uncoiler"	无	中钢衡重、泰尔重工、常宝菱、陕亚、马鞍山北光、济源神州、鑫盛达	
+2	"收卷机
+Recoiler/Tension rell"	无	中钢衡重、泰尔重工、常宝菱、陕亚、马鞍山北光、济源神州、鑫盛达	
+3	"助卷器
+Belt Wrapper"	无	中钢衡重、泰尔重工、常宝菱、陕亚、马鞍山北光、济源神州、鑫盛达	
+4	"半自动焊机
+Semi Welder"	米巴赫、泰乐	武汉凯奇、成都焊研	
+5	"拉矫机组
+Tension Levler"	达涅利、B+S、恩格勒	博亚精工	
+6	"圆盘剪
+Edge trimmer"	/	博亚精工	
+7	碎边剪		博亚精工	
+8	涂油机	GFG、DUMA	欧爱泰克	
+9	打捆机	信诺	派克威、深圳大工人、	
+10				
+11				
+12				
+																																																																																									
+			
+					
+					
+					
+					
+					
+
+

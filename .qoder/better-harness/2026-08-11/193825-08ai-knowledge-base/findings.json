@@ -1,0 +1,182 @@
+{
+  "summary": {
+    "projectName": "08AI-Knowledge-Base",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 26,
+    "overview": "项目具备清晰的入口导航（README + run.bat + docker-compose）与可用的本地验证命令面（jest/vitest/pytest 脚本均存在），但本窗口内无任何可分析的 Qoder 会话证据（0/0 会话，0/6 会话源根可用）。已核实三项当前后果：README 的关键状态声明与项目实际矛盾会误导后续决策；变更最集中的核心业务模块恰无回归测试；大量未提交改动缺少任何版本绑定验收边界。所有测试结果均为静态核查，未实际执行。",
+    "aiAgentPractice": {
+      "inspectedSurfaces": [],
+      "coverageRows": [
+        {
+          "surface": "Rules",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Hooks",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Commands",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "MCP",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Workflows",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Memories",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        },
+        {
+          "surface": "Plugins",
+          "scopes": [
+            "Plugin"
+          ],
+          "count": 0
+        }
+      ],
+      "repositorySourceRows": []
+    },
+    "assignmentSummaries": [],
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 46,
+        "summary": "README 提供丰富的架构、模块、端口与配置导航，但其『当前开发状态』声明与已核实的实际文件矛盾，静态检查可达但行为证据不可观察。",
+        "findingRefs": [
+          "readme-status-drift"
+        ]
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 52,
+        "summary": "run.bat 一键启动、docker-compose 健康检查编排与 /health 端点构成可发现的启动路径；Python 虚拟环境前置条件与自检命令面未核实，启动路径未实际执行。",
+        "findingRefs": []
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 40,
+        "summary": "三端验证命令面齐备（backend jest、frontend vitest、ai-service pytest），但全部检查未执行；变更热点模块（projects/proposals/solutions）缺少聚焦测试。",
+        "findingRefs": [
+          "core-modules-no-regression"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 32,
+        "summary": "备份模块与周期备份产物、TypeORM 迁移提供部分恢复路径；但仓库内未发现 CI/评审门禁，父仓库存在大规模未提交改动，交付验收边界缺失。",
+        "findingRefs": [
+          "uncommitted-work-no-acceptance"
+        ]
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "完成了有界评审：本窗口 0 个可分析会话、无事件归一化、无干预台账，重复工作与学习改进均不可评估，仅保留证据边界事实。",
+        "findingRefs": [
+          "session-evidence-unavailable"
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "readme-status-drift",
+      "title": "按 README 的开发状态清单决策会得出与项目实际相反的结论",
+      "severity": "Medium",
+      "reason": "事实：README.md『当前开发状态』声称前端无测试框架、docker-compose.yml 待编写；推断：直接对照核实发现 frontend 已有 vitest 配置与 src/test 下 11 个测试文件，docker-compose.yml 已是含 healthcheck 的完整五服务编排；owner：README.md；provider/边界：静态文件对照（Qoder 工作区），未执行任何命令；不确定性：README 其余待办项未逐条核实。后续 agent 或新成员若按此清单行动，可能重复实现已存在的编排或忽略已有的前端验证路径。",
+      "expectedOutput": [
+        "Update the existing Document owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Document",
+      "aiFixPrompt": "/better-harness fix this issue\n\n对照实际文件更新 README.md 的『当前开发状态』小节：核实 frontend 的 vitest 测试（src/test 目录与 package.json 的 test 脚本）与 docker-compose.yml 的现有编排，删除或改写与之矛盾的『待编写/无测试框架』声明，保留仍然属实的待办项，不改动其他章节。\n\n## Validation\n\n- 重读更新后的 README 小节，确认不再与 package.json、docker-compose.yml 的实际内容矛盾\n- 确认未误删仍属实的待办项",
+      "dimensionRefs": [
+        "task-understanding"
+      ]
+    },
+    {
+      "id": "core-modules-no-regression",
+      "title": "变更最集中的核心业务模块缺少可用的回归信号",
+      "severity": "Medium",
+      "reason": "事实：backend 现有 15 个 spec 集中在 common 支撑层（keychain/permission/sanitizer/transaction/backup 等），而 core-change-watch 识别的高置信核心候选与当前 diff 热点（projects、proposals、solutions、quotations 模块的 service/controller/entity）经搜索确认无对应 spec；owner：backend/src/modules 下各核心模块与 backend/package.json 的 test 脚本；provider/边界：静态文件枚举（Glob/Grep），jest 未实际运行，已有 spec 的通过状态未知；不确定性：核心逻辑可能经手工验证覆盖，静态证据无法证实。当前后果是对这些模块的修改缺少本地可运行的针对性检查。",
+      "expectedOutput": [
+        "Update the existing Test owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Test",
+      "aiFixPrompt": "/better-harness fix this issue\n\n先运行 backend/package.json 声明的 npm run test 记录现有测试基线；然后为当前变更热点模块（projects、solutions、proposals 任选一个 service）补一个最小聚焦 spec，覆盖其一条主行为路径与一个失败分支，遵循现有 common 层 spec 的写法。\n\n## Validation\n\n- npm run test 通过且新 spec 被执行\n- 新增 spec 的断言针对所选 service 的实际行为而非占位",
+      "dimensionRefs": [
+        "change-validation"
+      ]
+    },
+    {
+      "id": "uncommitted-work-no-acceptance",
+      "title": "大量未提交的工作改动没有任何版本绑定的验收边界",
+      "severity": "Medium",
+      "reason": "事实：父仓库（AI_ML_Project）当前 diff 含 578 个改动文件/约 26 万行，仓库内未发现 CI 工作流、提交钩子或任何机械化验收门禁（husky/pre-commit/.github 均为零命中）；owner：仓库提交基线与 backend/frontend 的 lint、test 脚本；provider/边界：core-change-watch 静态 git 分析（boundary = static-local-git-and-file-analysis），测试未执行；不确定性：仓库外可能存在未观察到的 CI 或评审流程。当前后果是回归、误删或半成品状态无验收拦截，回滚基线不可靠。",
+      "expectedOutput": [
+        "Update the existing Code owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Code",
+      "aiFixPrompt": "/better-harness fix this issue\n\n先做有界核实：运行 backend 的 npm run lint 与 npm run test、frontend 的 npm run lint，记录精确输出。随后将当前工作区改动按模块拆分为若干次聚焦提交（backend、frontend、ai-service 分开），每次提交前用上述命令确认对应部分无新增失败；提交动作需用户逐次确认后再执行。\n\n## Validation\n\n- lint/test 的精确输出被记录并随提交决策引用\n- git status 中不再存在横跨多模块的未验收大块改动",
+      "dimensionRefs": [
+        "reliable-delivery"
+      ]
+    },
+    {
+      "id": "session-evidence-unavailable",
+      "title": "过往 Agent 工作无法被观测，重复流程与改进效果无从评估",
+      "severity": "Low",
+      "reason": "事实：本窗口（2026-07-12 至 2026-08-11）Qoder provider 报告 0 个可分析会话、0 个 Task Episode，6 个启用的会话源根均不存在且 1 个被禁用（warningCodes: missing-optional-root、disabled-source-root）；owner：本工作区的会话源配置；provider/边界：qoder session-core-facts envelope（selection=all-eligible），缺失事实按规范记为不可用证据而非零活动；不确定性：根缺失可能源于采集配置或会话存储位置变化，无法从现有证据定性。当前后果是任何重复工作流、验证习惯或学习捕获的结论都无法基于证据得出。",
+      "expectedOutput": [
+        "Update the existing Document owner identified by the reviewed evidence and retain a focused validation result."
+      ],
+      "expectedArtifact": "Document",
+      "aiFixPrompt": "/better-harness fix this issue\n\n有界核实本工作区的 Qoder 会话记录来源：确认 IDE 会话存储是否启用且指向当前工作区，不要猜测或修改内部配置；在积累若干新的工作会话后，重新运行 /better-harness 观察 eligibleSessions 是否大于 0。\n\n## Validation\n\n- 下次评审的 session-core-facts 中 eligibleSessions > 0，或记录明确的源根缺失原因",
+      "dimensionRefs": [
+        "learning-capture"
+      ]
+    }
+  ]
+}

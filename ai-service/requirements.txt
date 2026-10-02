@@ -1,0 +1,60 @@
+# ============================================================
+# AI Service dependencies — Python 3.11+
+# （原注释写 "Python 3.13 compatible"，但 Dockerfile 用 3.11-slim，
+#  本地 venv 也按 3.11 约束，这里更正为 3.11+。）
+#
+# 分两组：核心依赖（默认安装即可启动 RAG/LLM/解析）与可选依赖
+# （OCR/ASR/DXF/CAD/PDF 导出，按需安装，代码里均 try/import 降级）。
+# ============================================================
+
+# === Core Web Framework ===
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.10
+pydantic-settings>=2.6
+
+# === AI / ML ===
+numpy>=1.26,<3  # 上限锁：faiss-cpu / paddlepaddle 的 ABI 可能不兼容 numpy 2.x
+scikit-learn>=1.5
+faiss-cpu>=1.9
+sentence-transformers>=3.0
+openai>=1.50
+
+# === Document Parsing ===
+python-docx>=1.1.0
+pypdf>=4.0.2
+# pypdf 解密 AES 加密 PDF 的必需依赖。缺了它，带加密的 PDF 会直接抛
+# DependencyError 读不开（本机就有一份 QWG(LZ)24 武钢标准因此完全没进索引）。
+cryptography>=42.0
+openpyxl>=3.1.2
+xlrd>=2.0.1
+markdown>=3.5.2
+beautifulsoup4>=4.12.3
+
+# === HTTP / Utils ===
+aiohttp>=3.11
+
+# === 测试 ===
+# 此前 tests/ 下已有用例、venv 里也装了 pytest，却没写进依赖清单 ——
+# 换台机器装完依赖跑不了测试，CI 里更是直接找不到 pytest。
+pytest>=8.0
+pytest-asyncio>=0.24
+
+# ============================================================
+# 可选依赖（按需安装，未安装时代码自动降级返回明确错误）
+# ============================================================
+# --- PDF/DOCX 导出（报价单/技术协议生成）---
+# pip install reportlab         # /ai/documents/generate-pdf
+# （python-docx 已在核心依赖中，generate-docx 直接可用）
+
+# --- DXF / CAD 图纸解析 ---
+# pip install ezdxf             # /ai/requirements/parse-dxf
+
+# --- OCR 图片文字识别 ---
+# pip install paddlepaddle paddleocr   # /ai/media/ocr（体积较大）
+
+# --- ASR 语音转写 ---
+# pip install faster-whisper    # /ai/media/asr
+
+# --- PDF 内嵌图片 OCR 回退（parser 用 fitz 把 PDF 渲染成图）---
+# pip install PyMuPDF           # parser.py PDF OCR 回退路径

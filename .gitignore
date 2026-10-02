@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+ai-service/__pycache__/
+ai-service/app/__pycache__/
+ai-service/app/core/__pycache__/
+ai-service/app/routers/__pycache__/
+
+# Build outputs
+backend/dist/
+frontend/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+deploy/team.env
+deploy/tls/*.key
+deploy/tls/*.crt
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+pip_log.txt
+pip_err.txt
+
+# Python venv
+ai-service/venv/
+
+# Runtime data
+backend/data/
+ai-service/data/
+ai-service/models/
+
+# Docker volumes
+postgres_data/
+redis_data/
+minio_data/
+
+# Misc
+__pycache__/
+*.pyc
