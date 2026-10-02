@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { Activity, Archive, Hash, Info, ScrollText, Settings, Sparkles, DollarSign, Trash2, ShieldCheck } from 'lucide-react'
+import ZhManagedNotice from '../lib/ZhManagedNotice'
 
 const tabs = [
   { path: '/settings', label: '系统信息', icon: Info },
@@ -20,6 +21,7 @@ export default function SettingsLayout() {
 
   return (
     <div className="h-full">
+      <ZhManagedNotice url="/api/system-configs-managed" />
       {/* 页面标题已移至顶栏面包屑（系统 / 系统设置），此处不再重复 */}
       <div className="flex flex-col lg:flex-row gap-6">
         <aside className="lg:w-56 shrink-0">

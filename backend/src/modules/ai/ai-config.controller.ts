@@ -3,6 +3,8 @@ import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AiService } from '../../common/services/ai.service';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { zhRejectManagedChanges } from '../../common/zh-contract';
+import { ZH_SETTINGS_STORE, ZH_SETTING_LABELS } from '../zh-settings/zh-settings';
 
 @ApiTags('大模型配置')
 @Controller('ai-config')
@@ -48,6 +50,10 @@ export class AiConfigController {
   @Put()
   @Roles('admin')
   async updateConfig(@Body() body: any) {
+    // 「OpenAI 兼容」引擎由智汇工作台统一管理时, 不允许在本系统改动
+    const cur = await this.aiService.getLlmConfig().catch(() => ({} as any));
+    const flat = (c: any) => ({ 'ai.openai.baseUrl': c?.openai?.baseUrl ?? '', 'ai.openai.apiKey': c?.openai?.apiKey ?? '', 'ai.openai.model': c?.openai?.model ?? '' });
+    if (body?.openai) zhRejectManagedChanges(ZH_SETTINGS_STORE, flat(body), flat(cur), ZH_SETTING_LABELS);
     try {
       return await this.aiService.updateLlmConfig(body);
     } catch {

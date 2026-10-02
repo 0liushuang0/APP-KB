@@ -13,6 +13,7 @@ import { RolesModule } from './modules/roles/roles.module';
 import { SystemModule } from './modules/system/system.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { ZhSettingsModule } from './modules/zh-settings/zh-settings.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { SearchModule } from './modules/search/search.module';
 import { CustomersModule } from './modules/customers/customers.module';
@@ -85,6 +86,7 @@ import { ManufacturingModule } from './modules/manufacturing/manufacturing.modul
     SystemModule,
     SystemConfigModule,
     DocumentsModule,
+    ZhSettingsModule,
     ApprovalsModule,
     SearchModule,
     CustomersModule,

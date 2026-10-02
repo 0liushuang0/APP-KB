@@ -37,6 +37,7 @@ import NotificationBell from './NotificationBell'
 import { PageActionsContext } from '../contexts/PageActionsContext'
 import { PageAssistantProvider } from '../contexts/PageAssistantContext'
 import AssistantWidget from './AssistantWidget'
+import { isZhEmbedded, onZhTheme } from '../lib/zh-embed'
 
 type NavItem = { path: string; label: string; icon: typeof LayoutDashboard; teamOnly?: boolean }
 type NavGroup = { label: string; items: NavItem[] }
@@ -98,7 +99,7 @@ export default function Layout() {
   const adminTitle = useSystemNameStore((s) => s.adminTitle)
   const systemSubtitle = useSystemNameStore((s) => s.subtitle)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(isZhEmbedded) // 被智汇工作台内嵌时默认收起为图标栏
   const [pageActions, setPageActions] = useState<ReactNode>(null)
   // 路由切换时把内容区滚回顶部：滚动容器是常驻 <main>，不重置的话
   // 从长列表页跳到别的页面会停在原来的滚动位置。
@@ -129,6 +130,9 @@ export default function Layout() {
   const isSettings = location.pathname === '/settings' || location.pathname.startsWith('/settings/')
   const currentLabel = isSettings ? '系统设置' : labelByPath[location.pathname] || activeItem?.label || '智能问答'
   const currentGroup = isSettings ? '系统' : (activeItem && groupByPath[activeItem.path]) || 'AI 工作台'
+
+  // 被智汇工作台内嵌时: 主题跟随门户(只切换显示, 不改本系统保存的主题偏好)
+  useEffect(() => onZhTheme((t) => document.documentElement.classList.toggle('dark', t === 'dark')), [])
 
   const handleLogout = async () => {
     // 先调后端清除 httpOnly Cookie
@@ -236,7 +240,7 @@ export default function Layout() {
         </nav>
 
         {/* User */}
-        <div className="border-t border-white/[0.06] p-3 flex-shrink-0">
+        <div className="zh-embed-hide border-t border-white/[0.06] p-3 flex-shrink-0">
           <div className={`flex items-center gap-2.5 ${collapsed ? 'lg:justify-center' : ''}`}>
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-500 to-accent-300 flex items-center justify-center text-body-sm font-bold text-white flex-shrink-0">
               {initials}
@@ -308,7 +312,7 @@ export default function Layout() {
           )}
           {/* 主题/放大/通知 固定最右侧 */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            <ThemeToggle />
+            <span className="zh-embed-hide contents"><ThemeToggle /></span>
             <FullscreenToggle />
             <NotificationBell />
           </div>

@@ -16,6 +16,9 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto, RefreshTokenDto, EnableTotpDto, DisableTotpDto } from './dto/auth.dto';
+import { ForbiddenException as ZhForbidden, Req as ZhReq, UnauthorizedException as ZhUnauthorized } from '@nestjs/common';
+import { randomBytes as zhRandomBytes } from 'crypto';
+import { zhVerifyIdentity } from '../../common/zh-contract';
 
 /**
  * 认证控制器。
@@ -191,5 +194,22 @@ export class AuthController {
     if (!loopback.includes(ip)) {
       throw new ForbiddenException('单机模式登录仅允许本机调用');
     }
+  }
+
+  /**
+   * 智汇工作台统一登录(D-018): 门户转发层在请求头附带签名身份 X-ZH-Identity(目标须为本系统 ZH_APP_ID)。
+   * 校验通过后按用户名映射本系统账号: 已有同名账号沿用其角色; 没有则自动创建
+   * (门户管理员 → 本系统管理员, 其余 → 只读角色, 口令为随机值, 只能经统一登录进入)。
+   * 未接入平台(无 ZH_IDENTITY_KEY)或身份无效时 401, 前端回到原登录表单。
+   */
+  @Public()
+  @Post('zh-sso')
+  async zhSso(@ZhReq() req: any, @Res({ passthrough: true }) res: Response) {
+    const claims = zhVerifyIdentity(req.headers['x-zh-identity'], process.env.ZH_APP_ID);
+    if (!claims) throw new ZhUnauthorized('未通过智汇工作台统一登录');
+    const result = await this.authService.ssoLogin(claims.sub, claims.name, claims.role === 'admin');
+    if (!result) throw new ZhForbidden('该账号在本系统已停用');
+    this.setTokenCookies(res, result.accessToken, result.refreshToken);
+    return result;
   }
 }

@@ -5,6 +5,7 @@ import apiClient from '../api/client'
 import { useSystemNameStore } from '../store/systemNameStore'
 import { useAuthStore } from '../store/authStore'
 import FormInput from '../components/FormInput'
+import { zhSso } from '../lib/zh-embed'
 
 const MAX_CONNECT_ATTEMPTS = 5
 
@@ -57,6 +58,16 @@ export default function Login() {
 
     // 先检测后端模式；后端可能还在启动中，自动重试几次
     const detectMode = async () => {
+      // 智汇工作台内嵌: 先用统一登录换取本系统登录态(未内嵌/未接入平台时直接跳过)
+      if (attempts === 0) {
+        const sso = await zhSso()
+        if (cancelled) return
+        if (sso?.user) {
+          setAuth({ user: sso.user })
+          navigate('/', { replace: true })
+          return
+        }
+      }
       // 显式退出登录后不再自动登录，展示手动登录表单
       if (sessionStorage.getItem('aikb-skip-auto-login')) {
         setStep('form')

@@ -15,6 +15,7 @@ import { RolesService } from '../roles/roles.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
 import { generateTotpSecret, verifyTotp, otpauthUrl } from './totp.util';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -193,6 +194,24 @@ export class AuthService {
       { isRevoked: true },
     );
     return { success: true };
+  }
+
+  /**
+   * 智汇工作台统一登录: 身份已由签名校验; 按用户名映射同名账号, 没有则创建
+   * (门户管理员 → admin, 其余 → viewer, 随机口令)。账号停用返回 null。
+   */
+  async ssoLogin(username: string, displayName: string, isAdmin: boolean) {
+    let user: any = await this.usersService.findByUsername(username);
+    if (!user) {
+      const role = await this.rolesService.findByCode(isAdmin ? 'admin' : 'viewer');
+      await this.usersService.create({
+        username, password: `${randomBytes(18).toString('base64')}Aa1!`,
+        nickname: displayName || username, roleIds: role ? [role.id] : [],
+      } as any);
+      user = await this.usersService.findByUsername(username);
+    }
+    if (!user || user.isActive === false) return null;
+    return this.generateTokens(user);
   }
 
   private async generateTokens(user: any, manager?: EntityManager) {
