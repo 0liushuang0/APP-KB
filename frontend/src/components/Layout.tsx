@@ -179,36 +179,27 @@ export default function Layout() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 flex flex-col bg-gradient-to-b from-sidebar-800 to-sidebar-900 border-r border-white/5 eo-scroll-dark transition-all duration-300 ease-out ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 zh-side ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${collapsed ? 'w-0 lg:w-[68px]' : 'w-[220px]'}`}
+        } ${collapsed ? 'is-mini' : ''}`}
       >
         {/* Brand */}
-        <div className={`flex items-center gap-2.5 h-14 px-4 border-b border-white/[0.06] flex-shrink-0 ${collapsed ? 'lg:justify-center lg:px-0' : ''}`}>
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-600 to-accent-400 flex items-center justify-center flex-shrink-0 shadow-[0_4px_12px_rgba(109,40,217,.35)]">
-            <Zap size={17} className="text-white" fill="white" />
+        <div className="zh-brand">
+          <div className="zh-brand-mark">
+            <Zap size={17} fill="white" />
           </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <div className="font-serif text-body font-semibold text-gray-50 leading-tight truncate">{systemName}</div>
-              <div className="font-mono text-[9px] uppercase tracking-wider text-white/35 truncate">
-                {systemSubtitle}
-              </div>
-            </div>
-          )}
+          <div className="zh-brand-text">
+            <div className="zh-brand-name">{systemName}</div>
+            <div className="zh-brand-sub">{systemSubtitle}</div>
+          </div>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto eo-scroll-dark py-2">
-          {visibleGroups.map((group, gi) => (
-            <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
-              {collapsed ? (
-                gi > 0 && <div className="mx-3 mb-2 border-t border-white/[0.06]" />
-              ) : (
-                <div className="px-5 pb-1.5 font-mono text-caption uppercase tracking-wider text-white/30">
-                  {group.label}
-                </div>
-              )}
+        <nav className="zh-nav">
+          {visibleGroups.map((group) => (
+            <div key={group.label} className="zh-nav-group">
+              <div className="zh-nav-sep" />
+              <div className="zh-nav-label">{group.label}</div>
               {group.items.map((item) => {
                 const Icon = item.icon
                 const active = isActive(item.path)
@@ -219,19 +210,10 @@ export default function Layout() {
                     onClick={() => setMobileOpen(false)}
                     title={collapsed ? item.label : undefined}
                     aria-current={active ? 'page' : undefined}
-                    className={`group flex items-center gap-3 mx-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      collapsed ? 'lg:justify-center lg:px-0' : ''
-                    } ${
-                      active
-                        ? 'bg-gradient-to-r from-accent-500/25 to-accent-500/10 text-white font-semibold'
-                        : 'text-white/60 hover:text-white hover:bg-surface/[0.04] font-medium'
-                    }`}
+                    className={`zh-nav-item ${active ? 'is-active' : ''}`}
                   >
-                    <Icon
-                      size={18}
-                      className={`flex-shrink-0 ${active ? 'text-accent-300' : 'text-white/40 group-hover:text-white/70'}`}
-                    />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    <Icon size={18} />
+                    <span>{item.label}</span>
                   </Link>
                 )
               })}
@@ -240,37 +222,33 @@ export default function Layout() {
         </nav>
 
         {/* User */}
-        <div className="zh-embed-hide border-t border-white/[0.06] p-3 flex-shrink-0">
-          <div className={`flex items-center gap-2.5 ${collapsed ? 'lg:justify-center' : ''}`}>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-500 to-accent-300 flex items-center justify-center text-body-sm font-bold text-white flex-shrink-0">
+        <div className="zh-embed-hide zh-side-foot">
+          <div className="flex items-center gap-2.5">
+            <div className="zh-avatar">
               {initials}
             </div>
-            {!collapsed && (
-              <div className="min-w-0 flex-1">
-                <div className="text-body-sm font-semibold text-gray-50 truncate">{displayName}</div>
-                <div className="text-caption text-white/40 truncate">
+            <div className="zh-foot-text min-w-0 flex-1">
+                <div className="zh-foot-name">{displayName}</div>
+                <div className="zh-foot-sub">
                   {user?.roles?.[0]?.name || (appMode === 'single' ? '超级管理员' : '用户')}
                 </div>
               </div>
-            )}
             <Link
               to="/settings"
               onClick={() => setMobileOpen(false)}
               title="设置"
               aria-label="设置"
-              className="w-7 h-7 flex items-center justify-center rounded-md text-white/45 hover:text-white hover:bg-surface/5 transition-colors flex-shrink-0"
+              className="zh-icon-btn"
             >
               <Settings size={15} />
             </Link>
-            {!collapsed && (
-              <button
+            <button
                 onClick={handleLogout}
                 title="退出登录"
-                className="w-7 h-7 flex items-center justify-center rounded-md text-white/35 hover:text-white hover:bg-surface/5 transition-colors flex-shrink-0"
+                className="zh-icon-btn zh-foot-extra"
               >
                 <LogOut size={15} />
               </button>
-            )}
           </div>
         </div>
 
@@ -289,7 +267,7 @@ export default function Layout() {
       {/* Main column */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
-        <header className="h-14 flex-shrink-0 flex items-center gap-2 pl-14 pr-2 sm:px-3 bg-surface border-b border-border">
+        <header className="zh-top pl-14 sm:pl-3 bg-surface border-b border-border">
           <button
             onClick={() => setCollapsed((c) => !c)}
             className="hidden lg:flex w-8 h-8 items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas transition-colors flex-shrink-0"
@@ -298,10 +276,10 @@ export default function Layout() {
           >
             {collapsed ? <PanelLeft size={17} /> : <PanelLeftClose size={17} />}
           </button>
-          <div className="hidden sm:flex items-center gap-1.5 text-body-sm flex-shrink-0">
-            <span className="text-muted">{currentGroup}</span>
-            <span className="text-border">/</span>
-            <span className="font-serif text-heading-sm font-semibold text-accent-600 leading-none">{currentLabel}</span>
+          <div className="zh-crumb hidden sm:flex">
+            <span className="zh-crumb-group">{currentGroup}</span>
+            <span className="zh-crumb-sep">/</span>
+            <span className="zh-crumb-page">{currentLabel}</span>
           </div>
           <div className="flex-1" />
           {/* 页面操作区（搜索/标签/新建）居中偏右，紧贴主题 */}
@@ -326,7 +304,7 @@ export default function Layout() {
             否则分页控件的"下一页"按钮会被悬浮球遮住。
             悬浮球 56px + bottom-6 间距 24px + 缓冲 = 96px（pb-24）。
           */}
-          <div className="p-2 sm:p-3 h-full w-full pb-24">
+          <div className="zh-main-inner h-full pb-24">
             <PageActionsContext.Provider value={setPageActions}>
               <PageAssistantProvider>
                 <Outlet />

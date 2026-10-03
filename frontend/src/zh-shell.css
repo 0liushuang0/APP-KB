@@ -1,0 +1,371 @@
+/*
+ * 智汇统一外壳皮肤 zh-shell 1.0（D-025）
+ *
+ * 分发: 本文件是唯一源, 复制到应用 src/ 下并在入口样式里引入, 升级时整体替换, 不要在应用里改。
+ * 适用: React(Tailwind) 与 Vue(Element Plus) 子系统共用同一套类名, 保证「布局完全一致, 只有主色不同」。
+ *
+ * 各系统只需设置主色(其余尺寸/层级/字号全部由本文件决定), 写在应用自己的样式里即可, 与引入顺序无关:
+ *   :root { --zh-accent: #147a8f; }
+ *
+ * 结构(类名):
+ *   aside.zh-side[.is-mini]            侧栏 220px / 收起 64px(≥1024px 生效; 移动端由应用自己的抽屉逻辑控制显隐)
+ *     .zh-brand > .zh-brand-mark + .zh-brand-text > .zh-brand-name + .zh-brand-sub     品牌区 56px
+ *     nav.zh-nav > .zh-nav-group > .zh-nav-label + a.zh-nav-item[.is-active] > svg + span + .zh-nav-badge
+ *     .zh-side-foot                    用户/设置/退出(内嵌智汇工作台时由 zh-embed-hide 隐藏)
+ *   header.zh-top > .zh-crumb > .zh-crumb-group + .zh-crumb-sep + .zh-crumb-page       顶栏 56px
+ *   main > .zh-main-inner              内容区, 统一 16px 内边距
+ *
+ * 顶栏/内容区的底色与边框沿用应用自己的主题色(以便各自的明暗主题正常), 本文件只管尺寸与排版。
+ */
+:where(:root) {
+  /* 默认值用 :where 归零优先级, 应用里任意 :root 设置都能覆盖 */
+  --zh-accent: #2563eb;
+  --zh-side-w: 220px;
+  --zh-side-w-mini: 64px;
+  --zh-bar-h: 56px;
+  --zh-nav-bg: #0f172a;
+  --zh-nav-bg-2: #0b1324;
+  --zh-nav-fg: rgba(226, 232, 240, 0.72);
+  --zh-nav-fg-strong: #f8fafc;
+  --zh-nav-muted: rgba(148, 163, 184, 0.8);
+  --zh-nav-line: rgba(255, 255, 255, 0.07);
+  --zh-nav-hover: rgba(255, 255, 255, 0.06);
+  --zh-accent-soft: color-mix(in srgb, var(--zh-accent) 28%, transparent);
+  --zh-accent-ink: color-mix(in srgb, var(--zh-accent) 45%, #ffffff);
+}
+:where(.dark) {
+  --zh-nav-bg: #070b14;
+  --zh-nav-bg-2: #04070d;
+}
+
+/* ── 侧栏 ─────────────────────────────────────────────── */
+/* display 用 :where 归零优先级: 应用的 hidden / lg:flex 等显隐类总能生效 */
+:where(.zh-side) {
+  display: flex;
+}
+.zh-side {
+  flex-direction: column;
+  width: var(--zh-side-w);
+  flex-shrink: 0;
+  background: linear-gradient(180deg, var(--zh-nav-bg), var(--zh-nav-bg-2));
+  border-right: 1px solid var(--zh-nav-line);
+  color: var(--zh-nav-fg);
+  transition: width 0.2s ease;
+}
+@media (min-width: 1024px) {
+  .zh-side.is-mini {
+    width: var(--zh-side-w-mini);
+  }
+}
+
+.zh-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--zh-bar-h);
+  padding: 0 16px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--zh-nav-line);
+}
+.zh-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--zh-accent);
+  color: #fff;
+  overflow: hidden;
+}
+.zh-brand-mark svg {
+  width: 18px;
+  height: 18px;
+}
+.zh-brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.zh-brand-text {
+  min-width: 0;
+  line-height: 1.25;
+}
+.zh-brand-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--zh-nav-fg-strong);
+}
+.zh-brand-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--zh-nav-muted);
+}
+
+.zh-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+.zh-nav-group:not(:first-child) {
+  margin-top: 12px;
+}
+.zh-nav-label {
+  display: flex;
+  /* 可折叠分组标题(button)的展开箭头放最右 */
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0 20px 6px;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--zh-nav-muted);
+  text-align: left;
+}
+button.zh-nav-label {
+  cursor: pointer;
+}
+button.zh-nav-label:hover {
+  color: var(--zh-nav-fg-strong);
+}
+.zh-nav-label .zh-chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  transition: transform 0.15s;
+}
+.zh-nav-label .zh-nav-badge + .zh-chevron {
+  margin-left: 6px;
+}
+.zh-nav-label[aria-expanded='true'] .zh-chevron {
+  transform: rotate(90deg);
+}
+.zh-nav-sep {
+  display: none;
+  margin: 0 12px 8px;
+  border-top: 1px solid var(--zh-nav-line);
+}
+
+.zh-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+  margin: 2px 8px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--zh-nav-fg);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.zh-nav-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zh-nav-item svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.zh-nav-item:hover {
+  background: var(--zh-nav-hover);
+  color: var(--zh-nav-fg-strong);
+}
+.zh-nav-item:hover svg {
+  opacity: 0.95;
+}
+.zh-nav-item.is-active {
+  background: var(--zh-accent-soft);
+  color: #fff;
+  font-weight: 600;
+}
+.zh-nav-item.is-active svg {
+  color: var(--zh-accent-ink);
+  opacity: 1;
+}
+.zh-nav-badge {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.zh-nav-badge.is-info {
+  background: rgba(255, 255, 255, 0.16);
+}
+/* 图标栏模式下悬停弹出的二级菜单 */
+.zh-flyout {
+  min-width: 180px;
+  padding: 6px 0;
+  border: 1px solid var(--zh-nav-line);
+  border-radius: 8px;
+  background: var(--zh-nav-bg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.zh-flyout .zh-nav-label {
+  padding-top: 2px;
+}
+.zh-flyout .zh-nav-item {
+  height: 32px;
+  margin: 1px 6px;
+  padding: 0 10px;
+  justify-content: flex-start !important;
+}
+.zh-flyout .zh-nav-item > span {
+  display: inline !important;
+}
+
+.zh-side-foot {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--zh-nav-line);
+}
+.zh-side-foot .zh-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--zh-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.zh-side-foot .zh-foot-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--zh-nav-fg-strong);
+}
+.zh-side-foot .zh-foot-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--zh-nav-muted);
+}
+.zh-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--zh-nav-muted);
+  cursor: pointer;
+}
+.zh-icon-btn:hover {
+  background: var(--zh-nav-hover);
+  color: var(--zh-nav-fg-strong);
+}
+
+/* 收起为图标栏(仅桌面) */
+@media (min-width: 1024px) {
+  .zh-side.is-mini .zh-brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .zh-side.is-mini .zh-brand-text,
+  .zh-side.is-mini .zh-nav-label,
+  .zh-side.is-mini .zh-nav-item > span,
+  .zh-side.is-mini .zh-foot-text,
+  .zh-side.is-mini .zh-foot-extra {
+    display: none;
+  }
+  .zh-side.is-mini .zh-nav-group + .zh-nav-group .zh-nav-sep {
+    display: block;
+  }
+  .zh-side.is-mini .zh-nav-item {
+    justify-content: center;
+    padding: 0;
+  }
+  .zh-side.is-mini .zh-nav-badge {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    min-width: 8px;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    font-size: 0;
+  }
+  .zh-side.is-mini .zh-side-foot > div {
+    justify-content: center;
+  }
+  .zh-side.is-mini .zh-flyout .zh-nav-label {
+    display: flex;
+  }
+}
+
+/* ── 顶栏与内容区 ─────────────────────────────────────── */
+/* 用 :where 归零优先级: 应用在同一元素上追加的工具类(如 pb-24 给悬浮球让位)总能覆盖 */
+:where(.zh-top) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--zh-bar-h);
+  flex-shrink: 0;
+  padding: 0 12px;
+}
+:where(.zh-crumb) {
+  display: flex;
+}
+.zh-crumb {
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.zh-crumb-group {
+  opacity: 0.6;
+}
+.zh-crumb-sep {
+  opacity: 0.35;
+}
+.zh-crumb-page {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--zh-accent);
+}
+:where(.zh-main-inner) {
+  width: 100%;
+  min-height: 100%;
+  padding: 16px;
+}
+@media (max-width: 639px) {
+  :where(.zh-main-inner) {
+    padding: 12px;
+  }
+}

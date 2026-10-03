@@ -145,7 +145,7 @@ export default function Login() {
 
         {/* Logo */}
         <div className="relative flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent-600 to-accent-400 flex items-center justify-center shadow-[0_6px_24px_rgba(109,40,217,.45)]">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent-600 to-accent-400 flex items-center justify-center shadow-[0_6px_24px_rgba(4,120,87,.45)]">
             <Zap size={22} className="text-white" fill="white" />
           </div>
           <div>
@@ -320,7 +320,7 @@ export default function Login() {
                 <button
                   type="submit"
                   disabled={loading || !username || !password}
-                  className="w-full py-2.5 px-4 bg-accent-600 text-white rounded-lg font-medium hover:bg-accent-700 active:bg-accent-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_2px_8px_rgba(109,40,217,.25)] hover:shadow-[0_4px_12px_rgba(109,40,217,.35)]"
+                  className="w-full py-2.5 px-4 bg-accent-600 text-white rounded-lg font-medium hover:bg-accent-700 active:bg-accent-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_2px_8px_rgba(4,120,87,.25)] hover:shadow-[0_4px_12px_rgba(4,120,87,.35)]"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">

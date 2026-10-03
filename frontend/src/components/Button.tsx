@@ -23,7 +23,7 @@ export default function Button({
     md: 'px-4 py-2 text-sm',
   }
   const variants = {
-    primary: 'bg-accent-600 text-white hover:bg-accent-700 shadow-[0_1px_2px_rgba(109,40,217,.3)]',
+    primary: 'bg-accent-600 text-white hover:bg-accent-700 shadow-[0_1px_2px_rgba(4,120,87,.3)]',
     secondary: 'bg-surface text-ink-soft border border-border hover:bg-canvas hover:text-ink',
     danger: 'bg-danger-fg text-white hover:bg-danger-line',
     ghost: 'bg-transparent text-muted hover:bg-canvas hover:text-ink',
