@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Zap, Loader2, Eye, EyeOff, Shield, Database, Bot, FileText } from 'lucide-react'
+import { Zap, Loader2, Eye, EyeOff, Shield } from 'lucide-react'
 import apiClient from '../api/client'
 import { useSystemNameStore } from '../store/systemNameStore'
 import { useAuthStore } from '../store/authStore'
@@ -135,74 +135,20 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex">
-      {/* 左侧品牌面板 */}
-      <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-sidebar-800 to-sidebar-950 relative overflow-hidden flex-col justify-between p-12">
-        {/* 装饰背景 */}
-        <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, white 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-accent-600/10 rounded-full blur-3xl" />
-        <div className="absolute -top-20 -right-20 w-72 h-72 bg-accent-400/5 rounded-full blur-3xl" />
+    <div className="zh-login">
+      <div className="contents">
 
-        {/* Logo */}
-        <div className="relative flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent-600 to-accent-400 flex items-center justify-center shadow-[0_6px_24px_rgba(4,120,87,.45)]">
-            <Zap size={22} className="text-white" fill="white" />
+        <div className="zh-login-card bg-surface">
+          {/* 品牌头(智汇统一登录页) */}
+          <div className="zh-login-brand">
+            <div className="zh-brand-mark">
+              <Zap fill="white" />
+            </div>
+            <div className="min-w-0">
+              <div className="zh-login-title text-ink">{systemName}</div>
+              <div className="zh-login-sub text-muted">{systemSubtitle}</div>
+            </div>
           </div>
-          <div>
-            <span className="font-serif text-xl font-semibold text-gray-50 block">{systemName}</span>
-            <span className="text-caption text-white/30 font-mono">v2.0</span>
-          </div>
-        </div>
-
-        {/* 主标语 */}
-        <div className="relative space-y-6">
-          <h1 className="font-serif text-[2.8rem] font-medium text-gray-50 leading-[1.15] tracking-tight">
-            汇总业务信息
-            <br />
-            <em className="not-italic text-accent-300">快速响应客户</em>
-          </h1>
-          <p className="text-white/45 text-body leading-relaxed max-w-md">
-            汇总客户需求、产品参数、历史方案、报价与供应链信息，借助 AI 快速形成有依据的客户回复。
-          </p>
-
-          {/* 特性标签 */}
-          <div className="flex flex-wrap gap-3 pt-2">
-            {[
-              { icon: Bot, label: 'AI 智能问答' },
-              { icon: Database, label: '本地知识库' },
-              { icon: FileText, label: '方案生成' },
-              { icon: Shield, label: '数据安全' },
-            ].map(({ icon: Icon, label }) => (
-              <div key={label} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface/5 border border-white/10 text-white/50 text-caption">
-                <Icon size={13} />
-                {label}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 底部信息 */}
-        <div className="relative space-y-2">
-          <div className="font-mono text-caption uppercase tracking-widest text-white/25">
-            {systemSubtitle}
-          </div>
-          <div className="text-caption text-white/15">
-            资料本地处理 · 数据安全可控 · 离线优先
-          </div>
-        </div>
-      </div>
-
-      {/* 右侧登录面板 */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-canvas relative">
-        {/* 移动端 Logo */}
-        <div className="lg:hidden absolute top-6 left-6 flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent-500 to-accent-300 flex items-center justify-center">
-            <Zap size={18} className="text-white" fill="white" />
-          </div>
-          <span className="font-serif text-lg font-semibold text-ink">{systemName}</span>
-        </div>
-
-        <div className="w-full max-w-sm">
           {/* 自动登录状态 */}
           {step === 'loading' && (
             <div className="text-center space-y-4">

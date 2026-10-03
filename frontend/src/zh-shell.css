@@ -183,6 +183,15 @@ button.zh-nav-label:hover {
   flex-shrink: 0;
   opacity: 0.7;
 }
+.zh-nav-item .zh-ico {
+  /* 用 emoji / 文字做图标的系统 */
+  width: 18px;
+  flex-shrink: 0;
+  font-size: 15px;
+  font-style: normal;
+  line-height: 1;
+  text-align: center;
+}
 .zh-nav-item:hover {
   background: var(--zh-nav-hover);
   color: var(--zh-nav-fg-strong);
@@ -368,4 +377,69 @@ button.zh-nav-label:hover {
   :where(.zh-main-inner) {
     padding: 12px;
   }
+}
+
+/* ── 登录页 ───────────────────────────────────────────────
+ * div.zh-login > div.zh-login-card > .zh-login-brand(.zh-brand-mark + .zh-login-title/.zh-login-sub) + 表单 + .zh-login-foot
+ * 卡片底色默认白色(:where 归零), 应用可在卡片上加自己的表面色类(如 bg-surface)以适配深色模式。
+ * 登录页不展示任何默认账号/口令。
+ */
+.zh-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    radial-gradient(1100px 560px at 8% -12%, color-mix(in srgb, var(--zh-accent) 16%, transparent), transparent 62%),
+    radial-gradient(900px 520px at 108% 112%, color-mix(in srgb, var(--zh-accent) 12%, transparent), transparent 60%),
+    #f3f5fa;
+}
+:where(.dark, [data-theme='dark']) .zh-login {
+  background-color: #0b1020;
+}
+:where(.zh-login-card) {
+  background: #fff;
+}
+:where(.dark, [data-theme='dark']) :where(.zh-login-card) {
+  background: #141a29;
+}
+.zh-login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 14px;
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.12);
+}
+.zh-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.zh-login-brand .zh-brand-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+.zh-login-brand .zh-brand-mark svg {
+  width: 22px;
+  height: 22px;
+}
+.zh-login-title {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.zh-login-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  opacity: 0.6;
+}
+.zh-login-foot {
+  margin-top: 20px;
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.5;
 }
