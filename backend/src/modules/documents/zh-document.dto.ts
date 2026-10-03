@@ -24,4 +24,8 @@ export class ZhDocumentBatchDto {
   // Item validation happens separately so one invalid row cannot reject a batch.
   @IsArray() @ArrayMaxSize(100)
   items: ZhDocumentItemDto[];
+
+  // 平台契约在批次上附带来源系统(各条目也带 source); 允许出现, 以条目上的为准
+  @IsOptional() @IsString() @MaxLength(160)
+  source?: string;
 }
