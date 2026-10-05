@@ -33,7 +33,7 @@ export function onZhTheme(cb: (theme: Theme) => void): () => void {
  * 成功返回与本系统登录接口相同的结果(已解开 NestJS 全局响应包装), 失败返回 null(回到原登录表单)。
  */
 export async function zhSso(url = '/api/auth/zh-sso'): Promise<any | null> {
-  if (!isZhEmbedded()) return null
+  if (!isZhEmbedded() && (typeof location === 'undefined' || !location.hostname.endsWith('.zh.localhost'))) return null
   try {
     const r = await fetch(url, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     if (!r.ok) return null
