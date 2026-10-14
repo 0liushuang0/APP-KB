@@ -1,3 +1,4 @@
+import { buildCustomerContent } from '../../common/services/index-content.builder';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In } from 'typeorm';
@@ -598,7 +599,8 @@ export class CustomersService {
   }
 
   private async sync(customer: Customer): Promise<void> {
-    const content = `${customer.name} ${customer.industry || ''} ${customer.scale || ''} ${customer.address || ''} ${customer.description || ''} ${customer.email || ''} ${customer.phone || ''} ${customer.postalCode || ''}`;
+    // 与全量重建同一套内容(含等级、区域、联系方式、联系人): 日常保存后的索引不能比重建后的更差
+    const content = buildCustomerContent({ customer, contacts: (customer as any).contacts });
     await this.knowledgeSyncService.syncObject({
       id: customer.id,
       objectType: 'customer',

@@ -1,3 +1,4 @@
+import { buildProductContent } from '../../common/services/index-content.builder';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { normalizeUniqueOptional } from '../../common/utils/normalize.util';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -403,7 +404,8 @@ export class ProductsService {
   }
 
   private async sync(product: Product): Promise<void> {
-    const content = `${product.name} ${product.code || ''} ${product.category || ''} ${product.description || ''} 价格:${product.price || ''}`;
+    // 与全量重建同一套内容(含型号价格表、技术参数、BOM): 日常保存后的索引不能比重建后的更差
+    const content = buildProductContent(product);
     await this.knowledgeSyncService.syncObject({
       id: product.id,
       objectType: 'product',

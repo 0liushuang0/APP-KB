@@ -37,7 +37,10 @@ describe('Platform knowledge imports with a real isolated database', () => {
   let owner: CurrentUser;
   const originalCwd = process.cwd();
   const originalEnvironment = { DB_TYPE: process.env.DB_TYPE, SQLITE_PATH: process.env.SQLITE_PATH, ZH_SERVICE_TOKEN: process.env.ZH_SERVICE_TOKEN };
-  const ai = { parseFile: jest.fn(), parseFileDetailed: jest.fn(), addChunks: jest.fn() };
+  const ai = { parseFile: jest.fn(), parseFileDetailed: jest.fn(), addChunks: jest.fn(), deleteChunks: jest.fn() };
+  // 回收站: 只记录被移入的对象(被取代的旧版本走软删)
+  const recycled: string[] = [];
+  const recycleBin = { softDelete: jest.fn(async (_t: string, id: string) => { recycled.push(id); return { id: `r-${id}` }; }), patchData: jest.fn() };
   const item = { id: 'md-001', source: 'doc-md-merger', title: '项目技术记录',
     content: '# 项目技术记录\n\n保留原始 Markdown 内容。\n', updated_at: '2026-10-03T00:00:00Z', project_ref: 'project-01' };
   const put = (items = [item], token = 'isolated-service-token') => {
@@ -63,9 +66,9 @@ describe('Platform knowledge imports with a real isolated database', () => {
     const approvals = new ApprovalsService(database.getRepository(ApprovalFlow), { create: jest.fn().mockResolvedValue({}) } as any, database);
     documents = new DocumentsService(database.getRepository(Document), database.getRepository(DocumentVersion),
       database.getRepository(DocumentLink), config, ai as any, permissions, approvals, {} as any,
-      new PermissionQueryService(config), new TransactionService(database), {} as any);
+      new PermissionQueryService(config), new TransactionService(database), recycleBin as any);
     importer = new ZhDocumentsService(database.getRepository(ZhDocumentImport), database.getRepository(Document),
-      database.getRepository(User), documents, permissions);
+      database.getRepository(User), database.getRepository(ApprovalFlow), documents, permissions);
     const module = await Test.createTestingModule({
       controllers: [ZhDocumentsController, ZhKnowledgeHealthController, FilesController],
       providers: [
@@ -162,6 +165,48 @@ describe('Platform knowledge imports with a real isolated database', () => {
     const invalid = await put([{ ...item, id: 'invalid-one', updated_at: 'not-a-date' }, { ...item, id: 'valid-one' }]);
     expect(invalid.body.results[0]).toMatchObject({ id: 'invalid-one', action: 'error' });
     expect(invalid.body.results[1]).toMatchObject({ id: 'valid-one', action: 'created' });
+  });
+
+  it('ignores export timestamps when deciding whether the source changed', async () => {
+    const base = { ...item, id: 'stamp-doc', content: '# 规格书\n> 产品类型：联轴器　生成时间：2026-10-15 03:24\n\n参数 A=1\n' };
+    const first = await put([base]);
+    expect(first.body.results[0].action).toBe('created');
+    const again = await put([{ ...base, content: base.content.replace('03:24', '03:29'), updated_at: '2026-10-03T00:05:00Z' }]);
+    expect(again.body.results[0]).toMatchObject({ action: 'skipped', detail: 'unchanged', local_id: first.body.results[0].local_id });
+  });
+
+  it('closes older still-pending revisions when a new revision arrives, keeping approved ones', async () => {
+    recycled.length = 0;
+    const v = (n: number) => ({ ...item, id: 'rev-doc', content: `# 规格书
+
+参数 A=${n}
+`, updated_at: `2026-10-04T00:0${n}:00Z` });
+    const r1 = (await put([v(1)])).body.results[0].local_id;
+    const r2 = (await put([v(2)])).body.results[0].local_id;
+    expect(recycled).toEqual([r1]); // v1 仍在待审, 被 v2 取代
+    expect(await database.getRepository(ApprovalFlow).findOneBy({ objectType: 'document', objectId: r1 }))
+      .toMatchObject({ status: 'rejected', comment: expect.stringContaining('取代') });
+    await documents.approve(r2, owner); // v2 审批通过后, v3 到来不应动 v2
+    const r3 = (await put([v(3)])).body.results[0].local_id;
+    expect(recycled).toEqual([r1]);
+    expect(await database.getRepository(Document).findOneBy({ id: r2 })).toMatchObject({ status: 'approved' });
+    expect(await database.getRepository(Document).findOneBy({ id: r3 })).toMatchObject({ status: 'pending' });
+  });
+
+  it('collapses an existing backlog of pending revisions once and is idempotent', async () => {
+    recycled.length = 0;
+    const back = (n: number) => ({ ...item, id: 'backlog-doc', content: `# 积压
+
+版本 ${n}
+`, updated_at: `2026-10-05T00:0${n}:00Z` });
+    // 模拟旧逻辑留下的积压: 关闭自动取代, 连续导入 3 个版本
+    const spy = jest.spyOn(importer as any, 'supersedePending').mockResolvedValue(0);
+    const ids = [] as string[];
+    for (const n of [1, 2, 3]) ids.push((await put([back(n)])).body.results[0].local_id);
+    spy.mockRestore();
+    expect(await importer.collapseBacklog()).toBe(2);
+    expect(recycled).toEqual(expect.arrayContaining([ids[0], ids[1]]));
+    expect(await importer.collapseBacklog()).toBe(0);
   });
 
   it('migrates the import mapping table using the actual SQLite driver', async () => {

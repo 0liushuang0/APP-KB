@@ -20,6 +20,7 @@ import { Project } from '../projects/entities/project.entity';
 import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { RecycleCleanupService } from './recycle-cleanup.service';
 import { ZhDocumentImport } from './entities/zh-document-import.entity';
+import { ApprovalFlow } from '../approvals/entities/approval-flow.entity';
 import { User } from '../users/entities/user.entity';
 import { ZhDocumentsService } from './zh-documents.service';
 import { ZhDocumentsController, ZhKnowledgeHealthController, ZhServiceTokenGuard } from './zh-documents.controller';
@@ -30,6 +31,7 @@ import { ZhDocumentsController, ZhKnowledgeHealthController, ZhServiceTokenGuard
       Document,
       DocumentVersion,
       ZhDocumentImport,
+      ApprovalFlow,
       User,
       DocumentLink,
       Customer,

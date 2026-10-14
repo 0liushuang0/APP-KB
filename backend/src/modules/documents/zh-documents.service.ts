@@ -1,10 +1,11 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { ZhDocumentImport } from './entities/zh-document-import.entity';
+import { ApprovalFlow } from '../approvals/entities/approval-flow.entity';
 import { Document } from './entities/document.entity';
 import { User } from '../users/entities/user.entity';
 import { CurrentUser, PermissionService } from '../../common/services/permission.service';
@@ -13,14 +14,27 @@ import { ZhDocumentItemDto } from './zh-document.dto';
 
 interface ImportResult { id: string; local_id?: string; action: string; detail?: string; error?: string }
 
+/**
+ * 判重用的内容: 去掉「生成时间/更新时间：yyyy-mm-dd hh:mm」这类每次导出都会变的时间戳。
+ * 需求分析的导出曾写入「现在」, 内容每 5 分钟就不同 —— 7 份源文档累计生成 537 个「源更新」版本、690 份待审批。
+ */
+export function normalizeForHash(content: string): string {
+  return (content || '').replace(
+    /((?:文档)?(?:生成|更新|导出)时间)[：:]\s*\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?/g,
+    '$1：-',
+  );
+}
+
 @Injectable()
-export class ZhDocumentsService {
+export class ZhDocumentsService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(ZhDocumentsService.name);
   private queue: Promise<void> = Promise.resolve();
 
   constructor(
     @InjectRepository(ZhDocumentImport) private readonly imports: Repository<ZhDocumentImport>,
     @InjectRepository(Document) private readonly documentRows: Repository<Document>,
     @InjectRepository(User) private readonly users: Repository<User>,
+    @InjectRepository(ApprovalFlow) private readonly flows: Repository<ApprovalFlow>,
     private readonly documents: DocumentsService,
     private readonly permissions: PermissionService,
   ) {}
@@ -70,7 +84,7 @@ export class ZhDocumentsService {
 
   private async importOne(item: ZhDocumentItemDto): Promise<ImportResult> {
     const updatedAt = new Date(item.updated_at).toISOString();
-    const hash = createHash('sha256').update(JSON.stringify([item.title, item.content, item.project_ref || ''])).digest('hex');
+    const hash = createHash('sha256').update(JSON.stringify([item.title, normalizeForHash(item.content), item.project_ref || ''])).digest('hex');
     const latest = await this.imports.findOne({ where: { source: item.source, externalId: item.id }, order: { revision: 'DESC' } });
     if (latest && new Date(item.updated_at).getTime() < new Date(latest.sourceUpdatedAt).getTime()) {
       return { id: item.id, local_id: latest.documentId, action: 'skipped', detail: 'stale_source_version' };
@@ -96,7 +110,65 @@ export class ZhDocumentsService {
         revision, sourceUpdatedAt: updatedAt, projectRef: item.project_ref || null,
       }));
     });
+    if (latest) await this.supersedePending(item.source, item.id, revision, owner);
     return { id: item.id, local_id: row.id, action: latest ? 'updated' : 'created',
       detail: latest ? 'pending_source_revision_created' : 'pending_review_created' };
+  }
+
+  /**
+   * 同一源文档只保留最新的待审版本: 旧版本若还没审, 审批流标为「已被新版本取代」并移入回收站(30 天内可还原)。
+   * 已审批通过的旧版本不动。直接改审批状态、不逐条发通知(一次可能关几百条)。
+   */
+  private async supersedePending(source: string, externalId: string, keepRevision: number, owner: CurrentUser): Promise<number> {
+    const older = await this.imports.find({ where: { source, externalId }, order: { revision: 'ASC' } });
+    let closed = 0;
+    for (const imp of older) {
+      if (imp.revision >= keepRevision) continue;
+      const doc = await this.documentRows.findOne({ where: { id: imp.documentId }, select: ['id', 'status'] });
+      if (!doc || doc.status !== 'pending') continue;
+      await this.flows.update(
+        { objectType: 'document', objectId: doc.id, status: 'pending' },
+        { status: 'rejected', reviewedBy: owner.userId, comment: `已被更新版本 v${keepRevision} 取代（自动关闭）` },
+      );
+      try {
+        await this.documents.remove(doc.id, owner);
+        closed++;
+      } catch (error) {
+        this.logger.warn(`关闭旧版本失败 ${doc.id}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+    return closed;
+  }
+
+  /**
+   * 一次性收拢历史积压: 每个源文档保留最新版本, 更早的待审版本按上面的规则关闭。可重复执行(没有积压时什么也不做)。
+   * 启动 1 分钟后在后台做, 不拖慢启动; ZH_KB_COLLAPSE_REVISIONS=false 可关闭。
+   */
+  onApplicationBootstrap(): void {
+    if ((process.env.ZH_KB_COLLAPSE_REVISIONS ?? 'true') === 'false') return;
+    const t = setTimeout(() => {
+      void this.serialize(() => this.collapseBacklog()).catch((error) =>
+        this.logger.warn(`收拢历史待审版本失败：${error instanceof Error ? error.message : error}`),
+      );
+    }, 60_000);
+    t.unref?.();
+  }
+
+  async collapseBacklog(): Promise<number> {
+    const latest: Array<{ source: string; externalId: string; revision: number }> = await this.imports
+      .createQueryBuilder('i')
+      .select('i.source', 'source')
+      .addSelect('i.externalId', 'externalId')
+      .addSelect('MAX(i.revision)', 'revision')
+      .groupBy('i.source')
+      .addGroupBy('i.externalId')
+      .having('COUNT(*) > 1')
+      .getRawMany();
+    if (!latest.length) return 0;
+    const owner = await this.owner();
+    let closed = 0;
+    for (const g of latest) closed += await this.supersedePending(g.source, g.externalId, Number(g.revision), owner);
+    if (closed) this.logger.log(`已收拢重复导入：关闭 ${closed} 个被取代的待审版本（已移入回收站，可还原）`);
+    return closed;
   }
 }
