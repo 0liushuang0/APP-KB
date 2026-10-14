@@ -24,7 +24,8 @@ export type LinkEntityType =
   | 'solution'
   | 'quotation'
   | 'contract'
-  | 'project';
+  | 'project'
+  | 'afterSale';
 
 /** 业务对象 → document_links 上的列名 */
 const ENTITY_COLUMN: Record<LinkEntityType, keyof DocumentLink> = {
@@ -35,6 +36,7 @@ const ENTITY_COLUMN: Record<LinkEntityType, keyof DocumentLink> = {
   quotation: 'quotationId',
   contract: 'contractId',
   project: 'projectId',
+  afterSale: 'afterSaleId',
 };
 
 /** 按业务对象推断默认阶段，减少人工选择 */
@@ -46,6 +48,7 @@ const DEFAULT_STAGE: Record<LinkEntityType, DocStage> = {
   quotation: 'quotation',
   contract: 'contract',
   project: 'raw',
+  afterSale: 'raw',
 };
 
 /**
@@ -111,6 +114,10 @@ export class CreateLinkDto {
   @IsOptional()
   @IsString()
   projectId?: string;
+
+  @IsOptional()
+  @IsString()
+  afterSaleId?: string;
 }
 
 /** 链路上的一个节点及其资料 */
@@ -189,6 +196,7 @@ export class DocumentLinksService {
       case 'quotation': linkData.quotationId = dto.entityId; break;
       case 'contract': linkData.contractId = dto.entityId; break;
       case 'project': linkData.projectId = dto.entityId; break;
+      case 'afterSale': linkData.afterSaleId = dto.entityId; break;
     }
 
     /*

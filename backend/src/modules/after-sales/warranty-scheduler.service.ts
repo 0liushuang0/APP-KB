@@ -51,16 +51,16 @@ export class WarrantySchedulerService implements OnModuleInit, OnModuleDestroy {
       const rows = await this.dataSource
         .createQueryBuilder()
         .select([
-          'c.id AS id',
-          'c.contractNo AS contractNo',
-          'c.customerId AS customerId',
-          'c.warrantyExpiryDate AS warrantyExpiryDate',
-          'c.ownerId AS ownerId',
+          'c.id AS "id"',
+          'c.contractNo AS "contractNo"',
+          'c.customerId AS "customerId"',
+          'c.warrantyExpiryDate AS "warrantyExpiryDate"',
+          'c.ownerId AS "ownerId"',
         ])
         .from('contracts', 'c')
-        .where('c.warrantyExpiryDate IS NOT NULL')
-        .andWhere('c.warrantyExpiryDate > :today', { today })
-        .andWhere('c.warrantyExpiryDate <= :in30', { in30 })
+        .where('c."warrantyExpiryDate" IS NOT NULL')
+        .andWhere('c."warrantyExpiryDate" > :today', { today })
+        .andWhere('c."warrantyExpiryDate" <= :in30', { in30 })
         .getRawMany<any>();
 
       if (!rows.length) return;
@@ -81,11 +81,11 @@ export class WarrantySchedulerService implements OnModuleInit, OnModuleDestroy {
           .createQueryBuilder()
           .select('n.id', 'id')
           .from('notifications', 'n')
-          .where('n.recipientId = :rid', { rid: c.ownerId })
+          .where('n."recipientId" = :rid', { rid: c.ownerId })
           .andWhere('n.type = :type', { type: 'warranty' })
           .andWhere('n.title LIKE :title', { title: `%${c.contractNo}%` })
-          .andWhere('n.createdAt >= :dayStart', { dayStart })
-          .andWhere('n.createdAt < :dayEnd', { dayEnd })
+          .andWhere('n."createdAt" >= :dayStart', { dayStart })
+          .andWhere('n."createdAt" < :dayEnd', { dayEnd })
           .getRawOne();
         if (existing) continue;
 

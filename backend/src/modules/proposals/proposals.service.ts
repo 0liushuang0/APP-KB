@@ -170,8 +170,8 @@ export class ProposalsService {
       const r = p.requirementId ? rmap.get(p.requirementId) : undefined;
       return {
         ...p,
-        customerName: r?.customerName,
-        customerShortName: r?.customerShortName || r?.customerName,
+        customerName: r?.customerName ?? null,
+        customerShortName: r?.customerShortName || r?.customerName || null,
         // 没有关联需求就没有项目名称，界面上照实显示，别用旧标题糊过去
         projectName: r?.title,
         requirementNo: r?.requirementNo,

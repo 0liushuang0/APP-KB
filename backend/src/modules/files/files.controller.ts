@@ -1,6 +1,8 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Param,
   Query,
   Res,
@@ -15,6 +17,10 @@ import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+// archiver 的 @types 8.x 与 import 形式不兼容，项目内统一用 require（与 backup.service 同一模式）
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const archiver = require('archiver');
+import { IsArray, IsString, ArrayMaxSize, ArrayMinSize } from 'class-validator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Document } from '../documents/entities/document.entity';
@@ -48,6 +54,15 @@ interface ResolvedFile {
   filePath: string;
   fileName: string;
   mimeType?: string;
+}
+
+/** 批量打包下载的请求体（ValidationPipe whitelist 下必须有显式装饰器） */
+class BatchDownloadDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  documentIds: string[];
 }
 
 /**
@@ -169,7 +184,7 @@ export class FilesController {
 
   /** 文档中心的文件 */
   @Get('documents/:id')
-  async document(
+  async documentFile(
     @Param('id') id: string,
     @Query('download') download: string,
     @CurrentUser() user: CurrentUserType,
@@ -177,6 +192,55 @@ export class FilesController {
   ): Promise<StreamableFile> {
     const f = await this.resolveAccessibleFile('documents', id, user);
     return this.stream(f.filePath, f.fileName, f.mimeType, download === '1', res);
+  }
+
+  /**
+   * 批量打包下载：多个资料压成一个 zip 一次拿走。
+   *
+   * 权限与路径校验和单个下载完全一致（复用 resolveAccessibleFile）——
+   * 无权访问的文件直接 403，不做"跳过继续"：静默缺文件比明确报错更坑人
+   * （用户以为拿全了，实际少了报价单）。同名文件在包内自动加序号。
+   * 直接写 response（不经 TransformInterceptor 包 JSON），zip 流式生成不落盘。
+   */
+  @Post('batch-download')
+  async batchDownload(
+    @Body() dto: BatchDownloadDto,
+    @CurrentUser() user: CurrentUserType,
+    @Res() res: Response,
+  ): Promise<void> {
+    const files: ResolvedFile[] = [];
+    for (const id of dto.documentIds) {
+      files.push(await this.resolveAccessibleFile('documents', id, user));
+    }
+
+    const archive = archiver('zip', { zlib: { level: 6 } });
+    archive.on('warning', () => { /* 单文件异常不中断整包 */ });
+    archive.on('error', () => {
+      if (!res.headersSent) res.status(500).end();
+      else res.end();
+    });
+
+    const used = new Map<string, number>();
+    for (const f of files) {
+      let name = f.fileName || 'unnamed';
+      if (used.has(name)) {
+        const n = used.get(name)! + 1;
+        used.set(name, n);
+        const ext = path.extname(name);
+        name = `${name.slice(0, name.length - ext.length)}(${n})${ext}`;
+      } else {
+        used.set(name, 1);
+      }
+      archive.append(fs.createReadStream(f.filePath), { name });
+    }
+    archive.finalize();
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(`资料打包-${new Date().toISOString().slice(0, 10)}.zip`)}"`,
+    );
+    archive.pipe(res);
   }
 
   /** 需求附件 */

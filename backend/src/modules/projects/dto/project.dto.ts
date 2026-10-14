@@ -1,6 +1,11 @@
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 import { IsString, IsOptional, IsEnum, IsArray, IsDateString } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { PartialType } from '@nestjs/mapped-types';
+
+/** 日期字段空串按未填处理：前端表单没填日期时会发 ''，IsDateString 会拦成 400 */
+const EmptyDateToUndefined = () =>
+  Transform(({ value }) => (typeof value === 'string' && !value.trim() ? undefined : value));
 
 export class CreateProjectDto {
   /** 项目编号由后端继承上游生成（PRJ-2026-007），前端可不传 */
@@ -51,10 +56,12 @@ export class CreateProjectDto {
   dealType?: 'new' | 'repeat' | 'expansion';
 
   @IsOptional()
+  @EmptyDateToUndefined()
   @IsDateString()
   startDate?: Date;
 
   @IsOptional()
+  @EmptyDateToUndefined()
   @IsDateString()
   endDate?: Date;
 
@@ -110,10 +117,12 @@ export class CreateProjectStageDto {
   name: string;
 
   @IsOptional()
+  @EmptyDateToUndefined()
   @IsDateString()
   startDate?: Date;
 
   @IsOptional()
+  @EmptyDateToUndefined()
   @IsDateString()
   endDate?: Date;
 

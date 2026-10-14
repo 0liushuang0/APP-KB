@@ -53,6 +53,12 @@ export class SystemController {
     return this.systemService.getModuleStats();
   }
 
+  /** 数据一致性巡检：悬空引用/重号/脏值（设置页或巡检脚本调用） */
+  @Get('consistency')
+  async consistency() {
+    return this.systemService.consistencyCheck();
+  }
+
   @Get('recent-activities')
   async recentActivities() {
     return this.systemService.getRecentActivities();

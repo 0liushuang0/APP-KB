@@ -68,6 +68,12 @@ export class RequirementsController {
   create(@Body() dto: CreateRequirementDto, @CurrentUser() user: CurrentUserType) {
     return this.requirementsService.create(dto, user);
   }
+  /** 导出预览：返回与 PDF/DOCX 同一份内容的数据，前端渲染成可改值的预览，确认后再导出 */
+  @Get(':id/identification-preview')
+  identificationPreview(@Param('id') id: string) {
+    return this.pdfService.loadPreview(id);
+  }
+
   /** 导出需求识别确认单（PDF），发客户核对用 */
   @Get(':id/identification-pdf')
   async identificationPdf(@Param('id') id: string, @Res() res: Response) {

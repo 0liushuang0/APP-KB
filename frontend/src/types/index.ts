@@ -8,9 +8,13 @@ export interface SelectOption {
 // ── 客户管理下拉选项常量 ──
 export const CUSTOMER_TYPE_OPTIONS = [
   { value: '制造企业', label: '制造企业' },
+  { value: '生产商', label: '生产商' },
+  { value: '终端用户', label: '终端用户' },
   { value: '贸易商', label: '贸易商' },
-  { value: '设计院', label: '设计院' },
   { value: '代理商', label: '代理商' },
+  { value: '工程公司', label: '工程公司（EPC）' },
+  { value: '设计院', label: '设计院' },
+  { value: '科研院所', label: '科研院所' },
   { value: '其他', label: '其他' },
 ]
 export const INDUSTRY_OPTIONS = [
@@ -742,6 +746,7 @@ export type LinkEntityType =
   | 'quotation'
   | 'contract'
   | 'project'
+  | 'afterSale'
 
 export type DocStage = 'raw' | 'requirement' | 'analysis' | 'solution' | 'quotation' | 'contract'
 

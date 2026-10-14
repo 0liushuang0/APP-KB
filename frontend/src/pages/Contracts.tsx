@@ -12,6 +12,7 @@ import { useModuleStats } from '../hooks/useModuleStats'
 import StatCards, { compactMoney } from '../components/StatCards'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
+import AttachmentBadge from '../components/AttachmentBadge'
 import Drawer from '../components/Drawer'
 import DataTable from '../components/DataTable'
 import BatchEditBar from '../components/BatchEditBar'
@@ -334,6 +335,7 @@ export default function Contracts() {
         widthStorageKey="contracts"
         actions={(row) => (
           <div className="flex items-center gap-1">
+            <AttachmentBadge counts={(row as any).attachmentCounts} onClick={() => openEdit(row as Contract)} />
             <button onClick={() => openDetail(row as Contract)} className="text-accent-600 hover:text-accent-700" title={"查看"}
             aria-label="查看">
               <Eye size={15} />
@@ -399,9 +401,12 @@ export default function Contracts() {
               {/* 客户顺着 合同 → 报价 → 方案 → 需求 带出，只读；后端保存时按关联报价继承 */}
               <FormInput
                 value={
-                  seedQuotation?.customerShortName ||
-                  seedQuotation?.customerName ||
-                  (form.customerId ? '已由报价带出（保存后显示名称）' : '')
+                  // 编辑已有合同：列表行已带客户名（attachRelations 顺 合同→报价→方案→需求 取）
+                  editing
+                    ? ((editing as any).customerShortName || (editing as any).customerName || '')
+                    : (seedQuotation?.customerShortName ||
+                       seedQuotation?.customerName ||
+                       (form.customerId ? '已由报价带出（保存后显示名称）' : ''))
                 }
                 readOnly
                 placeholder="由关联报价带出"

@@ -22,7 +22,6 @@ const RecycleBin = lazy(() => import('../pages/settings/RecycleBin'))
 const NumberingRules = lazy(() => import('../pages/settings/NumberingRules'))
 const PerformanceMetrics = lazy(() => import('../pages/settings/PerformanceMetrics'))
 const Customers = lazy(() => import('../pages/Customers'))
-const ManufacturingCases = lazy(() => import('../pages/ManufacturingCases'))
 const Customer360 = lazy(() => import('../pages/Customer360'))
 const Requirements = lazy(() => import('../pages/Requirements'))
 const RequirementDetail = lazy(() => import('../pages/RequirementDetail'))
@@ -110,7 +109,6 @@ export default function AppRouter() {
 
           {/* 业务管理 */}
           <Route path="customers" element={<Customers />} />
-          <Route path="manufacturing" element={<ManufacturingCases />} />
           <Route path="customers/:id" element={<Customer360 />} />
           <Route path="requirements" element={<Requirements />} />
           <Route path="requirements/:id" element={<RequirementDetail />} />

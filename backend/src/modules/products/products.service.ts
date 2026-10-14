@@ -84,22 +84,22 @@ export class ProductsService {
     const rows = await this.productRepository.manager
       .createQueryBuilder()
       .select([
-        'q.id AS quotationId',
-        'q.quotationNo AS quotationNo',
-        'q.status AS status',
-        'q.createdAt AS createdAt',
-        'i.quantity AS quantity',
-        'i.unitPrice AS unitPrice',
-        'r.title AS projectName',
-        'c.code AS customerShortName',
+        'q.id AS "quotationId"',
+        'q.quotationNo AS "quotationNo"',
+        'q.status AS "status"',
+        'q.createdAt AS "createdAt"',
+        'i.quantity AS "quantity"',
+        'i.unitPrice AS "unitPrice"',
+        'r.title AS "projectName"',
+        'c.code AS "customerShortName"',
       ])
       .from('quotation_items', 'i')
-      .innerJoin('quotations', 'q', 'q.id = i.quotationId')
-      .leftJoin('proposals', 'p', 'p.id = q.proposalId')
-      .leftJoin('requirements', 'r', 'r.id = p.requirementId')
-      .leftJoin('customers', 'c', 'c.id = r.customerId')
-      .where('i.productId = :id', { id })
-      .orderBy('q.createdAt', 'DESC')
+      .innerJoin('quotations', 'q', 'q.id = i."quotationId"')
+      .leftJoin('proposals', 'p', 'p.id = q."proposalId"')
+      .leftJoin('requirements', 'r', 'r.id = p."requirementId"')
+      .leftJoin('customers', 'c', 'c.id = r."customerId"')
+      .where('i."productId" = :id', { id })
+      .orderBy('q."createdAt"', 'DESC')
       .limit(50)
       .getRawMany<any>();
 

@@ -31,10 +31,6 @@ import { SystemConfig } from '../modules/system-config/entities/system-config.en
 import { ParamTemplate } from '../modules/param-templates/entities/param-template.entity';
 import { Solution, ConfigOption, PriceTable } from '../modules/solutions/entities/solution.entity';
 import { Material } from '../modules/materials/entities/material.entity';
-import {
-  ManufacturingCase, CustomerEquipment, TechnicalCompliance,
-  ManufacturingReview, EngineeringChange, DeliveryMilestone,
-} from '../modules/manufacturing/entities/manufacturing.entity';
 import { Requirement, RequirementAttachment, RequirementLog } from '../modules/requirements/entities/requirement.entity';
 import { AiCallLog } from '../modules/ai/entities/ai-call-log.entity';
 import { AiFeedback } from '../modules/ai/entities/ai-feedback.entity';
@@ -52,12 +48,6 @@ import { Notification } from '../modules/notifications/entities/notification.ent
 import { AfterSalesTicket } from '../modules/after-sales/entities/ticket.entity';
 
 const entities = [
-  ManufacturingCase,
-  CustomerEquipment,
-  TechnicalCompliance,
-  ManufacturingReview,
-  EngineeringChange,
-  DeliveryMilestone,
   User,
   Department,
   UserGroup,

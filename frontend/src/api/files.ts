@@ -75,6 +75,37 @@ export async function downloadFile(kind: FileKind, id: string, fileName: string)
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
+/**
+ * 批量打包下载：多个资料压成一个 zip（后端 archiver 流式打包）。
+ * POST + body 带 id 列表，鉴权与单个下载一致。
+ */
+export async function batchDownloadFiles(documentIds: string[], zipName?: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/files/batch-download`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentIds }),
+  })
+
+  if (!res.ok) {
+    const message =
+      res.status === 403 ? '无权下载其中的文件' : res.status === 404 ? '文件不存在或已被删除' : '打包下载失败'
+    throw new Error(message)
+  }
+
+  await assertNotJson(res)
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = zipName || `资料打包-${new Date().toISOString().slice(0, 10)}.zip`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 /** 同上，用于在新标签页预览 */
 export async function openPreview(kind: FileKind, id: string): Promise<void> {
   const res = await fetch(previewUrl(kind, id), {

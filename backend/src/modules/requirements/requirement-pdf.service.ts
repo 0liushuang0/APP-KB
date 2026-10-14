@@ -43,7 +43,7 @@ const COMPANY_NAME = '襄阳博亚精工装备股份有限公司';
 /** 行高（1.25 倍行距 ≈ 15pt for 12pt 字体） */
 const LINE_H = 15;
 
-interface TemplateField {
+export interface TemplateField {
   key: string;
   label: string;
   unit?: string;
@@ -191,7 +191,7 @@ export class RequirementPdfService {
 
       // 字段表格（左列按最长标签定宽，表格内行距单倍 240）
       const tableRows: docx.TableRow[] = items.map((f) => {
-        const val = fmt(values[f.key]);
+        const val = fmt(this.pickValue(values, f));
         const label = `${f.label}${f.unit ? `（${f.unit}）` : ''}：`;
         return new docx.TableRow({
           children: [
@@ -324,16 +324,22 @@ export class RequirementPdfService {
     const req = await m
       .createQueryBuilder()
       .select([
-        'r.id AS id', 'r.requirementNo AS requirementNo', 'r.title AS title',
-        'r.templateCategory AS templateCategory', 'r.structuredSpec AS structuredSpec',
-        'r.description AS description', 'r.createdAt AS createdAt',
-        'c.name AS customerName', 'c.code AS customerShortName',
+        'r.id AS "id"', 'r."requirementNo" AS "requirementNo"', 'r.title AS "title"',
+        'r."templateCategory" AS "templateCategory"', 'r."structuredSpec" AS "structuredSpec"',
+        'r.description AS "description"', 'r."createdAt" AS "createdAt"',
+        'c.name AS "customerName"', 'c.code AS "customerShortName"',
       ])
       .from('requirements', 'r')
-      .leftJoin('customers', 'c', 'c.id = r.customerId')
+      .leftJoin('customers', 'c', 'c.id = r."customerId"')
       .where('r.id = :id', { id: requirementId })
       .getRawOne<any>();
     if (!req) throw new NotFoundException('需求不存在');
+    /*
+     * 别名必须带双引号：PG 会把不带引号的别名折叠成小写，
+     * getRawOne 回来的键全变成 requirementno/customername，下面按
+     * req.requirementNo / req.customerName 取值全是 undefined，
+     * 导出来的需求文件除了标题全是「—」。（SQLite 不折叠，所以旧库时代是好的。）
+     */
 
     let fields: TemplateField[] = [];
     if (req.templateCategory) {
@@ -349,9 +355,68 @@ export class RequirementPdfService {
       } catch { /* 模板坏了不阻塞导出 */ }
     }
 
-    let values: Record<string, any> = {};
-    try { values = JSON.parse(req.structuredSpec || '{}') || {}; } catch { values = {}; }
-    return { req, fields, values };
+    let spec: any = {};
+    try { spec = JSON.parse(req.structuredSpec || '{}') || {}; } catch { spec = {}; }
+    const values = this.resolveSpecValues(spec);
+    return { req, fields, values, spec };
+  }
+
+  /**
+   * structuredSpec 有三种历史形态，导出统一摊平成 key/label → 值 的查找表：
+   *   ① 扁平 {key: value}
+   *   ② 需求卡 {fields: [{key, label, value, normalized}]}（结构化识别新版）
+   *   ③ AI 卡 {params: [{key, value, unit}]}（结构化识别旧版，key 是中文）
+   * 模板字段按 key 或中文标签都能命中。exportValues（预览弹窗里人工改过的值）
+   * 最后合并、优先级最高。
+   */
+  private resolveSpecValues(spec: any): Record<string, any> {
+    const out: Record<string, any> = {};
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return out;
+    if (Array.isArray(spec.fields)) {
+      for (const f of spec.fields) {
+        const v = f?.normalized ?? f?.value;
+        if (f?.key) out[f.key] = v;
+        if (f?.label) out[f.label] = v;
+      }
+    }
+    if (Array.isArray(spec.params)) {
+      for (const p of spec.params) {
+        if (p?.key) out[p.key] = p?.value;
+        if (p?.label) out[p.label] = p?.value;
+      }
+    }
+    if (!Array.isArray(spec.fields) && !Array.isArray(spec.params)) {
+      for (const [k, v] of Object.entries(spec)) {
+        if (k === 'exportValues' || v === null || v === undefined || typeof v === 'object') continue;
+        out[k] = v;
+      }
+    }
+    if (spec.exportValues && typeof spec.exportValues === 'object' && !Array.isArray(spec.exportValues)) {
+      Object.assign(out, spec.exportValues);
+    }
+    return out;
+  }
+
+  /** 模板字段取值：先按 key，再按中文标签（AI 卡的 key 就是中文） */
+  private pickValue(values: Record<string, any>, f: TemplateField): any {
+    const v = values[f.key] ?? values[f.label];
+    return v;
+  }
+
+  /** 导出预览：与 PDF/DOCX 完全同一份取数，前端按文档版式渲染、改值后再导出 */
+  async loadPreview(requirementId: string) {
+    const { req, fields, values, spec } = await this.load(requirementId);
+    return {
+      id: req.id,
+      requirementNo: req.requirementNo,
+      title: req.title,
+      templateCategory: req.templateCategory,
+      customerName: req.customerName,
+      docTitle: this.buildTitle(req.templateCategory),
+      fields,
+      values,
+      spec,
+    };
   }
 
   // ============================================================
@@ -562,7 +627,7 @@ export class RequirementPdfService {
           doc.moveTo(M.left + labelW, rowY).lineTo(M.left + labelW, rowY + cellH).stroke();
 
           // label（左列）
-          const raw = values[f.key];
+          const raw = this.pickValue(values, f);
           const filled = raw === undefined || raw === null || raw === '' ? '' : Array.isArray(raw) ? raw.join('、') : String(raw);
           const labelText = `${f.label}${f.unit ? `（${f.unit}）` : ''}：`;
 

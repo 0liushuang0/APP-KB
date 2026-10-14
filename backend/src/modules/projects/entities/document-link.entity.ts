@@ -96,6 +96,10 @@ export class DocumentLink {
   @Column({ nullable: true })
   contractId: string;
 
+  /** 售后工单：工单自己的附件（现场照片、维修报告等），不挂客户名下以免混入全链路资料 */
+  @Column({ nullable: true })
+  afterSaleId: string;
+
   @Column({ type: 'varchar', default: 'raw' })
   stage: DocStage;
 

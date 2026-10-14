@@ -84,7 +84,34 @@ export class CustomersService {
 
     this.permissionQuery.apply(qb, 'c', user);
 
-    return paginate(qb, 'c', query, ['createdAt', 'name', 'status', 'code', 'customerCode', 'industry']);
+    const result = await paginate(qb, 'c', query, ['createdAt', 'name', 'status', 'code', 'customerCode', 'industry']);
+
+    /*
+     * 附件计数：客户附件没有输入/输出语义，显示单个数字。
+     * 口径 = 客户自己上传的附件（linkRole=reference 直接挂 customerId，
+     * 即编辑弹窗/客户资料页传的公司介绍等）。方案/报价等业务环节同步
+     * 进来的资料（source/deliverable）不算在内 —— 那些挂在对应单据上，
+     * 各自列表的徽标里数。
+     */
+    const ids = result.list.map((c) => c.id);
+    const counts = ids.length
+      ? await this.documentLinkRepository.manager
+          .createQueryBuilder()
+          .select('l."customerId"', 'id')
+          .addSelect('COUNT(*)', 'n')
+          .from('document_links', 'l')
+          // 条件分开写：where 字符串里混引号字面量会干扰 TypeORM 的 :...ids 参数替换
+          .where('l."customerId" IN (:...ids)', { ids })
+          .andWhere("l.\"linkRole\" = 'reference'")
+          .groupBy('l."customerId"')
+          .getRawMany<{ id: string; n: string }>()
+      : [];
+    const cmap = new Map(counts.map((c) => [c.id, Number(c.n)]));
+
+    return {
+      ...result,
+      list: result.list.map((c) => ({ ...c, attachmentTotal: cmap.get(c.id) || 0 })),
+    };
   }
 
   /**
@@ -158,9 +185,28 @@ export class CustomersService {
     return out as T;
   }
 
+  /**
+   * 手填客户编号查重（忽略大小写），重号直接 400 并指明占用方。
+   * 客户编号是业务上对外用的标识，库里曾出现两条 CUST-26-001 静默共存。
+   * 留空不拦——新建走自动生成，编辑清空是另一码事。
+   */
+  private async assertCodeAvailable(code: string | undefined, excludeId?: string): Promise<void> {
+    const wanted = (code || '').trim();
+    if (!wanted) return;
+    const qb = this.customerRepository
+      .createQueryBuilder('c')
+      .where('LOWER(c.customerCode) = LOWER(:code)', { code: wanted });
+    if (excludeId) qb.andWhere('c.id != :id', { id: excludeId });
+    const dup = await qb.getOne();
+    if (dup) {
+      throw new BadRequestException(`客户编号 ${wanted} 已被「${dup.name}」占用，请更换编号或留空自动生成`);
+    }
+  }
+
   async create(dtoIn: CreateCustomerDto, user: CurrentUser): Promise<Customer> {
     const dto = this.blankDates(dtoIn);
     const skipApproval = this.permissionService.skipApproval();
+    await this.assertCodeAvailable(dto.customerCode);
     // 自动生成客户编号
     const customerCode = dto.customerCode || await this.numbering.next('customer');
     const saved = await this.transactionService.run(
@@ -194,6 +240,7 @@ export class CustomersService {
       throw new BadRequestException('无权修改该客户');
     }
     const { roleIds, groupIds, ...rest } = this.blankDates(dto as any);
+    await this.assertCodeAvailable(rest.customerCode, id);
     Object.assign(customer, rest);
     if (roleIds !== undefined) customer.roleCodes = roleIds;
     if (groupIds !== undefined) customer.groupIds = groupIds;

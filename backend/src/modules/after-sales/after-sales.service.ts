@@ -60,7 +60,7 @@ export class AfterSalesService {
       contractIds.length
         ? this.ticketRepository.manager
             .createQueryBuilder()
-            .select(['con.id AS id', 'con.contractNo AS contractNo'])
+            .select(['con.id AS "id"', 'con.contractNo AS "contractNo"'])
             .from('contracts', 'con')
             .where('con.id IN (:...ids)', { ids: contractIds })
             .getRawMany<any>()
@@ -68,14 +68,36 @@ export class AfterSalesService {
     ]);
     const custMap = new Map(customers.map((c) => [c.id, c]));
     const conMap = new Map(contracts.map((c) => [c.id, c]));
+
+    // 附件计数（source=输入 / deliverable=输出）：列表操作列回形针徽标用，与其他模块同一口径
+    const ids = rows.map((t) => t.id);
+    const counts = ids.length
+      ? await this.ticketRepository.manager
+          .createQueryBuilder()
+          .select(['l."afterSaleId" AS "id"', 'l."linkRole" AS "role"', 'COUNT(*) AS "n"'])
+          .from('document_links', 'l')
+          .where('l."afterSaleId" IN (:...ids)', { ids })
+          .groupBy('l."afterSaleId"')
+          .addGroupBy('l."linkRole"')
+          .getRawMany<{ id: string; role: string; n: string }>()
+      : [];
+    const cmap = new Map<string, { input: number; output: number }>();
+    for (const c of counts) {
+      const cur = cmap.get(c.id) || { input: 0, output: 0 };
+      if (c.role === 'source') cur.input = Number(c.n);
+      if (c.role === 'deliverable') cur.output = Number(c.n);
+      cmap.set(c.id, cur);
+    }
+
     return rows.map((t) => {
       const c = t.customerId ? custMap.get(t.customerId) : null;
       const con = t.contractId ? conMap.get(t.contractId) : null;
       return {
         ...t,
-        customerName: c?.name,
-        customerShortName: c?.code || c?.name,
+        customerName: c?.name ?? null,
+        customerShortName: c?.code || c?.name || null,
         contractNo: con?.contractNo,
+        attachmentCounts: cmap.get(t.id) || { input: 0, output: 0 },
       };
     });
   }
@@ -187,7 +209,7 @@ export class AfterSalesService {
       .createQueryBuilder()
       .select('r.id', 'id')
       .from('requirements', 'r')
-      .where('r.requirementNo = :no', { no: reqNo })
+      .where('r."requirementNo" = :no', { no: reqNo })
       .getRawOne<{ id: string }>();
 
     return { requirementNo: reqNo, requirementId: reqRow?.id || '' };
@@ -245,7 +267,7 @@ export class AfterSalesService {
       .where(this.permissionService.skipApproval() ? '1=1' : 't.ownerId = :uid', { uid: user.userId })
       .getMany();
 
-    const byType: Record<string, number> = { fault: 0, maintenance: 0, spare_part: 0, visit: 0 };
+    const byType: Record<string, number> = { fault: 0, maintenance: 0, spare_part: 0, visit: 0, material_request: 0, question_reply: 0, other: 0 };
     const productCount: Record<string, number> = {};
     let satisfactionSum = 0;
     let satisfactionCount = 0;
@@ -280,9 +302,9 @@ export class AfterSalesService {
       .createQueryBuilder()
       .select('COUNT(*)', 'count')
       .from('contracts', 'c')
-      .where('c.warrantyExpiryDate IS NOT NULL')
-      .andWhere('c.warrantyExpiryDate > :nowTs', { nowTs })
-      .andWhere('c.warrantyExpiryDate < :in30Ts', { in30Ts })
+      .where('c."warrantyExpiryDate" IS NOT NULL')
+      .andWhere('c."warrantyExpiryDate" > :nowTs', { nowTs })
+      .andWhere('c."warrantyExpiryDate" < :in30Ts', { in30Ts })
       .getRawOne<{ count: number }>();
 
     return {

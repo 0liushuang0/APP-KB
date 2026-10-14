@@ -277,15 +277,15 @@ export class DocumentsService {
     const links = await this.documentRepository.manager
       .createQueryBuilder()
       .select([
-        'l.documentId AS documentId',
-        'l.requirementId AS requirementId',
-        'l.proposalId AS proposalId',
-        'l.quotationId AS quotationId',
-        'l.projectId AS projectId',
-        'l.customerId AS customerId',
+        'l.documentId AS "documentId"',
+        'l.requirementId AS "requirementId"',
+        'l.proposalId AS "proposalId"',
+        'l.quotationId AS "quotationId"',
+        'l.projectId AS "projectId"',
+        'l.customerId AS "customerId"',
       ])
       .from('document_links', 'l')
-      .where('l.documentId IN (:...ids)', { ids })
+      .where('l."documentId" IN (:...ids)', { ids })
       .getRawMany<any>();
 
     const map = new Map<string, string>();

@@ -5,6 +5,7 @@ import OnboardingWizard from './components/OnboardingWizard'
 import PrivacyConsent from './components/PrivacyConsent'
 import KeyboardShortcuts from './components/KeyboardShortcuts'
 import UpdateNotification from './components/UpdateNotification'
+import BackendFreshness from './components/BackendFreshness'
 import { useSystemNameStore } from './store/systemNameStore'
 
 function App() {
@@ -48,6 +49,7 @@ function App() {
       )}
       <KeyboardShortcuts isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
       <UpdateNotification />
+      <BackendFreshness />
     </>
   )
 }

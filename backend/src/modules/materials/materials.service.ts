@@ -115,27 +115,27 @@ export class MaterialsService {
     return this.materialRepository.manager
       .createQueryBuilder()
       .select([
-        'sp.id AS id',
-        'sp.productName AS productName',
-        'sp.brand AS brand',
-        'sp.model AS model',
-        'sp.priceMin AS priceMin',
-        'sp.priceMax AS priceMax',
-        'sp.currency AS currency',
-        'sp.deliveryDays AS deliveryDays',
-        'sp.moq AS moq',
-        'sp.priceDate AS priceDate',
-        's.name AS supplierName',
-        's.origin AS origin',
-        's.tier AS tier',
-        's.rating AS rating',
-        's.onTimeRate AS onTimeRate',
+        'sp.id AS "id"',
+        'sp.productName AS "productName"',
+        'sp.brand AS "brand"',
+        'sp.model AS "model"',
+        'sp.priceMin AS "priceMin"',
+        'sp.priceMax AS "priceMax"',
+        'sp.currency AS "currency"',
+        'sp.deliveryDays AS "deliveryDays"',
+        'sp.moq AS "moq"',
+        'sp.priceDate AS "priceDate"',
+        's.name AS "supplierName"',
+        's.origin AS "origin"',
+        's.tier AS "tier"',
+        's.rating AS "rating"',
+        's.onTimeRate AS "onTimeRate"',
       ])
       .from('supplier_products', 'sp')
-      .leftJoin('suppliers', 's', 's.id = sp.supplierId')
-      .where('sp.materialId = :mid', { mid: materialId })
-      .orderBy('sp.priceMin IS NULL', 'ASC')
-      .addOrderBy('sp.priceMin', 'ASC')
+      .leftJoin('suppliers', 's', 's.id = sp."supplierId"')
+      .where('sp."materialId" = :mid', { mid: materialId })
+      .orderBy('sp."priceMin" IS NULL', 'ASC')
+      .addOrderBy('sp."priceMin"', 'ASC')
       .getRawMany<any>();
   }
 

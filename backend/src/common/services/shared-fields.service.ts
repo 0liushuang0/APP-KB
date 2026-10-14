@@ -54,7 +54,7 @@ export class SharedFieldsService {
     if (origin === 'proposal') {
       const row = await m
         .createQueryBuilder()
-        .select('p.requirementId', 'rid')
+        .select('p."requirementId"', 'rid')
         .from('proposals', 'p')
         .where('p.id = :id', { id })
         .getRawOne<{ rid: string }>();
@@ -64,9 +64,9 @@ export class SharedFieldsService {
     if (origin === 'quotation') {
       const row = await m
         .createQueryBuilder()
-        .select('p.requirementId', 'rid')
+        .select('p."requirementId"', 'rid')
         .from('quotations', 'q')
-        .leftJoin('proposals', 'p', 'p.id = q.proposalId')
+        .leftJoin('proposals', 'p', 'p.id = q."proposalId"')
         .where('q.id = :id', { id })
         .getRawOne<{ rid: string }>();
       return row?.rid || null;
@@ -75,7 +75,7 @@ export class SharedFieldsService {
     // 项目跟踪自身就挂着 requirementId
     const row = await m
       .createQueryBuilder()
-      .select('pr.requirementId', 'rid')
+      .select('pr."requirementId"', 'rid')
       .from('projects', 'pr')
       .where('pr.id = :id', { id })
       .getRawOne<{ rid: string }>();
@@ -132,7 +132,7 @@ export class SharedFieldsService {
     const m = this.dataSource.manager;
     const r = await m
       .createQueryBuilder()
-      .select(['r.id', 'r.requirementNo', 'r.title', 'r.description', 'r.aiAnalysis', 'r.structuredSpec', 'r.customerId'])
+      .select(['r.id AS "id"', 'r."requirementNo" AS "requirementNo"', 'r.title AS "title"', 'r.description AS "description"', 'r."aiAnalysis" AS "aiAnalysis"', 'r."structuredSpec" AS "structuredSpec"', 'r."customerId" AS "customerId"'])
       .from('requirements', 'r')
       .where('r.id = :id', { id: requirementId })
       .getRawOne<any>();
@@ -162,35 +162,35 @@ export class SharedFieldsService {
 
     const requirement = await m
       .createQueryBuilder()
-      .select(['r.id AS id', 'r.requirementNo AS no', 'r.title AS title'])
+      .select(['r.id AS "id"', 'r."requirementNo" AS "no"', 'r.title AS "title"'])
       .from('requirements', 'r')
       .where('r.id = :id', { id: requirementId })
       .getRawOne<any>();
 
     const proposals = await m
       .createQueryBuilder()
-      .select(['p.id AS id', 'p.proposalNo AS no', 'p.status AS status'])
+      .select(['p.id AS "id"', 'p."proposalNo" AS "no"', 'p.status AS "status"'])
       .from('proposals', 'p')
-      .where('p.requirementId = :id', { id: requirementId })
-      .orderBy('p.proposalNo')
+      .where('p."requirementId" = :id', { id: requirementId })
+      .orderBy('p."proposalNo"')
       .getRawMany<any>();
 
     const quotations = proposals.length
       ? await m
           .createQueryBuilder()
-          .select(['q.id AS id', 'q.quotationNo AS no', 'q.status AS status'])
+          .select(['q.id AS "id"', 'q."quotationNo" AS "no"', 'q.status AS "status"'])
           .from('quotations', 'q')
-          .where('q.proposalId IN (:...ids)', { ids: proposals.map((p) => p.id) })
-          .orderBy('q.quotationNo')
+          .where('q."proposalId" IN (:...ids)', { ids: proposals.map((p) => p.id) })
+          .orderBy('q."quotationNo"')
           .getRawMany<any>()
       : [];
 
     const projects = await m
       .createQueryBuilder()
-      .select(['pr.id AS id', 'pr.projectNo AS no', 'pr.dealStage AS dealStage'])
+      .select(['pr.id AS "id"', 'pr."projectNo" AS "no"', 'pr."dealStage" AS "dealStage"'])
       .from('projects', 'pr')
-      .where('pr.requirementId = :id', { id: requirementId })
-      .orderBy('pr.projectNo')
+      .where('pr."requirementId" = :id', { id: requirementId })
+      .orderBy('pr."projectNo"')
       .getRawMany<any>();
 
     return { requirement, proposals, quotations, projects };
@@ -205,14 +205,14 @@ export class SharedFieldsService {
       .createQueryBuilder()
       .select('COUNT(*)', 'c')
       .from('proposals', 'p')
-      .where('p.requirementId = :id', { id: requirementId })
+      .where('p."requirementId" = :id', { id: requirementId })
       .getRawOne<{ c: number }>();
     const q = await m
       .createQueryBuilder()
       .select('COUNT(*)', 'c')
       .from('quotations', 'q')
-      .leftJoin('proposals', 'p', 'p.id = q.proposalId')
-      .where('p.requirementId = :id', { id: requirementId })
+      .leftJoin('proposals', 'p', 'p.id = q."proposalId"')
+      .where('p."requirementId" = :id', { id: requirementId })
       .getRawOne<{ c: number }>();
     return { proposals: Number(p?.c) || 0, quotations: Number(q?.c) || 0 };
   }

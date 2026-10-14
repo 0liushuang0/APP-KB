@@ -42,6 +42,7 @@ import ExportButton from '../components/ExportButton'
 import type { Customer } from '../types'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
+import AttachmentBadge from '../components/AttachmentBadge'
 import Drawer from '../components/Drawer'
 import FormInput from '../components/FormInput'
 import FormSelect from '../components/FormSelect'
@@ -182,10 +183,20 @@ export default function Customers() {
   })
 
 
-  /** 编辑客户时: 该客户已关联的资料(新建时没有) */
+  /**
+   * 编辑客户时的公司介绍附件。
+   *
+   * byEntity('customer') 返回挂在该客户名下的全部资料 —— 方案/报价等页面上传的
+   * 文件也会"同步进客户资料"（挂着 proposalId 的同时带 customerId）。
+   * 这里只留本弹窗上传口径（category=customer_background），
+   * 其余去「客户资料 / 客户360」里看全链路。
+   */
   const { data: existingDocs } = useQuery({
     queryKey: ['customer-docs', editing?.id],
-    queryFn: () => documentApi.byEntity('customer', editing!.id),
+    queryFn: () =>
+      (documentApi.byEntity('customer', editing!.id) as Promise<any[]>).then(
+        (list) => (list || []).filter((d: any) => d.category === 'customer_background'),
+      ),
     enabled: modalOpen && !!editing?.id,
   })
 
@@ -520,6 +531,7 @@ export default function Customers() {
             {
               key: 'customerCode',
               title: '客户编号',
+              sortable: true,
               render: (row: any) => row.customerCode || <span className="text-muted">自动生成</span>,
             },
             { key: 'name', title: '客户名称', sortable: true },
@@ -545,6 +557,7 @@ export default function Customers() {
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}
           actions={(row) => (
             <div className="flex items-center gap-2">
+              <AttachmentBadge total={(row as any).attachmentTotal} onClick={() => openEdit(row)} />
               <button onClick={() => navigate(`/customers/${row.id}`)} className="text-accent-600 hover:text-accent-700" aria-label="客户档案" title="客户360档案">
                 <LayoutDashboard size={16} />
               </button>
@@ -608,7 +621,12 @@ export default function Customers() {
 
         <FormSection title="档案信息">
         <FieldGrid cols={3}>
-          <FormInput label="统一社会信用代码" value={form.creditCode} onChange={(e) => setValue('creditCode', e.target.value)} />
+          <FormInput
+            label="统一社会信用代码 / 境外注册号"
+            value={form.creditCode}
+            onChange={(e) => setValue('creditCode', e.target.value)}
+            helper="境内填统一社会信用代码；境外企业填本国注册号（印度 CIN、欧盟 VAT、美国 EIN 等）"
+          />
           <FormInput label="注册地址" value={form.address} onChange={(e) => setValue('address', e.target.value)} />
           <FormInput label="企业网址" value={form.website} onChange={(e) => setValue('website', e.target.value)} />
           <FormInput label="官方邮箱" type="email" value={form.email} onChange={(e) => setValue('email', e.target.value)} error={errors.email} placeholder="info@company.com" helper="公司通用邮箱，联系人的个人邮箱在下方联系人里填" />

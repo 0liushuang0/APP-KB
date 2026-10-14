@@ -88,8 +88,37 @@ export class RequirementsService {
 
     this.permissionQuery.apply(qb, 'r', user);
 
-    const result = await paginate(qb, 'r', query, ['createdAt', 'title', 'priority', 'status', 'requirementNo']);
-    return { ...result, list: await this.attachCustomerNames(result.list) };
+    const result = await paginate(qb, 'r', query, ['createdAt', 'title', 'priority', 'status', 'requirementNo', 'requirementDate']);
+    const withCustomer = await this.attachCustomerNames(result.list);
+    return { ...result, list: await this.attachAttachmentCounts(withCustomer) };
+  }
+
+  /**
+   * 附件计数（source=输入 / deliverable=输出），列表操作列的回形针徽标显示用，
+   * 与方案/报价/项目列表同一口径。
+   */
+  private async attachAttachmentCounts<T extends { id: string }>(rows: T[]): Promise<(T & {
+    attachmentCounts: { input: number; output: number };
+  })[]> {
+    const ids = rows.map((r) => r.id);
+    const counts = ids.length
+      ? await this.requirementRepository.manager
+          .createQueryBuilder()
+          .select(['l."requirementId" AS "id"', 'l."linkRole" AS "role"', 'COUNT(*) AS "n"'])
+          .from('document_links', 'l')
+          .where('l."requirementId" IN (:...ids)', { ids })
+          .groupBy('l."requirementId"')
+          .addGroupBy('l."linkRole"')
+          .getRawMany<{ id: string; role: string; n: string }>()
+      : [];
+    const map = new Map<string, { input: number; output: number }>();
+    for (const c of counts) {
+      const cur = map.get(c.id) || { input: 0, output: 0 };
+      if (c.role === 'source') cur.input = Number(c.n);
+      if (c.role === 'deliverable') cur.output = Number(c.n);
+      map.set(c.id, cur);
+    }
+    return rows.map((r) => ({ ...r, attachmentCounts: map.get(r.id) || { input: 0, output: 0 } }));
   }
 
   /**
@@ -117,7 +146,7 @@ export class RequirementsService {
     const map = new Map(customers.map((c) => [c.id, c]));
     return rows.map((r) => {
       const c = r.customerId ? map.get(r.customerId) : undefined;
-      return { ...r, customerName: c?.name, customerShortName: c?.code || c?.name };
+      return { ...r, customerName: c?.name ?? null, customerShortName: c?.code || c?.name || null };
     });
   }
 

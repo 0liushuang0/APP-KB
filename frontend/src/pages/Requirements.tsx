@@ -10,28 +10,9 @@ import { useFormValidation, required } from '../hooks/useFormValidation'
 import { usePagedQuery } from '../hooks/usePagedQuery'
 import { useModuleStats } from '../hooks/useModuleStats'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
-
-/** 下载需求识别文件（PDF/DOCX）。受保护接口，带 Cookie fetch + blob 落地 */
-async function downloadIdentification(id: string, no: string, fmt: 'pdf' | 'docx') {
-  const base = import.meta.env.VITE_API_BASE_URL || '/api'
-  const res = await fetch(`${base}/requirements/${id}/identification-${fmt}`, { credentials: 'include' })
-  if (!res.ok) {
-    let message = fmt === 'pdf' ? 'PDF 导出失败' : 'Word 导出失败'
-    try {
-      const j = await res.json()
-      if (typeof j?.message === 'string') message = j.message
-    } catch { /* 非 JSON 用兜底文案 */ }
-    throw new Error(message)
-  }
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${no || '需求'}_需求信息文件.${fmt}`
-  a.click()
-  URL.revokeObjectURL(url)
-}
 import { usePageActions } from '../contexts/PageActionsContext'
+import IdentificationPreviewModal from '../components/IdentificationPreviewModal'
+import AttachmentBadge from '../components/AttachmentBadge'
 import StatCards from '../components/StatCards'
 import ImportButton from '../components/ImportButton'
 import ExportButton from '../components/ExportButton'
@@ -57,6 +38,8 @@ const initialForm = {
   customerId: '',
   requirementType: '',
   category: '',
+  /** 需求时间：客户发出需求、我方收到的时间（可补录，区别于系统创建时间） */
+  requirementDate: '',
   contactName: '',
   contactPhone: '',
   contactEmail: '',
@@ -112,6 +95,8 @@ export default function Requirements() {
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  /** 导出预览弹窗：装当前要导出的需求 id */
+  const [exportId, setExportId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Requirement | null>(null)
   const { values: form, errors, isValid, setValue, setValues, validateAll, reset } = useFormValidation({
     initialValues: initialForm,
@@ -212,6 +197,7 @@ export default function Requirements() {
       customerId: row.customerId || '',
       requirementType: (row as any).requirementType || '',
       category: row.category || '',
+      requirementDate: (row as any).requirementDate ? String((row as any).requirementDate).slice(0, 10) : '',
       contactName: (row as any).contactName || '',
       contactPhone: (row as any).contactPhone || '',
       contactEmail: (row as any).contactEmail || '',
@@ -240,9 +226,14 @@ export default function Requirements() {
   const handleSubmit = () => {
     if (!validateAll()) return
     // 商机字段：空串转 undefined（后端校验数字/日期），数值字段显式转 Number
-    const { expectedAmount, winProbability, expectedDealDate, nextFollowUpDate, lossReason, ...rest } = form
+    // status 只在编辑时提交：新建的初始状态由服务端按审批开关决定，
+    // CreateRequirementDto 没有 status，带上会被 forbidNonWhitelisted 拒成「状态不是可提交的字段」
+    // 需求时间：没填就不发（新建）／发 null 表示清空（编辑），空串会让后端日期校验报错
+    const { expectedAmount, winProbability, expectedDealDate, nextFollowUpDate, lossReason, status, requirementDate, ...rest } = form
     saveMutation.mutate({
+      ...(editing ? { status } : {}),
       ...rest,
+      requirementDate: requirementDate || (editing ? null : undefined),
       expectedAmount: expectedAmount === '' ? undefined : Number(expectedAmount),
       winProbability: winProbability === '' ? undefined : Number(winProbability),
       expectedDealDate: expectedDealDate || undefined,
@@ -360,6 +351,15 @@ export default function Requirements() {
           columns={[
             { key: 'requirementNo', title: '需求编码', sortable: true },
             {
+              key: 'requirementDate',
+              title: '需求时间',
+              sortable: true,
+              render: (row: any) =>
+                (row as any).requirementDate
+                  ? String((row as any).requirementDate).slice(0, 10)
+                  : <span className="text-muted">—</span>,
+            },
+            {
               key: 'customerShortName',
               title: '客户名称',
               render: (row: any) =>
@@ -395,6 +395,7 @@ export default function Requirements() {
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}
           actions={(row) => (
             <div className="flex items-center gap-2">
+              <AttachmentBadge counts={(row as any).attachmentCounts} onClick={() => openEdit(row)} />
               <button onClick={() => openDetail(row)} className="text-accent-600 hover:text-accent-700" title={"查看"}
               aria-label="查看">
                 <Eye size={16} />
@@ -412,14 +413,12 @@ export default function Requirements() {
               aria-label="编辑">
                 <Pencil size={16} />
               </button>
-              {/* 需求识别文件导出（PDF）——发客户核对参数用 */}
+              {/* 需求识别文件：先预览确认/改值，弹窗底部可导出 PDF/Word */}
               <button
-                onClick={() =>
-                  downloadIdentification(row.id, row.requirementNo, 'pdf').catch((e) => toast.error(e?.message || 'PDF 导出失败'))
-                }
+                onClick={() => setExportId(row.id)}
                 className="text-ink-soft hover:text-accent-600"
-                title="导出需求识别文件（PDF）"
-                aria-label="导出识别文件"
+                title="预览需求识别文件"
+                aria-label="预览识别文件"
               >
                 <FileText size={16} />
               </button>
@@ -478,21 +477,48 @@ export default function Requirements() {
               value={form.category}
               onChange={(e) => setValue('category', e.target.value)}
             />
+            <FormInput
+              label="需求时间"
+              type="date"
+              value={form.requirementDate}
+              onChange={(e) => setValue('requirementDate', e.target.value)}
+              helper="客户发出需求、我方收到的时间，可补录"
+            />
             <FormSelect label="优先级" options={REQUIREMENT_PRIORITY_OPTIONS} value={form.priority} onChange={(e) => setValue('priority', e.target.value)} />
-            <FormSelect
-              label="产品类型"
-              options={[{ value: '', label: '未指定（AI 将尝试自动识别）' }, ...templateOptions]}
-              value={form.templateCategory}
-              onChange={(e) => setValue('templateCategory', e.target.value)}
-              helper="选择后自动加载对应参数模板"
-            />
-            <FormSelect
-              label="状态"
-              options={[{ value: '', label: '— 不指定 —' }, ...REQUIREMENT_STATUS_OPTIONS]}
-              value={form.status}
-              onChange={(e) => setValue('status', e.target.value)}
-              helper="需求即商机：已报价/已成交/已失单计入漏斗统计"
-            />
+            {/*
+             * 产品类型改搜索式选择：模板分类几十个，原生下拉翻找费劲。
+             * 选项来自参数模板列表（本地过滤即可），清空 = 未指定（AI 自动识别）。
+             */}
+            <div>
+              <EntityPicker
+                label="产品类型"
+                queryKey="requirement-template-category"
+                value={form.templateCategory}
+                onChange={(v) => setValue('templateCategory', v)}
+                search={async (kw) => {
+                  const q = (kw || '').trim().toLowerCase()
+                  return templateOptions.filter(
+                    (o) => !q || o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
+                  )
+                }}
+                resolve={async (v) => {
+                  const hit = templateOptions.find((o) => o.value === v)
+                  return hit || (v ? { value: v, label: v } : null)
+                }}
+                placeholder="搜索产品类型（如：矫直 / 剪切 / 联轴器…），留空则 AI 自动识别"
+                helper="选择后自动加载对应参数模板"
+              />
+            </div>
+            {/* 新建不显示：初始状态由服务端按审批开关决定，这里选了也不生效 */}
+            {editing && (
+              <FormSelect
+                label="状态"
+                options={[{ value: '', label: '— 不指定 —' }, ...REQUIREMENT_STATUS_OPTIONS]}
+                value={form.status}
+                onChange={(e) => setValue('status', e.target.value)}
+                helper="需求即商机：已报价/已成交/已失单计入漏斗统计"
+              />
+            )}
             {editing && (
               <FormInput
                 label="创建时间"
@@ -575,6 +601,13 @@ export default function Requirements() {
           <p className="text-sm text-ink-soft">确定要删除该需求吗？该需求无关联客户资料与下游。</p>
         )}
       </Modal>
+
+      {/* 导出预览：按文档版式预览、改值后再导出 PDF/Word */}
+      <IdentificationPreviewModal
+        open={!!exportId}
+        onClose={() => setExportId(null)}
+        requirementId={exportId}
+      />
 
     </div>
   )

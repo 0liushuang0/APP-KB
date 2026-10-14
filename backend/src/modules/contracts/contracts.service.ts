@@ -45,10 +45,10 @@ export class ContractsService {
     if (!quotationId) return fallback ?? null;
     const row = await this.contractRepository.manager
       .createQueryBuilder()
-      .select('r.customerId', 'customerId')
+      .select('r."customerId"', 'customerId')
       .from('quotations', 'q')
-      .leftJoin('proposals', 'p', 'p.id = q.proposalId')
-      .leftJoin('requirements', 'r', 'r.id = p.requirementId')
+      .leftJoin('proposals', 'p', 'p.id = q."proposalId"')
+      .leftJoin('requirements', 'r', 'r.id = p."requirementId"')
       .where('q.id = :id', { id: quotationId })
       .getRawOne<{ customerId: string }>();
     return row?.customerId ?? fallback ?? null;
@@ -80,28 +80,71 @@ export class ContractsService {
       ? await this.contractRepository.manager
           .createQueryBuilder()
           .select([
-            'q.id AS quotationId',
-            'q.quotationNo AS quotationNo',
-            'r.title AS projectName',
-            'c.name AS customerName',
-            'c.code AS customerShortName',
+            'q.id AS "quotationId"',
+            'q.quotationNo AS "quotationNo"',
+            'r.title AS "projectName"',
+            'c.name AS "customerName"',
+            'c.code AS "customerShortName"',
           ])
           .from('quotations', 'q')
-          .leftJoin('proposals', 'p', 'p.id = q.proposalId')
-          .leftJoin('requirements', 'r', 'r.id = p.requirementId')
-          .leftJoin('customers', 'c', 'c.id = r.customerId')
+          .leftJoin('proposals', 'p', 'p.id = q."proposalId"')
+          .leftJoin('requirements', 'r', 'r.id = p."requirementId"')
+          .leftJoin('customers', 'c', 'c.id = r."customerId"')
           .where('q.id IN (:...ids)', { ids: quotationIds })
           .getRawMany<any>()
       : [];
     const map = new Map(chain.map((x) => [x.quotationId, x]));
+
+    /*
+     * 链路（合同→报价→方案→需求）任一环悬空时，客户列不该整片变空 ——
+     * 合同自身存着 customerId（保存时按报价继承），链取不到时按它回退。
+     * 历史数据里还有 quotationId='none' 这类导入脏值，同样走到这里兜底。
+     */
+    const broken = rows.filter((c) => {
+      const link = c.quotationId ? map.get(c.quotationId) : undefined;
+      return !link?.customerName && !link?.customerShortName && !!c.customerId;
+    });
+    const fallbackIds = [...new Set(broken.map((c) => c.customerId!))];
+    const fallbacks = fallbackIds.length
+      ? await this.contractRepository.manager
+          .createQueryBuilder()
+          .select(['c.id AS "id"', 'c.name AS "customerName"', 'c.code AS "customerShortName"'])
+          .from('customers', 'c')
+          .where('c.id IN (:...ids)', { ids: fallbackIds })
+          .getRawMany<any>()
+      : [];
+    const fmap = new Map(fallbacks.map((f) => [f.id, f]));
+
+    // 附件计数（source=输入 / deliverable=输出）：列表操作列回形针徽标用，与其他模块同一口径
+    const cids = rows.map((c) => c.id);
+    const ccounts = cids.length
+      ? await this.contractRepository.manager
+          .createQueryBuilder()
+          .select(['l."contractId" AS "id"', 'l."linkRole" AS "role"', 'COUNT(*) AS "n"'])
+          .from('document_links', 'l')
+          .where('l."contractId" IN (:...ids)', { ids: cids })
+          .groupBy('l."contractId"')
+          .addGroupBy('l."linkRole"')
+          .getRawMany<{ id: string; role: string; n: string }>()
+      : [];
+    const ccmap = new Map<string, { input: number; output: number }>();
+    for (const cc of ccounts) {
+      const cur = ccmap.get(cc.id) || { input: 0, output: 0 };
+      if (cc.role === 'source') cur.input = Number(cc.n);
+      if (cc.role === 'deliverable') cur.output = Number(cc.n);
+      ccmap.set(cc.id, cur);
+    }
+
     return rows.map((c) => {
       const link = c.quotationId ? map.get(c.quotationId) : undefined;
+      const fb = link?.customerName || link?.customerShortName ? null : fmap.get(c.customerId || '');
       return {
         ...c,
-        customerName: link?.customerName,
-        customerShortName: link?.customerShortName || link?.customerName,
+        customerName: link?.customerName || fb?.customerName || null,
+        customerShortName: link?.customerShortName || link?.customerName || fb?.customerShortName || fb?.customerName || null,
         projectName: link?.projectName,
         quotationNo: link?.quotationNo,
+        attachmentCounts: ccmap.get(c.id) || { input: 0, output: 0 },
       };
     });
   }

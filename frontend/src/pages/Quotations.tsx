@@ -18,6 +18,7 @@ import StatCards, { compactMoney } from '../components/StatCards'
 import type { Quotation, QuotationItem } from '../types'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
+import AttachmentBadge from '../components/AttachmentBadge'
 import Drawer from '../components/Drawer'
 import FormInput from '../components/FormInput'
 import EntityPicker from '../components/EntityPicker'
@@ -472,6 +473,7 @@ export default function Quotations() {
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}
           actions={(row) => (
             <div className="flex items-center gap-2">
+              <AttachmentBadge counts={(row as any).attachmentCounts} onClick={() => openEdit(row)} />
               <button onClick={() => openDetail(row)} className="text-accent-600 hover:text-accent-700" title={"查看"}
               aria-label="查看">
                 <Eye size={16} />

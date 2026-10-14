@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Upload, FileText, Trash2, Download, ArrowDownToLine, ArrowUpFromLine, Scan } from 'lucide-react'
 import { documentApi } from '../api/services'
-import { downloadFile } from '../api/files'
+import { downloadFile, batchDownloadFiles } from '../api/files'
 import Modal from './Modal'
 import ConfirmDialog from './ConfirmDialog'
 import FilePreview from './FilePreview'
@@ -36,6 +36,30 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
   const [previewDoc, setPreviewDoc] = useState<{ id: string; fileName: string; mimeType?: string; fileSize?: number } | null>(null)
   // 待确认移除的关联（列表里的删除图标挨着预览/下载，误点代价不小）
   const [unlinking, setUnlinking] = useState<{ linkId: string; name: string } | null>(null)
+  // 批量下载：勾选的资料 id 集合 + 打包中状态
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [zipping, setZipping] = useState(false)
+
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const handleBatchDownload = async () => {
+    if (!selected.size) return
+    setZipping(true)
+    try {
+      await batchDownloadFiles([...selected], entityNo ? `${entityNo}_资料打包.zip` : undefined)
+      toast.success(`已打包下载 ${selected.size} 个文件`)
+    } catch (e: any) {
+      toast.error(e?.message || '打包下载失败')
+    } finally {
+      setZipping(false)
+    }
+  }
 
   const queryKey = ['entity-docs', entityType, entityId]
 
@@ -44,6 +68,13 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
     queryFn: () => (entityId ? documentApi.byEntity(entityType, entityId) : []),
     enabled: !!entityId,
   })
+
+  // 依赖 files 的派生量：必须放在 files 声明之后（之前放在前面导致 TDZ，编辑弹窗一开就白屏）
+  const allDocIds = (files as any[]).map((item: any) => (item.document || item).id).filter(Boolean)
+  const allSelected = allDocIds.length > 0 && allDocIds.every((id: string) => selected.has(id))
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(allDocIds))
+  }
 
   const errMsg = (err: any) => err?.response?.data?.message || err?.message || '未知错误'
 
@@ -148,6 +179,13 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
     const isOutgoing = link.linkRole === 'deliverable'
     return (
       <div key={link.id || doc.id} className="flex items-center gap-2 bg-canvas px-3 py-2 rounded-md">
+        <input
+          type="checkbox"
+          checked={selected.has(doc.id)}
+          onChange={() => toggleSelected(doc.id)}
+          className="shrink-0 accent-emerald-600"
+          aria-label={`选择 ${doc.title || doc.fileName || '文件'}`}
+        />
         <FileText size={15} className={`shrink-0 ${isOutgoing ? 'text-success-fg' : 'text-info-fg'}`} />
         <div className="flex-1 min-w-0">
           <div className="text-sm text-ink truncate flex items-center gap-1.5">
@@ -226,6 +264,29 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
 
       {uploadMutation.isPending && (
         <p className="text-caption text-muted">上传中…</p>
+      )}
+
+      {/* 批量下载工具条：有文件才出现；勾选后一键打包成 zip */}
+      {allDocIds.length > 0 && (
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <label className="flex items-center gap-1.5 text-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="accent-emerald-600"
+            />
+            全选（{allDocIds.length} 个文件）
+          </label>
+          <button
+            onClick={handleBatchDownload}
+            disabled={selected.size === 0 || zipping}
+            className="inline-flex items-center gap-1 text-accent-600 hover:text-accent-700 disabled:text-muted disabled:cursor-not-allowed"
+          >
+            <Download size={13} />
+            {zipping ? '打包中…' : selected.size > 0 ? `打包下载 (${selected.size})` : '勾选后打包下载'}
+          </button>
+        </div>
       )}
 
       {/* 确认弹窗：这份文件是客户给你的还是提交给客户的？ */}

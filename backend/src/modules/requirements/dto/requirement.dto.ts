@@ -16,6 +16,12 @@ export class CreateRequirementDto {
   @IsString()
   category?: string;
 
+  /** 需求时间：客户发出需求、我方收到的时间。空串按未填处理（清空编辑框保存时前端会发空串） */
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' && !value.trim() ? undefined : value))
+  @IsDateString()
+  requirementDate?: string;
+
   /** 需求类型：新设备采购/技改升级/备件需求/咨询服务 */
   @IsOptional()
   @IsString()

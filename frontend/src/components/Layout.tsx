@@ -54,9 +54,8 @@ const navGroups: NavGroup[] = [
     label: '客户业务',
     items: [
       { path: '/customers', label: '客户中心', icon: Users },
-      { path: '/manufacturing', label: '制造业务协同', icon: Workflow },
       { path: '/requirements', label: '客户需求', icon: ClipboardList },
-      { path: '/proposals', label: '技术方案', icon: FileText },
+      { path: '/proposals', label: '解决方案', icon: FileText },
       { path: '/quotations', label: '报价管理', icon: DollarSign },
       { path: '/contracts', label: '合同管理', icon: ScrollText },
       { path: '/projects', label: '项目跟踪', icon: FolderKanban },

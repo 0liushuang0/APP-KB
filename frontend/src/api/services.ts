@@ -249,27 +249,11 @@ export const projectApi = {
     apiClient.delete(`/projects/${id}/members/${userId}`).then((res) => res.data),
 }
 
-export const manufacturingApi = {
-  teamUsers: () => apiClient.get<Array<{ id: string; username: string; nickname?: string }>>('/manufacturing/team-users').then(r => r.data),
-  definitions: () => apiClient.get<any>('/manufacturing/definitions').then(r => r.data),
-  summary: () => apiClient.get<any>('/manufacturing/summary').then(r => r.data),
-  cases: () => apiClient.get<any[]>('/manufacturing/cases').then(r => r.data),
-  createCase: (dto: any) => apiClient.post('/manufacturing/cases', dto).then(r => r.data),
-  detail: (id: string) => apiClient.get<any>(`/manufacturing/cases/${id}`).then(r => r.data),
-  updateCase: (id: string, dto: any) => apiClient.patch(`/manufacturing/cases/${id}`, dto).then(r => r.data),
-  advance: (id: string) => apiClient.post(`/manufacturing/cases/${id}/advance`).then(r => r.data),
-  lose: (id: string, version: number, reason: string) =>
-    apiClient.post(`/manufacturing/cases/${id}/lose`, { version, reason }).then(r => r.data),
-  addCompliance: (id: string, dto: any) => apiClient.post(`/manufacturing/cases/${id}/compliance`, dto).then(r => r.data),
-  review: (id: string, dto: any) => apiClient.post(`/manufacturing/cases/${id}/reviews`, dto).then(r => r.data),
-  addChange: (id: string, dto: any) => apiClient.post(`/manufacturing/cases/${id}/changes`, dto).then(r => r.data),
-  approveChange: (id: string, changeId: string) => apiClient.post(`/manufacturing/cases/${id}/changes/${changeId}/approve`).then(r => r.data),
-  addMilestone: (id: string, dto: any) => apiClient.post(`/manufacturing/cases/${id}/milestones`, dto).then(r => r.data),
-  updateMilestone: (id: string, milestoneId: string, dto: any) =>
-    apiClient.patch(`/manufacturing/cases/${id}/milestones/${milestoneId}`, dto).then(r => r.data),
-  equipment: (customerId: string) => apiClient.get<any[]>('/manufacturing/equipment', { params: { customerId } }).then(r => r.data),
-  addEquipment: (dto: any) => apiClient.post('/manufacturing/equipment', dto).then(r => r.data),
-}
+/*
+ * 制造业务协同（/manufacturing）前端入口已下线：模块自上线起 0 数据、无其他页面引用。
+ * 后端 /manufacturing 模块与空表保留未动；若将来恢复前端，把 ManufacturingCases.tsx
+ * 从 git 历史找回并重新注册路由即可（git show HEAD^:.../ManufacturingCases.tsx）。
+ */
 
 /** 回收站里的一条资料（后端已摊平快照，不用再解 entityData） */
 export interface RecycledDocument {
@@ -374,6 +358,9 @@ export const requirementApi = {
     apiClient.post<Requirement>(`/requirements/${id}/analyze-structured`).then((res) => res.data),
   updateSpec: (id: string, spec: any) =>
     apiClient.patch<Requirement>(`/requirements/${id}/spec`, { spec }).then((res) => res.data),
+  /** 导出预览：与 PDF/DOCX 同一份取数，用于弹窗预览、改值后再导出 */
+  identificationPreview: (id: string) =>
+    apiClient.get<any>(`/requirements/${id}/identification-preview`).then((res) => res.data),
   followupDraft: (id: string) =>
     apiClient.post<FollowUpDraft>(`/requirements/${id}/followup-draft`).then((res) => res.data),
   versions: (id: string) =>
@@ -388,6 +375,37 @@ export const requirementApi = {
     id: string,
     dto: { type?: RequirementLog['type']; content: string; changes?: RequirementChangeItem[] },
   ) => apiClient.post<RequirementLog>(`/requirements/${id}/logs`, dto).then((res) => res.data),
+}
+
+/**
+ * 下载需求识别文件（PDF/DOCX）。
+ * 受保护接口：<a href> 不带鉴权，必须 fetch + blob 落地；Cookie 与 Bearer 都带上，
+ * 列表页/详情页/预览弹窗三处共用这一份。
+ */
+export async function downloadRequirementIdentification(id: string, no: string, fmt: 'pdf' | 'docx') {
+  const base = import.meta.env.VITE_API_BASE_URL || '/api'
+  const token = localStorage.getItem('accessToken')
+  const res = await fetch(`${base}/requirements/${id}/identification-${fmt}`, {
+    credentials: 'include',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    let message = fmt === 'pdf' ? 'PDF 导出失败' : 'Word 导出失败'
+    try {
+      const j = await res.json()
+      if (typeof j?.message === 'string') message = j.message
+    } catch { /* 非 JSON 用兜底文案 */ }
+    throw new Error(message)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${no || '需求'}_需求信息文件.${fmt}`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 export const solutionApi = {

@@ -193,9 +193,16 @@ describe('safe-path util', () => {
       (f: string) => ok(f, 'document'),
     );
 
-    it.each(['木马.exe', '脚本.bat', '库.dll', '包.zip'])(
-      '业务资料仍拦下可执行文件与压缩包：%s',
+    it.each(['木马.exe', '脚本.bat', '库.dll'])(
+      '业务资料仍拦下可执行文件：%s',
       (f: string) => no(f, 'document'),
+    );
+
+    // 客户发来的图纸包常是压缩包形态，归档比解析重要 ——
+    // 解析器不支持 zip/rar/7z，走归档不建索引（与 .dwg 同等对待），故放行
+    it.each(['图纸包.zip', '备件清单.rar', '现场照片合集.7z'])(
+      '业务资料放行压缩包（归档用途，不进知识索引）：%s',
+      (f: string) => ok(f, 'document'),
     );
 
     it('无扩展名要拦下', () => no('无后缀文件', 'document'));

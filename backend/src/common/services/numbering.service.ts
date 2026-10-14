@@ -186,11 +186,12 @@ export class NumberingService {
    */
   private async maxSerial(entity: NumberedEntity, prefix: string): Promise<number> {
     const { table, column } = SOURCE[entity];
+    // 列名必须加引号：裸 qb 不做列名替换，PG 会把 camelCase 折叠成小写导致整条查询报错
     const rows = await this.dataSource
       .createQueryBuilder()
-      .select(`t.${column}`, 'no')
+      .select(`t."${column}"`, 'no')
       .from(table, 't')
-      .where(`t.${column} LIKE :p`, { p: `${prefix}%` })
+      .where(`t."${column}" LIKE :p`, { p: `${prefix}%` })
       .getRawMany<{ no: string }>();
 
     let max = 0;
@@ -233,9 +234,9 @@ export class NumberingService {
     const { table, column } = SOURCE[entity];
     const used = await this.dataSource
       .createQueryBuilder()
-      .select(`t.${column}`, 'no')
+      .select(`t."${column}"`, 'no')
       .from(table, 't')
-      .where(`t.${column} LIKE :p`, { p: `${base}%` })
+      .where(`t."${column}" LIKE :p`, { p: `${base}%` })
       .getRawMany<{ no: string }>();
 
     const taken = new Set(used.map((u) => u.no));

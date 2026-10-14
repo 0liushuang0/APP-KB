@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,6 +34,7 @@ export class SystemService implements OnModuleInit {
     private usersService: UsersService,
     private systemConfigService: SystemConfigService,
     private numbering: NumberingService,
+    @InjectDataSource() private dataSource: DataSource,
     @InjectRepository(Customer)
     private customerRepository: Repository<Customer>,
     @InjectRepository(Proposal)
@@ -345,6 +346,54 @@ export class SystemService implements OnModuleInit {
       expiresAt: Date.now() + SystemService.MODULE_STATS_TTL_MS,
     };
     return result;
+  }
+
+  /**
+   * 数据一致性巡检：链路悬空引用 + 单据重号 + 历史脏值。
+   *
+   * 背景：链路外键只存在于应用层（无数据库约束），删除上游或导入历史数据
+   * 都可能产生悬空引用 —— 2026-10-14 实际发生过（删方案重建导致报价链断、
+   * 合同 quotationId 存了字面量 'none'），客户/项目名整片变空才暴露。
+   * 巡检是兜底：主动发现，而不是等界面坏了倒查。
+   * SQL 的驼峰列名一律双引号（SQLite/PG 双方言通用写法）。
+   */
+  async consistencyCheck() {
+    const q = (sql: string) => this.dataSource.query(sql);
+
+    const dangling = async (label: string, sql: string) => {
+      const rows = await q(sql);
+      return { item: label, count: rows.length, sample: rows.slice(0, 3) };
+    };
+
+    const [danglingLinks, duplicates, dirty] = await Promise.all([
+      Promise.all([
+        dangling('报价指向不存在的方案', `SELECT q."quotationNo" AS no FROM quotations q LEFT JOIN proposals p ON p.id = q."proposalId" WHERE q."proposalId" IS NOT NULL AND p.id IS NULL`),
+        dangling('合同指向不存在的报价', `SELECT c."contractNo" AS no FROM contracts c LEFT JOIN quotations q ON q.id = c."quotationId" WHERE c."quotationId" IS NOT NULL AND q.id IS NULL`),
+        dangling('方案指向不存在的需求', `SELECT p."proposalNo" AS no FROM proposals p LEFT JOIN requirements r ON r.id = p."requirementId" WHERE p."requirementId" IS NOT NULL AND r.id IS NULL`),
+        dangling('项目指向不存在的需求', `SELECT pr."projectNo" AS no FROM projects pr LEFT JOIN requirements r ON r.id = pr."requirementId" WHERE pr."requirementId" IS NOT NULL AND r.id IS NULL`),
+        dangling('需求指向不存在的客户', `SELECT r."requirementNo" AS no FROM requirements r LEFT JOIN customers c ON c.id = r."customerId" WHERE r."customerId" IS NOT NULL AND c.id IS NULL`),
+        dangling('售后工单指向不存在的客户', `SELECT t."ticketNo" AS no FROM after_sales_tickets t LEFT JOIN customers c ON c.id = t."customerId" WHERE t."customerId" IS NOT NULL AND c.id IS NULL`),
+        dangling('资料关联指向不存在的单据', `SELECT l.id AS no FROM document_links l LEFT JOIN documents d ON d.id = l."documentId" WHERE d.id IS NULL`),
+      ]),
+      Promise.all([
+        dangling('客户编号重复', `SELECT "customerCode" AS no, COUNT(*) AS n FROM customers WHERE "customerCode" IS NOT NULL AND "customerCode" <> '' GROUP BY "customerCode" HAVING COUNT(*) > 1`),
+        dangling('方案编号重复', `SELECT "proposalNo" AS no, COUNT(*) AS n FROM proposals WHERE "proposalNo" IS NOT NULL GROUP BY "proposalNo" HAVING COUNT(*) > 1`),
+        dangling('报价编号重复', `SELECT "quotationNo" AS no, COUNT(*) AS n FROM quotations WHERE "quotationNo" IS NOT NULL GROUP BY "quotationNo" HAVING COUNT(*) > 1`),
+        dangling('合同编号重复', `SELECT "contractNo" AS no, COUNT(*) AS n FROM contracts WHERE "contractNo" IS NOT NULL AND "contractNo" <> '' GROUP BY "contractNo" HAVING COUNT(*) > 1`),
+        dangling('项目编号重复', `SELECT "projectNo" AS no, COUNT(*) AS n FROM projects WHERE "projectNo" IS NOT NULL AND "projectNo" <> '' GROUP BY "projectNo" HAVING COUNT(*) > 1`),
+      ]),
+      Promise.all([
+        dangling('关联字段存在字面量 none（导入脏值）', `SELECT id AS no FROM contracts WHERE "quotationId" = 'none'`),
+      ]),
+    ]);
+
+    const issues = [...danglingLinks, ...duplicates, ...dirty].filter((c) => c.count > 0);
+    return {
+      checkedAt: new Date().toISOString(),
+      ok: issues.length === 0,
+      issues,
+      summary: issues.length === 0 ? '链路引用、单据编号、字段取值均正常' : `发现 ${issues.length} 类问题`,
+    };
   }
 
   private async computeModuleStats() {

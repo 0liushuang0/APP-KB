@@ -13,6 +13,7 @@ import StatCards from '../components/StatCards'
 import type { Proposal } from '../types'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
+import AttachmentBadge from '../components/AttachmentBadge'
 import Drawer from '../components/Drawer'
 import FormInput from '../components/FormInput'
 import FormSelect from '../components/FormSelect'
@@ -59,7 +60,9 @@ const typeOptions = [
   { value: 'parts', label: '零部件' },
   { value: 'technical', label: '技术方案' },
   { value: 'business', label: '商务方案' },
-  { value: 'solution', label: '解决方案' },
+  // 原叫「解决方案」：模块已更名「解决方案」，类型再叫同名就嵌套了 —— 技术含量与商务内容
+  // 兼备、不偏一边的方案叫「综合方案」。value 不动，存量数据不受影响。
+  { value: 'solution', label: '综合方案' },
 ]
 
 const handleError = (error: any) => {
@@ -161,7 +164,7 @@ export default function Proposals() {
 
   useRegisterPageAssistant({
     key: 'proposals',
-    label: '技术方案',
+    label: '解决方案',
     sourceTypes: ['proposal', 'requirement', 'solution', 'customer', 'product'],
     questions: [
       '本页方案分别对应哪些客户和需求？',
@@ -171,7 +174,7 @@ export default function Proposals() {
       '按当前列表，方案覆盖了哪些设备类型？',
     ],
     context: [
-      `页面：技术方案（共 ${pagination?.total ?? listData.length} 份，当前第 ${pagination?.page ?? 1} 页）`,
+      `页面：解决方案（共 ${pagination?.total ?? listData.length} 份，当前第 ${pagination?.page ?? 1} 页）`,
       search ? `搜索关键词：${search}` : '',
       statusFilter ? `状态筛选：${statusFilter}` : '',
       '当前页方案清单：',
@@ -426,6 +429,11 @@ export default function Proposals() {
 
   const handleSubmit = () => {
     if (!validateAll()) return
+    // 编号被清空 = 要求重新生成（后端按规则继承需求尾号），删除前先确认一次
+    if (editing && (form.proposalNo || '').trim() === '' && editing.proposalNo) {
+      const ok = window.confirm('已清空方案编码，保存后将按规则重新生成编号。确认继续？')
+      if (!ok) return
+    }
     saveMutation.mutate({
       ...form,
       // 只在用户真改过时才写回，否则会用打开弹窗时的旧值盖掉别处的新值
@@ -558,6 +566,7 @@ export default function Proposals() {
                 },
                 { key: 'version', title: '版本', render: (row) => row.version || 'v1' },
                 { key: 'status', title: '状态', sortable: true, render: (row) => <StatusBadge status={row.status} /> },
+                { key: 'createdAt', title: '创建时间', sortable: true, render: (row) => new Date(row.createdAt).toLocaleDateString() },
               ]}
               rowKey={(row) => row.id}
               onRowDoubleClick={(row) => openDetail(row)}
@@ -568,6 +577,7 @@ export default function Proposals() {
               sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}
               actions={(row) => (
                 <div className="flex items-center gap-2">
+                  <AttachmentBadge counts={(row as any).attachmentCounts} onClick={() => openEdit(row)} />
                   <button onClick={() => openDetail(row)} className="text-accent-600 hover:text-accent-700" title={"查看"}
                   aria-label="查看">
                     <Eye size={16} />
@@ -806,7 +816,21 @@ export default function Proposals() {
 
           <FormSection title="基本信息" icon={FileText}>
             <FieldGrid>
-              <FormInput label="方案编号" value={editing?.proposalNo || ''} readOnly placeholder="保存后自动生成（继承需求编号）" />
+              <FormInput
+                label="方案编号"
+                value={editing ? form.proposalNo : ''}
+                onChange={(e) => setValue('proposalNo', e.target.value)}
+                readOnly={!editing}
+                placeholder="保存后自动生成（继承需求编号）"
+                helper={editing ? '可修改（不能与其他方案重复）；清空保存则按规则重新生成' : undefined}
+              />
+              {editing && (
+                <FormInput
+                  label="创建时间"
+                  value={editing.createdAt ? new Date(editing.createdAt).toLocaleString('zh-CN') : ''}
+                  readOnly
+                />
+              )}
               <FormSelect label="方案类型" options={typeOptions} value={form.proposalType} onChange={(e) => setValue('proposalType', e.target.value)} />
           <FormInput
             label="项目名称"

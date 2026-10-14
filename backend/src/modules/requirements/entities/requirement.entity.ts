@@ -32,6 +32,10 @@ export class Requirement {
   @Column({ nullable: true })
   category: string;
 
+  /** 需求时间：客户发出需求、我方收到的时间（与系统创建时间区分，可补录） */
+  @Column({ type: 'date', nullable: true })
+  requirementDate: Date;
+
   /** 需求类型：新设备采购/技改升级/备件需求/咨询服务 */
   @Column({ nullable: true })
   requirementType: string;

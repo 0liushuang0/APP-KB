@@ -119,10 +119,10 @@ export class ProjectsService {
     if (dto.quotationId) {
       const row = await this.projectRepository.manager
         .createQueryBuilder()
-        .select('r.customerId', 'customerId')
+        .select('r."customerId"', 'customerId')
         .from('quotations', 'q')
-        .leftJoin('proposals', 'p', 'p.id = q.proposalId')
-        .leftJoin('requirements', 'r', 'r.id = p.requirementId')
+        .leftJoin('proposals', 'p', 'p.id = q."proposalId"')
+        .leftJoin('requirements', 'r', 'r.id = p."requirementId"')
         .where('q.id = :id', { id: dto.quotationId })
         .getRawOne<{ customerId: string }>();
       if (row?.customerId) return row.customerId;
@@ -165,27 +165,70 @@ export class ProjectsService {
       ? await manager
           .createQueryBuilder()
           .select([
-            'r.id AS requirementId',
-            'r.title AS projectName',
-            'c.name AS customerName',
-            'c.code AS customerShortName',
+            'r.id AS "requirementId"',
+            'r.title AS "projectName"',
+            'c.name AS "customerName"',
+            'c.code AS "customerShortName"',
           ])
           .from('requirements', 'r')
-          .leftJoin('customers', 'c', 'c.id = r.customerId')
+          .leftJoin('customers', 'c', 'c.id = r."customerId"')
           .where('r.id IN (:...ids)', { ids: reqIds })
           .getRawMany<any>()
       : [];
 
     const map = new Map(chain.map((x) => [x.requirementId, x]));
+
+    /*
+     * 直接从合同立项的项目可能没回填 requirementId（立项时链路查询失败、
+     * 或导入数据本就没挂需求），但项目自身存着 customerId ——
+     * 链取不到客户时按它回退，别让客户列整片变空。
+     */
+    const broken = rows.filter((p) => {
+      const link = p.requirementId ? map.get(p.requirementId) : undefined;
+      return !link?.customerName && !link?.customerShortName && !!p.customerId;
+    });
+    const fallbackIds = [...new Set(broken.map((p) => p.customerId!))];
+    const fallbacks = fallbackIds.length
+      ? await manager
+          .createQueryBuilder()
+          .select(['c.id AS "id"', 'c.name AS "customerName"', 'c.code AS "customerShortName"'])
+          .from('customers', 'c')
+          .where('c.id IN (:...ids)', { ids: fallbackIds })
+          .getRawMany<any>()
+      : [];
+    const fmap = new Map(fallbacks.map((f) => [f.id, f]));
+
+    // 附件计数（source=输入 / deliverable=输出），列表操作列显示用
+    const ids = rows.map((p) => p.id);
+    const counts = ids.length
+      ? await manager
+          .createQueryBuilder()
+          .select(['l."projectId" AS "id"', 'l."linkRole" AS "role"', 'COUNT(*) AS "n"'])
+          .from('document_links', 'l')
+          .where('l."projectId" IN (:...ids)', { ids })
+          .groupBy('l."projectId"')
+          .addGroupBy('l."linkRole"')
+          .getRawMany<{ id: string; role: string; n: string }>()
+      : [];
+    const cmap = new Map<string, { input: number; output: number }>();
+    for (const c of counts) {
+      const cur = cmap.get(c.id) || { input: 0, output: 0 };
+      if (c.role === 'source') cur.input = Number(c.n);
+      if (c.role === 'deliverable') cur.output = Number(c.n);
+      cmap.set(c.id, cur);
+    }
+
     return rows.map((p) => {
       const link = p.requirementId ? map.get(p.requirementId) : undefined;
+      const fb = link?.customerName || link?.customerShortName ? null : fmap.get(p.customerId || '');
       return {
         ...p,
-        customerName: link?.customerName,
-        customerShortName: link?.customerShortName || link?.customerName,
+        customerName: link?.customerName || fb?.customerName || null,
+        customerShortName: link?.customerShortName || link?.customerName || fb?.customerShortName || fb?.customerName || null,
         // 没关联需求时退回项目自己的名称，至少不是空白
         projectName: link?.projectName || p.name,
         legacyName: p.name,
+        attachmentCounts: cmap.get(p.id) || { input: 0, output: 0 },
       };
     });
   }
@@ -225,14 +268,14 @@ export class ProjectsService {
     const row = await this.projectRepository.manager
       .createQueryBuilder()
       .select([
-        'q.id AS quotationId',
-        'p.id AS proposalId',
-        'r.id AS requirementId',
+        'q.id AS "quotationId"',
+        'p.id AS "proposalId"',
+        'r.id AS "requirementId"',
       ])
       .from('contracts', 'con')
-      .leftJoin('quotations', 'q', 'q.id = con.quotationId')
-      .leftJoin('proposals', 'p', 'p.id = q.proposalId')
-      .leftJoin('requirements', 'r', 'r.id = p.requirementId')
+      .leftJoin('quotations', 'q', 'q.id = con."quotationId"')
+      .leftJoin('proposals', 'p', 'p.id = q."proposalId"')
+      .leftJoin('requirements', 'r', 'r.id = p."requirementId"')
       .where('con.id = :id', { id: dto.contractId })
       .getRawOne<{ quotationId?: string; proposalId?: string; requirementId?: string }>();
     return {

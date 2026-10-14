@@ -11,6 +11,7 @@ import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation, required } from '../hooks/useFormValidation'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
+import AttachmentBadge from '../components/AttachmentBadge'
 import Drawer from '../components/Drawer'
 import DataTable from '../components/DataTable'
 import BatchEditBar from '../components/BatchEditBar'
@@ -28,7 +29,14 @@ import type { AfterSalesTicket } from '../types'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
 
 const TYPE_LABELS: Record<string, string> = {
-  fault: '故障报修', maintenance: '定期保养', spare_part: '备件需求', visit: '客户回访',
+  fault: '故障报修',
+  maintenance: '定期保养',
+  spare_part: '备件需求',
+  visit: '客户回访',
+  // 服务性事项：不产生合同价值，留在售后跟踪，不进客户需求的商机漏斗
+  material_request: '资料索取',
+  question_reply: '问题回复',
+  other: '其他',
 }
 const PRIORITY_OPTIONS = [
   { value: 'urgent', label: '紧急' },
@@ -327,6 +335,7 @@ export default function AfterSales() {
         widthStorageKey="after-sales"
         actions={(row) => (
           <div className="flex items-center gap-1">
+            <AttachmentBadge counts={(row as any).attachmentCounts} onClick={() => openEdit(row as AfterSalesTicket)} />
             <button onClick={() => openDetail(row as AfterSalesTicket)} className="text-accent-600 hover:text-accent-700" title={"查看"}
             aria-label="查看"><Eye size={15} /></button>
             <button onClick={() => openEdit(row as AfterSalesTicket)} className="text-ink-soft hover:text-ink" title={"编辑"}
@@ -387,10 +396,16 @@ export default function AfterSales() {
         </FormSection>
 
 
-        <FormSection title="售后资料" hint="标记为输入文件(客户提交)或输出文件(我方提交)，同步进客户资料">
+        {/*
+         * 附件挂工单自身（afterSale），不再挂客户：之前按 customer 查会把
+         * 方案/报价等全链路资料都列进来。customerId 仍然带上 —— 工单附件
+         * 同步进客户 360 全链路，但客户编辑弹窗不受影响（那边只看客户背景）。
+         * 新建时工单还没有 id，保存后重新打开编辑即可上传。
+         */}
+        <FormSection title="售后资料" hint={editing ? '现场照片、维修报告等；标记输入(客户提交)或输出(我方提交)' : '工单保存后可上传附件'}>
           <EntityFileUpload
-            entityType="customer"
-            entityId={editing?.customerId || undefined}
+            entityType="afterSale"
+            entityId={editing?.id || undefined}
             entityNo={editing?.ticketNo}
             customerId={editing?.customerId || undefined}
             category="售后资料"

@@ -38,6 +38,7 @@ import type {
 import { REQUIREMENT_STATUS_OPTIONS, requirementStatusLabel } from '../types'
 import DetailLayout from '../components/DetailLayout'
 import StatusBadge from '../components/StatusBadge'
+import IdentificationPreviewModal from '../components/IdentificationPreviewModal'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import Drawer from '../components/Drawer'
@@ -190,6 +191,8 @@ export default function RequirementDetail() {
   const [calcCode, setCalcCode] = useState('line_capacity')
   // 需求识别文件导出菜单（PDF / Word 收进一个下拉）
   const [exportOpen, setExportOpen] = useState(false)
+  // 导出预览弹窗：预览所见 = 导出所得，参数值可在预览里直接改
+  const [previewOpen, setPreviewOpen] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
 
   // 点击菜单外部关闭
@@ -590,6 +593,13 @@ export default function RequirementDetail() {
                   role="menu"
                   className="absolute right-0 top-full mt-2 w-40 eo-card shadow-pop overflow-hidden z-50 py-1"
                 >
+                  <button
+                    role="menuitem"
+                    onClick={() => { setExportOpen(false); setPreviewOpen(true) }}
+                    className="w-full text-left px-3 py-2 text-sm text-ink-soft hover:bg-canvas hover:text-ink transition-colors flex items-center gap-2"
+                  >
+                    <FileDown size={14} /> 预览
+                  </button>
                   <button
                     role="menuitem"
                     onClick={() => { setExportOpen(false); exportIdentification('pdf') }}
@@ -1111,6 +1121,13 @@ export default function RequirementDetail() {
           />
         </div>
       </Drawer>
+
+      {/* 导出预览：按文档版式预览、改值后再导出 PDF/Word */}
+      <IdentificationPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        requirementId={id || null}
+      />
     </>
   )
 }

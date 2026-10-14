@@ -77,28 +77,70 @@ export class QuotationsService {
       ? await manager
           .createQueryBuilder()
           .select([
-            'p.id AS proposalId',
-            'r.title AS projectName',
-            'r.requirementNo AS requirementNo',
-            'c.name AS customerName',
-            'c.code AS customerShortName',
+            'p.id AS "proposalId"',
+            'r.title AS "projectName"',
+            'r.requirementNo AS "requirementNo"',
+            'c.name AS "customerName"',
+            'c.code AS "customerShortName"',
           ])
           .from('proposals', 'p')
-          .leftJoin('requirements', 'r', 'r.id = p.requirementId')
-          .leftJoin('customers', 'c', 'c.id = r.customerId')
+          .leftJoin('requirements', 'r', 'r.id = p."requirementId"')
+          .leftJoin('customers', 'c', 'c.id = r."customerId"')
           .where('p.id IN (:...ids)', { ids: proposalIds })
           .getRawMany<any>()
       : [];
 
     const map = new Map(chain.map((x) => [x.proposalId, x]));
+
+    /*
+     * 链路可能断（方案被删后重建、导入数据的 requirementId 悬空等），
+     * 断了不该让客户整列变空 —— 报价自身就存着 customerId，链取不到时按它回退。
+     */
+    const broken = rows.filter((q) => {
+      const link = q.proposalId ? map.get(q.proposalId) : undefined;
+      return !link?.customerName && !link?.customerShortName && !!q.customerId;
+    });
+    const fallbackIds = [...new Set(broken.map((q) => q.customerId!))];
+    const fallbacks = fallbackIds.length
+      ? await manager
+          .createQueryBuilder()
+          .select(['c.id AS "id"', 'c.name AS "customerName"', 'c.code AS "customerShortName"'])
+          .from('customers', 'c')
+          .where('c.id IN (:...ids)', { ids: fallbackIds })
+          .getRawMany<any>()
+      : [];
+    const fmap = new Map(fallbacks.map((f) => [f.id, f]));
+
+    // 附件计数（source=输入 / deliverable=输出），列表操作列显示用
+    const ids = rows.map((q) => q.id);
+    const counts = ids.length
+      ? await manager
+          .createQueryBuilder()
+          .select(['l."quotationId" AS "id"', 'l."linkRole" AS "role"', 'COUNT(*) AS "n"'])
+          .from('document_links', 'l')
+          .where('l."quotationId" IN (:...ids)', { ids })
+          .groupBy('l."quotationId"')
+          .addGroupBy('l."linkRole"')
+          .getRawMany<{ id: string; role: string; n: string }>()
+      : [];
+    const cmap = new Map<string, { input: number; output: number }>();
+    for (const c of counts) {
+      const cur = cmap.get(c.id) || { input: 0, output: 0 };
+      if (c.role === 'source') cur.input = Number(c.n);
+      if (c.role === 'deliverable') cur.output = Number(c.n);
+      cmap.set(c.id, cur);
+    }
+
     return rows.map((q) => {
       const link = q.proposalId ? map.get(q.proposalId) : undefined;
+      const fb = link?.customerName || link?.customerShortName ? null : fmap.get(q.customerId || '');
       return {
         ...q,
-        customerName: link?.customerName,
-        customerShortName: link?.customerShortName || link?.customerName,
+        customerName: link?.customerName || fb?.customerName || null,
+        customerShortName: link?.customerShortName || link?.customerName || fb?.customerShortName || fb?.customerName || null,
         projectName: link?.projectName,
         requirementNo: link?.requirementNo,
+        attachmentCounts: cmap.get(q.id) || { input: 0, output: 0 },
       };
     });
   }

@@ -14,6 +14,7 @@ import type { Project, ProjectStage, ProjectRisk } from '../types'
 import { PROJECT_TYPE_OPTIONS, TASK_PRIORITY_OPTIONS, TASK_STATUS_OPTIONS } from '../types'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
+import AttachmentBadge from '../components/AttachmentBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Drawer from '../components/Drawer'
 import FormInput from '../components/FormInput'
@@ -324,6 +325,19 @@ export default function Projects() {
     const dto: any = { ...form }
     dto.stages = dto.stages.filter((s: any) => s.name?.trim())
     dto.risks = dto.risks.filter((r: any) => r.title?.trim())
+    /*
+     * 日期没填就别发空串：后端 @IsDateString 会把 '' 拦成 400
+     * 「日期格式不正确」（不填日期新建项目直接失败）。
+     * 新建不发；编辑发 null 表示清空 —— 与客户需求的处理一致。
+     * 阶段里的起止日期同理。
+     */
+    const fixDate = (v: any) => (v ? v : editing ? null : undefined)
+    dto.startDate = fixDate(dto.startDate)
+    dto.endDate = fixDate(dto.endDate)
+    for (const s of dto.stages || []) {
+      s.startDate = fixDate(s.startDate)
+      s.endDate = fixDate(s.endDate)
+    }
     if (editing) {
       // 只在用户真改过时才写回共享的项目名称（projectName 仅 UpdateProjectDto 允许）
       if (form.name !== originalProjectName) dto.projectName = form.name
@@ -482,6 +496,7 @@ export default function Projects() {
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}
           actions={(row) => (
             <div className="flex items-center gap-2">
+              <AttachmentBadge counts={(row as any).attachmentCounts} onClick={() => openEdit(row)} />
               <button onClick={() => openDetail(row)} className="text-accent-600 hover:text-accent-700" title={"查看"}
               aria-label="查看">
                 <Eye size={16} />
