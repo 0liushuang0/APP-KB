@@ -27,7 +27,10 @@ import {
   BookOpen,
   Workflow,
   HelpCircle,
+  Stamp,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import apiClient from '../api/client'
 import { useAuthStore } from '../store/authStore'
 import { useThemeStore } from '../store/themeStore'
 import { useSystemNameStore } from '../store/systemNameStore'
@@ -48,6 +51,7 @@ const navGroups: NavGroup[] = [
     items: [
       { path: '/', label: '业务概览', icon: Workflow },
       { path: '/ai-assistant', label: '智能问答', icon: Bot },
+      { path: '/approvals', label: '审批中心', icon: Stamp },
     ],
   },
   {
@@ -90,6 +94,14 @@ const groupByPath: Record<string, string> = Object.fromEntries(
 )
 
 export default function Layout() {
+  // 审批中心待办数(导航徽标); 1 分钟刷新一次, 拿不到就不显示
+  const { data: pendingRaw } = useQuery({
+    queryKey: ['approvals-pending-count'],
+    queryFn: () => apiClient.get('/approvals/pending-count').then((r) => r.data),
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const pendingApprovals = Number((pendingRaw as any)?.data ?? pendingRaw ?? 0) || 0
   const location = useLocation()
   const navigate = useNavigate()
   const { user, clearAuth, appMode } = useAuthStore()
@@ -213,6 +225,11 @@ export default function Layout() {
                   >
                     <Icon size={18} />
                     <span>{item.label}</span>
+                    {item.path === '/approvals' && pendingApprovals > 0 && !collapsed && (
+                      <span className="ml-auto rounded-full bg-danger-bg text-danger-fg px-1.5 text-caption font-mono" aria-label={`待审批 ${pendingApprovals} 条`}>
+                        {pendingApprovals > 99 ? '99+' : pendingApprovals}
+                      </span>
+                    )}
                   </Link>
                 )
               })}

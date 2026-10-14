@@ -5,6 +5,8 @@ import {
   Body,
   Param,
   Query,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApprovalsService } from './approvals.service';
@@ -37,9 +39,23 @@ export class ApprovalsController {
     @Body('comment') comment?: string,
   ) {
     if (!this.permissionService.canApprove(user)) {
-      throw new Error('无权审核');
+      throw new ForbiddenException('无权审核'); // 原先抛普通 Error, 前端只看到「服务器错误」
     }
-    return this.approvalsService.approveById(id, user?.userId, comment);
+    return this.approvalsService.approveById(id, user?.userId, comment).catch((e: Error) => {
+      throw new BadRequestException(e.message);
+    });
+  }
+
+  /** 批量通过（最多 500 条） */
+  @Post('batch-approve')
+  approveMany(
+    @CurrentUser() user: CurrentUserType,
+    @Body('ids') ids: string[],
+    @Body('comment') comment?: string,
+  ) {
+    if (!this.permissionService.canApprove(user)) throw new ForbiddenException('无权审核');
+    if (!Array.isArray(ids) || !ids.length) throw new BadRequestException('请选择要通过的审批');
+    return this.approvalsService.approveMany(ids.map(String), user?.userId, comment);
   }
 
   @Post(':id/reject')
@@ -49,8 +65,10 @@ export class ApprovalsController {
     @Body('comment') comment?: string,
   ) {
     if (!this.permissionService.canApprove(user)) {
-      throw new Error('无权审核');
+      throw new ForbiddenException('无权审核');
     }
-    return this.approvalsService.rejectById(id, user?.userId, comment);
+    return this.approvalsService.rejectById(id, user?.userId, comment).catch((e: Error) => {
+      throw new BadRequestException(e.message);
+    });
   }
 }

@@ -12,6 +12,7 @@ const PrivacyPolicy = lazy(() => import('../pages/PrivacyPolicy'))
 const TermsOfService = lazy(() => import('../pages/TermsOfService'))
 const WorkflowWorkbench = lazy(() => import('../pages/WorkflowWorkbench'))
 const AIAssistant = lazy(() => import('../pages/AIAssistant'))
+const Approvals = lazy(() => import('../pages/Approvals'))
 const Settings = lazy(() => import('../pages/Settings'))
 const SecuritySettings = lazy(() => import('../pages/settings/Security'))
 const SystemInfo = lazy(() => import('../pages/settings/SystemInfo'))
@@ -129,6 +130,7 @@ export default function AppRouter() {
           <Route path="calc-tools" element={<CalcTools />} />
           <Route path="calc-tools/:code" element={<CalcTools />} />
           <Route path="ai-assistant" element={<AIAssistant />} />
+          <Route path="approvals" element={<Approvals />} />
           <Route path="help" element={<HelpCenter />} />
           <Route path="notifications" element={<Notifications />} />
 

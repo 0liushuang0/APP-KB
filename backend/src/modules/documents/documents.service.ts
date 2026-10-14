@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, Brackets, SelectQueryBuilder, EntityManager } from 'typeorm';
@@ -40,8 +41,19 @@ import {
 import { RecycleBinService } from '../recycle-bin/recycle-bin.service';
 
 @Injectable()
-export class DocumentsService {
+export class DocumentsService implements OnModuleInit {
   private readonly logger = new Logger(DocumentsService.name);
+
+  /**
+   * 资料在审批中心通过后立即建 AI 索引。
+   * 平台导入的资料审核前不索引；原先审核通过后也没有任何地方去索引, 只能等人想起来点「重新索引」。
+   */
+  onModuleInit(): void {
+    this.approvalsService?.onApproved?.('document', async (id, reviewedBy) => {
+      const r = await this.indexDocument(id, { userId: reviewedBy || 'system', roles: ['admin'], isSystemAdmin: true } as any);
+      if (!r.success) this.logger.warn(`审批通过后的索引未完成 ${id}: ${r.message}`);
+    });
+  }
   private uploadDir: string;
   private knowledgeDir: string;
   private publicUrl: string;
@@ -620,6 +632,10 @@ export class DocumentsService {
         const saved = await manager.save(doc);
         await this.approvalsService.approve('document', id, user?.userId, '审核通过', manager);
         return saved;
+      },
+      // 提交后再索引(事务内读不到 approved 状态); 后台进行, 不拖慢审批响应
+      async () => {
+        this.indexDocument(id, user).catch((err) => this.logger.warn(`审批通过后的索引失败 ${id}: ${err?.message}`));
       },
     );
   }

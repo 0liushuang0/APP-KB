@@ -149,7 +149,9 @@ describe('Platform knowledge imports with a real isolated database', () => {
     expect(await database.getRepository(Document).findOneBy({ id: newId })).toMatchObject({ status: 'pending' });
     expect((await put([next])).body.results[0]).toMatchObject({ action: 'skipped', local_id: newId });
     expect((await put([item])).body.results[0]).toMatchObject({ action: 'skipped', local_id: newId, detail: 'stale_source_version' });
-    expect(ai.parseFileDetailed).not.toHaveBeenCalled();
+    // 审批通过的那一份会建一次索引(原先审批后从不索引); 新的待审版本不解析
+    expect(ai.parseFileDetailed).toHaveBeenCalledTimes(1);
+    ai.parseFileDetailed.mockClear();
   });
 
   it('records per-item errors without interrupting other items and rolls back orphan files', async () => {

@@ -55,6 +55,6 @@ import { Document } from '../documents/entities/document.entity';
   ],
   controllers: [AiCallLogController, AiConfigController, AiFeedbackController, AiBudgetController, MatchingController, PromptTemplateController, ReindexController],
   providers: [AiService, KnowledgeSyncService, PromptTemplateService, AiBudgetService, ReindexService, IndexSelfHealService],
-  exports: [TypeOrmModule, PromptTemplateService],
+  exports: [TypeOrmModule, PromptTemplateService, ReindexService],
 })
 export class AiModule {}

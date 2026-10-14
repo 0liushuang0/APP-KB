@@ -12,6 +12,7 @@ import PageLoader from '../components/PageLoader'
 import EmptyState from '../components/EmptyState'
 import StatCards, { compactMoney } from '../components/StatCards'
 import Timeline, { type TimelineItem } from '../components/Timeline'
+import SystemHealthPanel from '../components/SystemHealthPanel'
 
 /**
  * 业务概览（首页）— 合并了原工作流程 + 业务概览两个页面。
@@ -141,6 +142,9 @@ export default function WorkflowWorkbench() {
         这里也用同一个组件，才能保证"改一处、各模块一起跟着变"。
       */}
       <StatCards items={kpiCards} loading={statsQuery.isLoading} skeletonCount={6} />
+
+      {/* 系统健康: 检索覆盖 / 产品报价就绪 / 待审批 / 解析成功率 / 备份, 点击直达处理页 */}
+      <SystemHealthPanel />
 
       {/* 业务流水线 6 列 */}
       <div className="eo-card p-4">

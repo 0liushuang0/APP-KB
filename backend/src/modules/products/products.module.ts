@@ -16,6 +16,6 @@ import { ApprovalsModule } from '../approvals/approvals.module';
   imports: [TypeOrmModule.forFeature([Product, ProductBom, ProductAttachment]), ApprovalsModule],
   controllers: [ProductsController, ProductCompletenessController],
   providers: [PermissionQueryService, TransactionService, ProductsService, ProductCompletenessService, AiService, PermissionService, KnowledgeSyncService],
-  exports: [ProductsService],
+  exports: [ProductsService, ProductCompletenessService],
 })
 export class ProductsModule {}

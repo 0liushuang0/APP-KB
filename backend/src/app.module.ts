@@ -1,3 +1,4 @@
+import { OpsHealthModule } from './modules/ops-health/ops-health.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -117,6 +118,7 @@ import { NumberingModule } from './modules/numbering/numbering.module';
     TagsModule,
     RecycleBinModule,
     MetricsModule,
+    OpsHealthModule,
   ],
   providers: [
     {

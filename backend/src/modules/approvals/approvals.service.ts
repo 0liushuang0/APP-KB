@@ -24,8 +24,34 @@ const OBJECT_TABLES: Record<string, string> = {
   product: 'products', supplier: 'suppliers', document: 'documents',
 };
 
+/** 各类型对象的标题列（审批中心要显示「审的是什么」，而不是一串 id） */
+const OBJECT_TITLE_COLUMNS: Record<string, string> = {
+  customer: 'name', requirement: 'title', proposal: 'title', quotation: '"quotationNo"',
+  contract: 'title', project: 'name', product: 'name', supplier: 'name', document: 'title',
+};
+
+export type ApprovalListRow = ApprovalFlow & { objectTitle?: string | null; objectCategory?: string | null };
+
 @Injectable()
 export class ApprovalsService {
+  /**
+   * 审批通过后的回调（按对象类型注册）。
+   * 例如资料通过后要建 AI 索引 —— 资料模块依赖本模块，反向注入会循环依赖，所以由资料模块在启动时登记回调。
+   */
+  private readonly approvedListeners = new Map<string, Array<(objectId: string, reviewedBy?: string) => Promise<unknown>>>();
+
+  onApproved(objectType: string, listener: (objectId: string, reviewedBy?: string) => Promise<unknown>): void {
+    const list = this.approvedListeners.get(objectType) || [];
+    list.push(listener);
+    this.approvedListeners.set(objectType, list);
+  }
+
+  private fireApproved(objectType: string, objectId: string, reviewedBy?: string): void {
+    for (const fn of this.approvedListeners.get(objectType) || []) {
+      fn(objectId, reviewedBy).catch(() => undefined); // 后续动作失败不影响审批结果
+    }
+  }
+
   constructor(
     @InjectRepository(ApprovalFlow)
     private approvalRepository: Repository<ApprovalFlow>,
@@ -33,13 +59,45 @@ export class ApprovalsService {
     private dataSource: DataSource,
   ) {}
 
-  async findAll(query: QueryApprovalDto): Promise<ApprovalFlow[]> {
+  async findAll(query: QueryApprovalDto): Promise<ApprovalListRow[]> {
     const where: any = {};
     if (query.objectType) where.objectType = query.objectType;
     if (query.status) where.status = query.status;
-    return this.approvalRepository.find({
+    const rows = await this.approvalRepository.find({
       where,
       order: { createdAt: 'DESC' },
+    });
+    return this.withTitles(rows);
+  }
+
+  /** 按类型批量补上对象标题与分类（每类一条 IN 查询） */
+  private async withTitles(rows: ApprovalFlow[]): Promise<ApprovalListRow[]> {
+    const byType = new Map<string, string[]>();
+    for (const r of rows) {
+      if (!OBJECT_TABLES[r.objectType]) continue;
+      byType.set(r.objectType, [...(byType.get(r.objectType) || []), r.objectId]);
+    }
+    const titles = new Map<string, { title: string | null; category: string | null }>();
+    for (const [type, ids] of byType) {
+      const col = OBJECT_TITLE_COLUMNS[type] || 'id';
+      const catCol = type === 'document' ? ', "category"' : '';
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500);
+        const ph = chunk.map((_, k) => `$${k + 1}`).join(', ');
+        try {
+          const found: any[] = await this.dataSource.query(
+            `SELECT "id", ${col} AS "title"${catCol} FROM "${OBJECT_TABLES[type]}" WHERE "id" IN (${ph})`,
+            chunk,
+          );
+          for (const f of found) titles.set(`${type}:${f.id}`, { title: f.title ?? null, category: f.category ?? null });
+        } catch {
+          /* 标题只是辅助信息，查不到不影响审批 */
+        }
+      }
+    }
+    return rows.map((r) => {
+      const t = titles.get(`${r.objectType}:${r.objectId}`);
+      return Object.assign(r, { objectTitle: t?.title ?? null, objectCategory: t?.category ?? null });
     });
   }
 
@@ -150,7 +208,23 @@ export class ApprovalsService {
     // 审批中心与业务页面必须一致：审批记录更新的同时回写单据状态
     await this.syncObjectStatus(flow.objectType, flow.objectId, 'approved');
     this.notify(saved, true, comment);
+    this.fireApproved(flow.objectType, flow.objectId, reviewedBy);
     return saved;
+  }
+
+  /** 批量通过：逐条处理，单条失败不影响其它；返回成功/跳过数 */
+  async approveMany(ids: string[], reviewedBy?: string, comment?: string): Promise<{ approved: number; skipped: number }> {
+    let approved = 0;
+    let skipped = 0;
+    for (const id of [...new Set(ids)].slice(0, 500)) {
+      try {
+        await this.approveById(id, reviewedBy, comment);
+        approved++;
+      } catch {
+        skipped++;
+      }
+    }
+    return { approved, skipped };
   }
 
   async rejectById(
