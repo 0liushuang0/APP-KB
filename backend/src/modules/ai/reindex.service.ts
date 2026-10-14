@@ -26,6 +26,7 @@ import { Supplier } from '../suppliers/entities/supplier.entity';
 import { AfterSalesTicket } from '../after-sales/entities/ticket.entity';
 import { Solution } from '../solutions/entities/solution.entity';
 import { Document } from '../documents/entities/document.entity';
+import { hasRealParsedText } from '../../common/utils/parsed-text.util';
 
 /** 可重建的索引类型；与向量库里的 source_type 一一对应 */
 export const REINDEXABLE_TYPES = [
@@ -53,17 +54,8 @@ export const REINDEXABLE_TYPES = [
 
 export type ReindexType = (typeof REINDEXABLE_TYPES)[number];
 
-/**
- * 是否解析出了真正的正文。
- *
- * 上传后未解析/扫描件的 parsedText 是一句占位提示（「[xxx.pdf] 文件已上传，等待解析。」），
- * 长度也就二三十字。用长度阈值 + 占位话术双重判断，避免把提示语当正文索引。
- */
-function hasRealText(parsedText?: string): boolean {
-  const t = (parsedText || '').trim();
-  if (t.length <= 50) return false;
-  return !/等待解析|文件已上传/.test(t.slice(0, 80));
-}
+/** 是否解析出了真正的正文（排除占位话术与索引状态标记，见 parsed-text.util） */
+const hasRealText = hasRealParsedText;
 
 const TYPE_LABELS: Record<string, string> = {
   customer: '客户',

@@ -39,3 +39,19 @@ def test_real_libreoffice_roundtrip(tmp_path):
     doc_bytes = Path(tmp_path / "a.doc").read_bytes()
     text = parser.parse_document("a.doc", doc_bytes)
     assert "卷取机最大卷重" in text
+
+
+def test_pptx_parsed():
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[1])
+    s.shapes.title.text = "博亚精工智能装备介绍"
+    s.placeholders[1].text = "拉伸弯曲矫直机 Tension leveller，最大带宽 1850mm，速度 300m/min"
+    rows = s.shapes.add_table(2, 2, Inches(1), Inches(4), Inches(4), Inches(1)).table
+    rows.cell(0, 0).text, rows.cell(0, 1).text = "型号", "BJ125D-1450"
+    rows.cell(1, 0).text, rows.cell(1, 1).text = "扭矩", "8 kN·m"
+    buf = io.BytesIO(); prs.save(buf)
+    text = parser.parse_document("介绍.pptx", buf.getvalue())
+    assert "【第1页】" in text and "拉伸弯曲矫直机" in text and "BJ125D-1450" in text

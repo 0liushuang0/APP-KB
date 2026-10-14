@@ -266,7 +266,7 @@ export class AiService {
   async parseFileDetailed(
     filename: string,
     base64Content: string,
-  ): Promise<{ text: string; error?: string }> {
+  ): Promise<{ text: string; error?: string; transient?: boolean }> {
     try {
       const res = await this.postWithRetry('/embeddings/parse', {
         filename,
@@ -281,7 +281,7 @@ export class AiService {
         return { text: '', error: detail };
       }
       this.logger.error('Parse file request failed', err?.message);
-      return { text: '', error: 'AI 服务解析失败，请稍后重试' };
+      return { text: '', error: 'AI 服务解析失败，请稍后重试', transient: true };
     }
   }
 

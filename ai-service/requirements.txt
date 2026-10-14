@@ -22,6 +22,7 @@ openai>=1.50
 
 # === Document Parsing ===
 python-docx>=1.1.0
+python-pptx>=1.0.2  # 产品介绍/方案 PPT 解析
 pypdf>=4.0.2
 # pypdf 解密 AES 加密 PDF 的必需依赖。缺了它，带加密的 PDF 会直接抛
 # DependencyError 读不开（本机就有一份 QWG(LZ)24 武钢标准因此完全没进索引）。

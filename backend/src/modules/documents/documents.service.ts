@@ -5,6 +5,7 @@ import {
   ConflictException,
   Logger,
   OnModuleInit,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, Brackets, SelectQueryBuilder, EntityManager } from 'typeorm';
@@ -31,7 +32,12 @@ import {
   ArchiveType,
 } from '../../common/services/file-archive.service';
 import { TransactionService } from '../../common/services/transaction.service';
-import axios from 'axios';
+import { OFFICE_ZIP_EXTS, slimOfficeFile } from '../../common/utils/office-slim.util';
+import {
+  hasRealParsedText,
+  isParsePlaceholder,
+  parseStatusMarker,
+} from '../../common/utils/parsed-text.util';
 import {
   safeUploadTarget,
   safeReadPath,
@@ -41,7 +47,7 @@ import {
 import { RecycleBinService } from '../recycle-bin/recycle-bin.service';
 
 @Injectable()
-export class DocumentsService implements OnModuleInit {
+export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
   private readonly logger = new Logger(DocumentsService.name);
 
   /**
@@ -54,6 +60,71 @@ export class DocumentsService implements OnModuleInit {
       if (!r.success) this.logger.warn(`审批通过后的索引未完成 ${id}: ${r.message}`);
     });
   }
+
+  /**
+   * 解析器版本。解析能力有实质提升时 +1（v2: 支持 PPT、大文件去图片后解析、解析请求自动重试），
+   * 启动后会把「旧版本解析失败」的业务资料自动重解析一遍，记录版本号，同一版本不重复跑。
+   */
+  static readonly PARSER_VERSION = 2;
+  static readonly REPARSE_EXTS = ['.docx', '.pptx', '.xlsx', '.xls', '.pdf', '.doc', '.txt', '.md', '.csv'];
+
+  onApplicationBootstrap(): void {
+    if (process.env.DOC_REPARSE === 'false' || process.env.NODE_ENV === 'test') return;
+    setTimeout(() => {
+      this.reparseFailedDocuments().catch((e) => this.logger.warn(`历史资料重解析中止: ${e?.message}`));
+    }, 90_000).unref?.();
+  }
+
+  /** 解析失败需要按当前解析器重来的业务资料（不含知识库、图片） */
+  static needsReparse(d: Pick<Document, 'fileName' | 'parsedText' | 'category'>): boolean {
+    if (String(d.category || '').startsWith('knowledge')) return false;
+    const name = (d.fileName || '').toLowerCase();
+    if (!DocumentsService.REPARSE_EXTS.some((e) => name.endsWith(e))) return false;
+    const marker = parseStatusMarker(d.parsedText);
+    if (marker) return marker.reason === 'no_text' && Number(marker.parser || 1) < DocumentsService.PARSER_VERSION;
+    return isParsePlaceholder(d.parsedText);
+  }
+
+  /**
+   * 历史上解析失败的资料重解析一遍。
+   *
+   * 实测已审批的业务资料里 95 份没有正文：一部分是解析请求偶发超时直接落了「无正文」，
+   * 一部分是 PPT（原先不支持）和超过 10MB 的推介资料（原先整份放弃）。
+   * 恰恰是公司简介、产品推介这批最常被问到的资料，AI 问答里一份都搜不到。
+   * 逐份串行跑，不和正常上传抢 AI 服务。
+   */
+  async reparseFailedDocuments(): Promise<{ total: number; fixed: number }> {
+    const rows = await this.documentRepository
+      .createQueryBuilder('d')
+      .select(['d.id', 'd.fileName', 'd.parsedText', 'd.category'])
+      .where("d.category IS NULL OR d.category NOT LIKE 'knowledge%'")
+      .getMany();
+    const todo = rows.filter((d) => DocumentsService.needsReparse(d));
+    if (!todo.length) return { total: 0, fixed: 0 };
+    this.logger.log(`历史资料重解析：${todo.length} 份解析失败的资料按解析器 v${DocumentsService.PARSER_VERSION} 重来`);
+    let fixed = 0;
+    let transientInARow = 0;
+    for (const { id } of todo) {
+      const doc = await this.documentRepository.findOne({ where: { id } });
+      if (!doc) continue;
+      const filePath = this.getFilePath(doc.fileKey);
+      if (!fs.existsSync(filePath)) {
+        await this.saveNoTextMarker(doc, '原始文件不在服务器上');
+        continue;
+      }
+      const r = await this.processDocument(doc, null, { keepOnTransient: true });
+      if (r === 'indexed') fixed++;
+      // AI 服务连不上时不要把整批都记成「无正文」—— 原样留着，下次启动再来
+      transientInARow = r === 'transient' ? transientInARow + 1 : 0;
+      if (transientInARow >= 3) {
+        this.logger.warn('AI 服务暂不可用，历史资料重解析暂停，下次启动继续');
+        break;
+      }
+    }
+    this.logger.log(`历史资料重解析完成：${fixed}/${todo.length} 份取得正文并已入 AI 索引`);
+    return { total: todo.length, fixed };
+  }
+
   private uploadDir: string;
   private knowledgeDir: string;
   private publicUrl: string;
@@ -671,9 +742,7 @@ export class DocumentsService implements OnModuleInit {
    * 用长度阈值 + 占位话术双重判断，避免把提示语当正文索引。
    */
   private static hasRealParsedText(parsedText?: string): boolean {
-    const t = (parsedText || '').trim();
-    if (t.length <= 50) return false;
-    return !/等待解析|文件已上传/.test(t.slice(0, 80));
+    return hasRealParsedText(parsedText);
   }
 
   private isImageFile(fileName: string): boolean {
@@ -681,16 +750,55 @@ export class DocumentsService implements OnModuleInit {
     return DocumentsService.IMAGE_EXTENSIONS.includes(ext);
   }
 
-  private async processDocument(doc: Document, buffer: Buffer): Promise<void> {
+  private async saveNoTextMarker(doc: Document, note = '该文件未能提取出可读正文，不参与 AI 问答'): Promise<void> {
+    doc.parsedText = JSON.stringify({
+      indexed: false,
+      chunks: 0,
+      reason: 'no_text',
+      note,
+      parser: DocumentsService.PARSER_VERSION,
+    });
+    await this.documentRepository.save(doc);
+  }
+
+  /**
+   * 取要送去解析的内容。超过 10MB 的 Office 文档先去掉图片再送（见 office-slim.util）；
+   * 其他超限文件不送，免得 base64 把 Node 堆撑爆。buffer 为空时从磁盘读。
+   */
+  private async loadParsePayload(doc: Document, buffer: Buffer | null): Promise<Buffer | null> {
+    const filePath = this.getFilePath(doc.fileKey);
+    const size = buffer?.length ?? (Number(doc.fileSize || 0) || (fs.existsSync(filePath) ? fs.statSync(filePath).size : 0));
+    if (size <= DocumentsService.MAX_PARSE_SIZE) return buffer ?? (fs.existsSync(filePath) ? fs.readFileSync(filePath) : null);
+    const name = (doc.fileName || '').toLowerCase();
+    if (!OFFICE_ZIP_EXTS.some((e) => name.endsWith(e)) || !fs.existsSync(filePath)) return null;
+    try {
+      const slim = await slimOfficeFile(filePath);
+      this.logger.log(`「${doc.fileName}」${(size / 1048576).toFixed(0)}MB，去图片后 ${(slim.length / 1024).toFixed(0)}KB 送解析`);
+      return slim.length <= DocumentsService.MAX_PARSE_SIZE ? slim : null;
+    } catch (e) {
+      this.logger.warn(`「${doc.fileName}」瘦身失败: ${e?.message}`);
+      return null;
+    }
+  }
+
+  private async processDocument(
+    doc: Document,
+    buffer: Buffer | null,
+    opts: { keepOnTransient?: boolean } = {},
+  ): Promise<'indexed' | 'no_text' | 'transient' | 'skipped' | 'error'> {
     // 图片不参与AI解析，只存文件、不做向量索引
     if (this.isImageFile(doc.fileName)) {
       this.logger.log(`图片文件「${doc.fileName}」跳过AI解析`);
       doc.parsedText = JSON.stringify({ indexed: false, chunks: 0, reason: 'image_file', note: '图片不参与AI智能问答' });
       await this.documentRepository.save(doc);
-      return;
+      return 'skipped';
     }
     try {
-      const parsed = await this.parseDocument(doc.fileName, buffer);
+      const payload = await this.loadParsePayload(doc, buffer);
+      const { text: parsed, transient } = payload
+        ? await this.parseDocument(doc.fileName, payload)
+        : { text: '', transient: false };
+      if (transient && opts.keepOnTransient && !DocumentsService.hasRealParsedText(parsed)) return 'transient';
 
       /*
        * 解析没拿到正文时不要走索引。
@@ -704,18 +812,14 @@ export class DocumentsService implements OnModuleInit {
        */
       if (!DocumentsService.hasRealParsedText(parsed)) {
         this.logger.log(`「${doc.fileName}」未解析出正文，跳过向量索引`);
-        doc.parsedText = JSON.stringify({
-          indexed: false,
-          chunks: 0,
-          reason: 'no_text',
-          note: '该文件未能提取出可读正文，不参与 AI 问答',
-        });
-        await this.documentRepository.save(doc);
-        return;
+        await this.saveNoTextMarker(doc);
+        return 'no_text';
       }
 
       doc.parsedText = parsed;
       await this.documentRepository.save(doc);
+      // 重解析时清掉旧分块（历史上占位话术也被当正文索引过）
+      await this.aiService.deleteChunks('document', doc.id);
 
       const chunks = this.chunkText(parsed, 500, 100).map((content, idx) => ({
         source_type: 'document',
@@ -732,8 +836,10 @@ export class DocumentsService implements OnModuleInit {
       }));
 
       await this.aiService.addChunks(chunks);
+      return 'indexed';
     } catch (err) {
       this.logger.error('Process document error', err?.message);
+      return 'error';
     }
   }
 
@@ -809,20 +915,14 @@ export class DocumentsService implements OnModuleInit {
     }
   }
 
-  private async parseDocument(filename: string, buffer: Buffer): Promise<string> {
-    try {
-      const res = await axios.post(
-        `${this.configService.get('app.aiServiceUrl')}/embeddings/parse`,
-        {
-          filename,
-          content: buffer.toString('base64'),
-        },
-        { timeout: 60000 },
-      );
-      return res.data.text || '';
-    } catch {
-      return this.fallbackParse(filename, buffer);
-    }
+  /**
+   * 走 AiService 的解析接口（连接中断/超时/5xx 自动重试）。
+   * 原来这里单独用 axios 直连、60 秒超时、不重试 —— AI 服务重启或忙的那一会儿上传的资料，
+   * 一次失败就永久记成「无正文」，实测 95 份已审批资料里有相当一部分是这么来的。
+   */
+  private async parseDocument(filename: string, buffer: Buffer): Promise<{ text: string; transient: boolean }> {
+    const r = await this.aiService.parseFileDetailed(filename, buffer.toString('base64'));
+    return { text: r.text || this.fallbackParse(filename, buffer), transient: !!r.transient };
   }
 
   private fallbackParse(filename: string, buffer: Buffer): string {
@@ -970,8 +1070,9 @@ export class DocumentsService implements OnModuleInit {
      * 就能把 Node 堆撑爆（reindexKnowledge 的注释里写着"实测把后端进程拖崩过两次"）。
      * AI 服务侧虽然也校验 10MB 并拒绝，但那时候后端早已经 OOM 了，拦不住。
      */
-    const size = Number(doc.fileSize || 0) || fs.statSync(filePath).size;
-    if (size > DocumentsService.MAX_PARSE_SIZE) {
+    // 超限的 Office 文档去图片后再解析；其他超限文件（多为扫描 PDF）跳过
+    const fileBuffer = await this.loadParsePayload(doc, null);
+    if (!fileBuffer) {
       const mb = (DocumentsService.MAX_PARSE_SIZE / 1024 / 1024).toFixed(0);
       return {
         success: false,
@@ -979,9 +1080,6 @@ export class DocumentsService implements OnModuleInit {
         message: `文件超过 ${mb}MB，已跳过 AI 索引（这类文件多为扫描件，本来也提不出文字）`,
       };
     }
-
-    // 读取文件 → base64
-    const fileBuffer = fs.readFileSync(filePath);
     const base64Content = fileBuffer.toString('base64');
 
     // 发送给AI服务解析

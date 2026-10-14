@@ -149,7 +149,7 @@ def decode_text(content: bytes, filename: str = "") -> str:
 
 
 # 明确支持的扩展名。不在这里的一律拒绝，不再"尽量解一下"。
-SUPPORTED_EXTENSIONS = (".pdf", ".docx", ".xlsx", ".xls", ".md", ".txt", ".csv")
+SUPPORTED_EXTENSIONS = (".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xls", ".md", ".txt", ".csv")
 
 
 def _find_soffice() -> str | None:
@@ -162,7 +162,7 @@ def _find_soffice() -> str | None:
     found = shutil.which("soffice") or shutil.which("soffice.exe")
     if found:
         return found
-    for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), "D:\Program Files"):
+    for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), r"D:\Program Files"):
         if root:
             cand = os.path.join(root, "LibreOffice", "program", "soffice.exe")
             if os.path.isfile(cand):
@@ -209,6 +209,8 @@ def parse_document(filename: str, content: bytes) -> str:
             text = parse_pdf(content)
         elif lower_name.endswith(".docx"):
             text = parse_docx(content)
+        elif lower_name.endswith(".pptx"):
+            text = parse_pptx(content)
         elif lower_name.endswith(".xlsx"):
             text = parse_excel(content)
         elif lower_name.endswith(".xls"):
@@ -247,6 +249,33 @@ def parse_document(filename: str, content: bytes) -> str:
     except Exception as exc:
         logger.error(f"Failed to parse document {filename}: {exc}")
         raise ValueError(f"Failed to parse document {filename}: {exc}") from exc
+
+
+def parse_pptx(content: bytes) -> str:
+    """PPT: 按页取标题、文本框、表格与备注。博亚的产品介绍、方案大多是 PPT，原先不支持，一律记为「无正文」。"""
+    from pptx import Presentation
+
+    prs = Presentation(io.BytesIO(content))
+    pages = []
+    for no, slide in enumerate(prs.slides, 1):
+        parts = []
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False) and shape.has_text_frame:
+                t = "\n".join(p.text.strip() for p in shape.text_frame.paragraphs if p.text.strip())
+                if t:
+                    parts.append(t)
+            if getattr(shape, "has_table", False) and shape.has_table:
+                for row in shape.table.rows:
+                    cells = [c.text.strip() for c in row.cells]
+                    if any(cells):
+                        parts.append(" | ".join(cells))
+        if slide.has_notes_slide:
+            note = slide.notes_slide.notes_text_frame.text.strip() if slide.notes_slide.notes_text_frame else ""
+            if note:
+                parts.append(f"备注：{note}")
+        if parts:
+            pages.append(f"【第{no}页】\n" + "\n".join(parts))
+    return "\n\n".join(pages)
 
 
 def parse_pdf(content: bytes) -> str:
