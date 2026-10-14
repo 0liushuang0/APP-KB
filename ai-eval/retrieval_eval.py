@@ -78,9 +78,12 @@ def build_set(env: dict) -> list[dict]:
     qs += [{"type": "customer", "id": i, "q": f"{n}是哪个行业、哪个区域的客户？"} for i, n in cur.fetchall()]
 
     # 业务资料: 已审批、非知识资料、有正文(>50 字), 跳过图片(标题多为编号, 不是业务问题)
+    # 注意: 解析失败时 parsedText 是状态标记 JSON({"indexed":false,...}), 也超过 50 字, 要排除;
+    # 2026-10-15 首版题集没排除, 10 道资料题恰好都落在解析失败的资料上(0% 反映的是解析失败)
     cur.execute("""select id::text, coalesce(title, "fileName") from documents
                    where status = 'approved' and category not like 'knowledge%%'
                      and length(coalesce("parsedText",'')) > 50
+                     and coalesce("parsedText",'') not like '{"indexed"%%'
                      and lower("fileName") !~ '\\.(jpg|jpeg|png|gif|bmp)$'
                    order by id limit %s""", (PER_TYPE,))
     qs += [{"type": "document", "id": i, "q": f"《{clean_title(t)}》主要讲了什么？"} for i, t in cur.fetchall()]
