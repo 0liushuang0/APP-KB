@@ -17,6 +17,8 @@ import {
   UserCheck,
   UserPlus,
   Moon,
+  Paperclip,
+  FileText,
 } from 'lucide-react'
 import { customerApi } from '../api/services'
 import {
@@ -50,12 +52,13 @@ import PageLoader from '../components/PageLoader'
 import ErrorState from '../components/ErrorState'
 import PageHeader from '../components/PageHeader'
 import { FormSection, FieldGrid, DetailHeader, DetailSection, DescList } from '../components/layout-kit'
+import { documentApi } from '../api/services'
+import { downloadFile } from '../api/files'
 
 const initialForm = {
   name: '',
   code: '',
   customerCode: '',
-  status: '',
   industry: '',
   scale: '',
   level: '',
@@ -64,6 +67,9 @@ const initialForm = {
   creditCode: '',
   address: '',
   website: '',
+  email: '',
+  phone: '',
+  postalCode: '',
   description: '',
   customerType: '',
   salesPerson: '',
@@ -129,11 +135,26 @@ export default function Customers() {
   /** 打开弹窗时从服务端读到的原始联系人，保存时用来判断哪几行真改过 */
   const originalContactsRef = useRef<ContactDraft[]>([])
   const [saving, setSaving] = useState(false)
-  const { values: form, errors, isValid, setValue, setValues, validateAll, reset } = useFormValidation({
+  /** 本次要上传的公司介绍文件(客户保存后才上传) */
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const attachInputRef = useRef<HTMLInputElement>(null)
+  const { values: form, errors, setValue, setValues, validateAll, collectErrors, reset } = useFormValidation({
     initialValues: initialForm,
     rules: {
-      name: required('请输入客户名称'),
+      name: (v: any) => (String(v ?? '').trim() ? undefined : '请输入客户名称'),
       industry: required('请选择所属行业'),
+      email: (v: any) => {
+        const t = String(v ?? '').trim()
+        return !t || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t) ? undefined : '邮箱格式不正确，应形如 info@company.com'
+      },
+      phone: (v: any) => {
+        const t = String(v ?? '').trim()
+        return !t || /^[0-9+\-()\s转#,*]{5,40}$/.test(t) ? undefined : '电话只能含数字、空格和 + - ( ) 转，至少 5 位'
+      },
+      postalCode: (v: any) => {
+        const t = String(v ?? '').trim()
+        return !t || /^[A-Za-z0-9\- ]{3,10}$/.test(t) ? undefined : '邮编应为 3–10 位数字或字母'
+      },
     },
   })
 
@@ -161,6 +182,13 @@ export default function Customers() {
   })
 
 
+  /** 编辑客户时: 该客户已关联的资料(新建时没有) */
+  const { data: existingDocs } = useQuery({
+    queryKey: ['customer-docs', editing?.id],
+    queryFn: () => documentApi.byEntity('customer', editing!.id),
+    enabled: modalOpen && !!editing?.id,
+  })
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => customerApi.remove(id),
     onSuccess: () => {
@@ -185,6 +213,7 @@ export default function Customers() {
     reset()
     setContacts([])
     setRemovedContactIds([])
+    setPendingFiles([])
     setModalOpen(true)
   }
 
@@ -194,7 +223,6 @@ export default function Customers() {
       name: row.name || '',
       code: row.code || '',
       customerCode: (row as any).customerCode || '',
-      status: row.status || '',
       industry: row.industry || '',
       scale: row.scale || '',
       level: (row as any).level || '',
@@ -203,6 +231,9 @@ export default function Customers() {
       creditCode: (row as any).creditCode || '',
       address: row.address || '',
       website: row.website || '',
+      email: (row as any).email || '',
+      phone: (row as any).phone || '',
+      postalCode: (row as any).postalCode || '',
       description: row.description || '',
       customerType: (row as any).customerType || '',
       salesPerson: (row as any).salesPerson || '',
@@ -211,6 +242,7 @@ export default function Customers() {
     })
     setContacts([])
     setRemovedContactIds([])
+    setPendingFiles([])
     originalContactsRef.current = []
     setModalOpen(true)
 
@@ -244,6 +276,7 @@ export default function Customers() {
     // 取消编辑时把待删清单一并丢掉，否则下次保存会误删上次点掉的联系人
     setContacts([])
     setRemovedContactIds([])
+    setPendingFiles([])
     originalContactsRef.current = []
   }
 
@@ -253,9 +286,16 @@ export default function Customers() {
   }
 
   const handleSubmit = async () => {
-    if (!validateAll()) return
+    if (!validateAll()) {
+      // 确定按钮不再灰着不让点: 点了就明确告诉用户是哪几栏不对
+      toast.error(collectErrors().join('；') || '请检查必填项（客户名称、所属行业）')
+      return
+    }
     setSaving(true)
-    const dto: any = { ...form }
+    // 文本栏统一去掉首尾空格(复制粘贴常带进去); status 是审批流状态, 不由这个表单提交
+    const dto: any = {}
+    for (const [k, v] of Object.entries(form)) dto[k] = typeof v === 'string' ? v.trim() : v
+    delete dto.status
     try {
       let savedCustomerId = editing?.id
       if (editing) {
@@ -307,10 +347,39 @@ export default function Customers() {
         }
       }
 
+      // 附件: 客户已保存才有 id, 逐个上传并关联到客户(进入「客户背景」资料)
+      let failed = 0
+      if (savedCustomerId && pendingFiles.length) {
+        for (const file of pendingFiles) {
+          try {
+            const fd = new FormData()
+            fd.append('file', file)
+            fd.append('title', file.name)
+            fd.append('category', 'customer_background')
+            fd.append('visibility', dto.visibility || 'public')
+            const doc: any = await documentApi.upload(fd)
+            await documentApi.createLink(doc?.id || doc?.data?.id, {
+              entityType: 'customer',
+              entityId: savedCustomerId,
+              customerId: savedCustomerId,
+              stage: 'raw',
+              category: 'customer_background',
+              linkRole: 'reference',
+            })
+          } catch (err: any) {
+            failed++
+            toast.error(`附件「${file.name}」上传失败：${err?.response?.data?.message || err?.message || '未知原因'}`)
+          }
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['documents'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-docs', savedCustomerId] })
       closeModal()
       refetch()
-      toast.success(editing ? '已保存' : '客户已创建')
+      if (failed) toast.warning(`客户已${editing ? '保存' : '创建'}，但有 ${failed} 个附件没传上，可编辑客户后重传`)
+      else toast.success(editing ? '已保存' : '客户已创建')
     } catch (error: any) {
       handleError(error)
     } finally {
@@ -499,7 +568,7 @@ export default function Customers() {
         title={editing ? '编辑客户' : '新建客户'}
         onConfirm={handleSubmit}
         loading={saving}
-        confirmDisabled={!isValid}
+        confirmDisabled={saving}
         size="lg"
       >
         <div className="space-y-6">
@@ -537,6 +606,9 @@ export default function Customers() {
           <FormInput label="统一社会信用代码" value={form.creditCode} onChange={(e) => setValue('creditCode', e.target.value)} />
           <FormInput label="注册地址" value={form.address} onChange={(e) => setValue('address', e.target.value)} />
           <FormInput label="企业网址" value={form.website} onChange={(e) => setValue('website', e.target.value)} />
+          <FormInput label="官方邮箱" type="email" value={form.email} onChange={(e) => setValue('email', e.target.value)} error={errors.email} placeholder="info@company.com" helper="公司通用邮箱，联系人的个人邮箱在下方联系人里填" />
+          <FormInput label="官方电话" value={form.phone} onChange={(e) => setValue('phone', e.target.value)} error={errors.phone} placeholder="如 +91 22 1234 5678" />
+          <FormInput label="邮编" value={form.postalCode} onChange={(e) => setValue('postalCode', e.target.value)} error={errors.postalCode} placeholder="如 400001" />
           <FormInput label="负责销售" value={form.salesPerson} onChange={(e) => setValue('salesPerson', e.target.value)} />
           <FormInput label="首次合作日期" type="date" value={form.firstCooperationDate} onChange={(e) => setValue('firstCooperationDate', e.target.value)} />
           <FormSelect label="可见性" options={visibilityOptions} value={form.visibility} onChange={(e) => setValue('visibility', e.target.value)} />
@@ -587,6 +659,73 @@ export default function Customers() {
             </div>
           )}
         </div>
+        </FormSection>
+
+        {/* 公司介绍文件: 保存后进入「客户资料 → 客户背景」, 可检索、可随客户查看 */}
+        <FormSection
+          title={`公司介绍附件 (${(existingDocs?.length || 0) + pendingFiles.length})`}
+          icon={Paperclip}
+          action={
+            <button type="button" onClick={() => attachInputRef.current?.click()} className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-0.5">
+              <Plus size={13} /> 选择文件
+            </button>
+          }
+        >
+          <input
+            ref={attachInputRef}
+            type="file"
+            multiple
+            hidden
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.png,.jpg,.jpeg"
+            onChange={(e) => {
+              const picked = Array.from(e.target.files || [])
+              e.target.value = ''
+              const tooBig = picked.filter((f) => f.size > 200 * 1024 * 1024)
+              if (tooBig.length) toast.error(`文件过大（上限 200MB）：${tooBig.map((f) => f.name).join('、')}`)
+              setPendingFiles((prev) => {
+                const names = new Set(prev.map((f) => f.name + f.size))
+                return [...prev, ...picked.filter((f) => f.size <= 200 * 1024 * 1024 && !names.has(f.name + f.size))]
+              })
+            }}
+          />
+          {!existingDocs?.length && !pendingFiles.length ? (
+            <p className="text-xs text-muted py-2">
+              可上传公司简介、画册、资质、产线介绍等（PDF / Word / PPT / Excel / 图片），保存客户后进入该客户的「客户背景」资料。
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {(existingDocs || []).map((d: any) => (
+                <li key={d.id} className="flex items-center gap-2 bg-canvas px-2 py-1.5 rounded-md text-sm">
+                  <FileText size={14} className="text-muted shrink-0" />
+                  <button
+                    type="button"
+                    className="flex-1 min-w-0 text-left truncate text-ink hover:text-accent-600"
+                    title="下载"
+                    onClick={() => downloadFile('documents', d.id, d.fileName || d.title).catch(handleError)}
+                  >
+                    {d.title || d.fileName}
+                  </button>
+                  <span className="text-xs text-muted shrink-0">已上传</span>
+                </li>
+              ))}
+              {pendingFiles.map((f, i) => (
+                <li key={f.name + f.size} className="flex items-center gap-2 bg-canvas px-2 py-1.5 rounded-md text-sm">
+                  <Paperclip size={14} className="text-muted shrink-0" />
+                  <span className="flex-1 min-w-0 truncate text-ink" title={f.name}>{f.name}</span>
+                  <span className="text-xs text-muted shrink-0">{f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(f.size / 1024))}KB`}　点确定后上传</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingFiles((prev) => prev.filter((_, k) => k !== i))}
+                    className="text-danger-fg flex items-center justify-center px-1"
+                    title="移除"
+                    aria-label={`移除 ${f.name}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </FormSection>
         </div>
       </Modal>

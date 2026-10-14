@@ -44,6 +44,39 @@ async function doRefresh(): Promise<boolean> {
   }
 }
 
+/** 常见字段的中文名(其余字段原样显示) */
+const FIELD_LABELS: Record<string, string> = {
+  name: '名称', code: '简称/编号', customerCode: '客户编号', industry: '所属行业', scale: '企业规模', level: '客户等级',
+  businessStatus: '业务状态', customerType: '客户类型', region: '所属区域', address: '注册地址', creditCode: '统一社会信用代码',
+  website: '企业网址', description: '简介', salesPerson: '负责销售', firstCooperationDate: '首次合作日期', visibility: '可见性',
+  email: '官方邮箱', phone: '官方电话', postalCode: '邮编', title: '标题', category: '分类', status: '状态',
+  price: '价格', unit: '单位', content: '内容', remark: '备注',
+}
+
+/** class-validator 的英文提示 → 中文, 并带上是哪一栏 */
+export function humanizeValidation(message: string): string {
+  return message
+    .split(/;\s*/)
+    .map((part) => {
+      const label = (f: string) => `「${FIELD_LABELS[f] || f}」`
+      let m: RegExpMatchArray | null
+      if ((m = part.match(/property (\w+) should not exist/))) {
+        return `${label(m[1])}不是可提交的字段（程序问题，不是输入有误，请联系管理员）`
+      }
+      if ((m = part.match(/^(\w+) should not be empty/))) return `请填写${label(m[1])}`
+      if ((m = part.match(/^(\w+) must be an email/))) return `${label(m[1])}格式不正确，请检查是否有空格、中文符号或缺少 @`
+      if ((m = part.match(/^(\w+) must be shorter than or equal to (\d+) characters/))) return `${label(m[1])}最多 ${m[2]} 个字符`
+      if ((m = part.match(/^(\w+) must be longer than or equal to (\d+) characters/))) return `${label(m[1])}至少 ${m[2]} 个字符`
+      if ((m = part.match(/^(\w+) must be a string/))) return `${label(m[1])}内容格式不对`
+      if ((m = part.match(/^(\w+) must be a number/))) return `${label(m[1])}需要填写数字`
+      if ((m = part.match(/^(\w+) must be a valid ISO 8601 date string/))) return `${label(m[1])}日期格式不正确`
+      if ((m = part.match(/^(\w+) must match/))) return `${label(m[1])}格式不正确，请检查是否有空格或多余字符`
+      if ((m = part.match(/^(\w+) must be one of the following values/))) return `${label(m[1])}的取值不在允许范围内`
+      return part
+    })
+    .join('；')
+}
+
 /** 防止多个并发 401 同时触发跳转 */
 let isRedirecting = false
 
@@ -103,6 +136,13 @@ apiClient.interceptors.response.use(
       redirectToLogin()
     }
 
+    // 后端校验信息是英文属性名(「property status should not exist」), 翻成用户看得懂、知道改哪一栏的话;
+    // 回写到 response 里, 页面自己的 catch 读到的也是同一句
+    if (error.response?.data && status === 400) {
+      const raw = error.response.data.message
+      if (typeof raw === 'string') error.response.data.message = humanizeValidation(raw)
+      else if (Array.isArray(raw)) error.response.data.message = raw.map((m: string) => humanizeValidation(m))
+    }
     const message = error.response?.data?.message
     if (typeof message === 'string') {
       toast.error(message)

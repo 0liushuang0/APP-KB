@@ -560,6 +560,9 @@ export interface Customer {
   status: string
   address?: string
   website?: string
+  email?: string
+  phone?: string
+  postalCode?: string
   description?: string
   visibility?: string
   createdAt: string

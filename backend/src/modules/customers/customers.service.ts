@@ -71,7 +71,7 @@ export class CustomersService {
       // 不少客户是凭联系人或地区找的，之前 keyword 不含这些就搜不到。
       qb.andWhere(
         `(c.name LIKE :kw OR c.code LIKE :kw OR c.customerCode LIKE :kw
-          OR c.industry LIKE :kw OR c.region LIKE :kw
+          OR c.industry LIKE :kw OR c.region LIKE :kw OR c.email LIKE :kw OR c.phone LIKE :kw
           OR EXISTS (
             SELECT 1 FROM contact_persons cp
             WHERE cp."customerId" = c.id
@@ -541,7 +541,7 @@ export class CustomersService {
   }
 
   private async sync(customer: Customer): Promise<void> {
-    const content = `${customer.name} ${customer.industry || ''} ${customer.scale || ''} ${customer.address || ''} ${customer.description || ''}`;
+    const content = `${customer.name} ${customer.industry || ''} ${customer.scale || ''} ${customer.address || ''} ${customer.description || ''} ${customer.email || ''} ${customer.phone || ''} ${customer.postalCode || ''}`;
     await this.knowledgeSyncService.syncObject({
       id: customer.id,
       objectType: 'customer',

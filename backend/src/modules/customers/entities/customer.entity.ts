@@ -67,6 +67,18 @@ export class Customer {
   @Column({ nullable: true })
   website: string;
 
+  /** 官方邮箱（公司通用邮箱, 不是联系人个人邮箱） */
+  @Column({ nullable: true })
+  email: string;
+
+  /** 官方电话（公司总机/前台） */
+  @Column({ nullable: true })
+  phone: string;
+
+  /** 邮编 */
+  @Column({ nullable: true })
+  postalCode: string;
+
   @Column({ type: 'text', nullable: true })
   description: string;
 

@@ -6,6 +6,8 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  Matches,
+  MaxLength,
 } from 'class-validator';
 import { PartialType, OmitType } from '@nestjs/mapped-types';
 
@@ -49,6 +51,21 @@ export class CreateCustomerDto {
 
   @IsOptional() @IsString()
   website?: string;
+
+  /** 官方邮箱: 可留空; 填了必须是邮箱格式(两端空格由前端去掉) */
+  @IsOptional() @IsString() @MaxLength(120)
+  @Matches(/^$|^[^\s@]+@[^\s@]+\.[^\s@]+$/, { message: 'email 格式不正确' })
+  email?: string;
+
+  /** 官方电话: 可留空; 数字、空格、+ - ( ) 转 分机 */
+  @IsOptional() @IsString() @MaxLength(40)
+  @Matches(/^$|^[0-9+\-()\s转#,*]{5,40}$/, { message: 'phone 格式不正确' })
+  phone?: string;
+
+  /** 邮编: 可留空; 4-10 位数字/字母/连字符(兼容境外邮编) */
+  @IsOptional() @IsString() @MaxLength(10)
+  @Matches(/^$|^[A-Za-z0-9\- ]{3,10}$/, { message: 'postalCode 格式不正确' })
+  postalCode?: string;
 
   @IsOptional() @IsString()
   description?: string;

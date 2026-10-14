@@ -60,6 +60,12 @@ export function useFormValidation<T extends Record<string, any>>({ initialValues
     return valid
   }
 
+  /** 当前所有不通过的校验提示(不依赖 errors 状态, 点击提交时可立刻拿来提示用户) */
+  const collectErrors = (): string[] =>
+    (Object.keys(rules) as (keyof T)[])
+      .map((key) => rules[key]?.(values[key], values))
+      .filter((m): m is string => !!m)
+
   const reset = () => {
     setValues(initialValues)
     setErrors({})
@@ -75,6 +81,7 @@ export function useFormValidation<T extends Record<string, any>>({ initialValues
     setValues,
     validateField,
     validateAll,
+    collectErrors,
     reset,
   }
 }
