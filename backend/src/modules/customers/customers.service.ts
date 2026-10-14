@@ -149,7 +149,17 @@ export class CustomersService {
     return customer;
   }
 
-  async create(dto: CreateCustomerDto, user: CurrentUser): Promise<Customer> {
+  /** 日期列收到空串会让 PostgreSQL 报「无效的类型 date」(500): 空串一律当作未填 */
+  private blankDates<T extends Record<string, any>>(dto: T): T {
+    const out: Record<string, any> = { ...dto };
+    for (const k of ['firstCooperationDate', 'lastDealDate']) {
+      if (typeof out[k] === 'string' && !out[k].trim()) out[k] = null;
+    }
+    return out as T;
+  }
+
+  async create(dtoIn: CreateCustomerDto, user: CurrentUser): Promise<Customer> {
+    const dto = this.blankDates(dtoIn);
     const skipApproval = this.permissionService.skipApproval();
     // 自动生成客户编号
     const customerCode = dto.customerCode || await this.numbering.next('customer');
@@ -183,7 +193,7 @@ export class CustomersService {
     if (!this.permissionService.canManage(user, this.toSubject(customer))) {
       throw new BadRequestException('无权修改该客户');
     }
-    const { roleIds, groupIds, ...rest } = dto as any;
+    const { roleIds, groupIds, ...rest } = this.blankDates(dto as any);
     Object.assign(customer, rest);
     if (roleIds !== undefined) customer.roleCodes = roleIds;
     if (groupIds !== undefined) customer.groupIds = groupIds;

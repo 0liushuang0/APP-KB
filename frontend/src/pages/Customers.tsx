@@ -296,6 +296,11 @@ export default function Customers() {
     const dto: any = {}
     for (const [k, v] of Object.entries(form)) dto[k] = typeof v === 'string' ? v.trim() : v
     delete dto.status
+    // 日期没填就别发空串; 新建时直接不带, 编辑时发 null 表示清空
+    if (!dto.firstCooperationDate) {
+      if (editing) dto.firstCooperationDate = null
+      else delete dto.firstCooperationDate
+    }
     try {
       let savedCustomerId = editing?.id
       if (editing) {

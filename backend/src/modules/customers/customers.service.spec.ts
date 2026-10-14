@@ -243,6 +243,18 @@ describe('CustomersService', () => {
   });
 
   // ── update ──
+  describe('日期列的空串', () => {
+    it('更新时 firstCooperationDate 为空串按未填(null)保存, 不让 PostgreSQL 报 date 语法错误', async () => {
+      const { svc, customerRepository } = makeMocks();
+      const existing: any = { id: 'c1', name: '旧名', visibility: 'public', ownerId: 'u1', firstCooperationDate: '2020-01-01' };
+      customerRepository.findOne.mockResolvedValue(existing);
+      customerRepository.save.mockImplementation(async (c: any) => c);
+
+      await svc.update('c1', { firstCooperationDate: '' } as any, user());
+      expect(existing.firstCooperationDate).toBeNull();
+    });
+  });
+
   describe('update', () => {
     it('有权限时更新客户', async () => {
       const { svc, customerRepository } = makeMocks();
