@@ -55,8 +55,10 @@ class Reranker:
             try:
                 from sentence_transformers import CrossEncoder
 
+                from app.core.embeddings import load_hf_model
+
                 logger.info("加载重排序模型 %s …", key)
-                self._model = CrossEncoder(key)
+                self._model = load_hf_model(CrossEncoder, key)
                 self._cached_key = key
                 logger.info("重排序模型就绪：%s", key)
             except Exception as exc:

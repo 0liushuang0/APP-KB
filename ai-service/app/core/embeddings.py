@@ -1,6 +1,23 @@
+import logging
+import threading
 from typing import List
 import numpy as np
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+
+def load_hf_model(cls, name: str):
+    """先只用本机缓存加载(不联网); 本机没有再联网下载。
+
+    sentence-transformers 默认每次加载都向 huggingface.co 发一串 HEAD 请求检查更新,
+    国内网络下单次加载可超过 60 秒 —— 知识中心保存产品等要写向量, 就因此等到前端 30 秒超时。
+    """
+    try:
+        return cls(name, local_files_only=True)
+    except Exception as exc:  # 本机没有缓存(或缓存不完整)
+        logger.info("本机没有模型 %s 的缓存，联网下载：%s", name, exc)
+        return cls(name)
 
 # 各 provider 的输出维度。RAG 索引按维度建表，跨 provider 切换会导致维度不匹配，
 # 这里集中维护以便在切换时给出明确提示，而不是让 np.stack 在启动时崩溃。
@@ -27,6 +44,8 @@ class EmbeddingService:
         self._model = None
         # 记录当前缓存的模型对应的 (provider, model_name)，便于检测变更
         self._cached_key: tuple | None = None
+        # 启动预热线程与首个请求可能同时加载: 加锁, 只加载一次
+        self._lock = threading.Lock()
 
     def _current_key(self) -> tuple:
         s = get_settings()
@@ -45,12 +64,17 @@ class EmbeddingService:
         key = self._current_key()
         if self._model is not None and self._cached_key == key:
             return self._model
+        with self._lock:
+            if self._cached_key == key and (self._model is not None or key[0] not in ("local", "basic")):
+                return self._model
+            return self._load(key)
 
+    def _load(self, key: tuple):
         provider = key[0]
         model_name = key[1]
         if provider == "local":
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(model_name)
+            self._model = load_hf_model(SentenceTransformer, model_name)
         elif provider == "basic":
             from sklearn.feature_extraction.text import HashingVectorizer
             self._model = HashingVectorizer(
