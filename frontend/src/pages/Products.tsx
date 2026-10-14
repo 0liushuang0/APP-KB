@@ -40,6 +40,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import FormInput from '../components/FormInput'
 import SearchableSelect from '../components/SearchableSelect'
 import StatCards from '../components/StatCards'
+import ProductCompletenessBar from '../components/ProductCompletenessBar'
 import FormTextarea from '../components/FormTextarea'
 import PageLoader from '../components/PageLoader'
 import ErrorState from '../components/ErrorState'
@@ -900,6 +901,7 @@ export default function Products() {
       {/* 统计卡片：与业务概览/客户中心同一套组件 */}
       <div className="px-6 pt-4 pb-3 border-b border-border flex-shrink-0">
         <StatCards loading={isLoading} skeletonCount={5} items={productCards} />
+        <ProductCompletenessBar onPick={setSelectedId} />
       </div>
 
       <div className="flex gap-0 flex-1 overflow-hidden">

@@ -17,6 +17,7 @@ import { AiBudgetService } from './ai-budget.service';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { ReindexController } from './reindex.controller';
 import { ReindexService } from './reindex.service';
+import { IndexSelfHealService } from './index-self-heal.service';
 import { Customer } from '../customers/entities/customer.entity';
 import { Requirement } from '../requirements/entities/requirement.entity';
 import { Proposal } from '../proposals/entities/proposal.entity';
@@ -53,7 +54,7 @@ import { Document } from '../documents/entities/document.entity';
     SystemConfigModule,
   ],
   controllers: [AiCallLogController, AiConfigController, AiFeedbackController, AiBudgetController, MatchingController, PromptTemplateController, ReindexController],
-  providers: [AiService, KnowledgeSyncService, PromptTemplateService, AiBudgetService, ReindexService],
+  providers: [AiService, KnowledgeSyncService, PromptTemplateService, AiBudgetService, ReindexService, IndexSelfHealService],
   exports: [TypeOrmModule, PromptTemplateService],
 })
 export class AiModule {}

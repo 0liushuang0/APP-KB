@@ -54,3 +54,6 @@ minio_data/
 # Misc
 __pycache__/
 *.pyc
+
+# 检索评测题集与结果(含业务名称, 只在本机)
+ai-eval/local/
