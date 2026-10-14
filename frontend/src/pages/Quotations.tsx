@@ -143,6 +143,29 @@ export default function Quotations() {
     queryFn: () => productApi.list({ pageSize: 200 }),
   })
   const productPickList = toList<any>(productPick)
+  /**
+   * 候选项: 产品本身 + 型号价格表里的每个型号(「产品名 型号」)。
+   * 选型号直接带出该型号的销售价(依次取 销售价/标配价/参考价), 不用再翻价格表。
+   */
+  const pickOptions = productPickList.flatMap((x: any) => {
+    const base = [{ key: x.id, value: x.name, productId: x.id, price: x.price ? Number(x.price) : undefined, hint: x.code || '' }]
+    const models = (Array.isArray(x.priceList) ? x.priceList : [])
+      .filter((m: any) => m?.model)
+      .map((m: any) => ({
+        key: `${x.id}:${m.model}`,
+        value: `${x.name} ${m.model}`,
+        productId: x.id,
+        price: Number(m.salePrice ?? m.standardPrice ?? m.referencePrice) || undefined,
+        hint: m.spec || '',
+      }))
+    return [...base, ...models]
+  })
+  const productById = new Map(productPickList.map((x: any) => [x.id, x]))
+  /** 选了产品库里的产品, 但该产品没有型号价格表: 单价只能靠人工, 提示一下 */
+  const lacksPriceList = (productId?: string) => {
+    const prod: any = productId ? productById.get(productId) : null
+    return !!prod && !(Array.isArray(prod.priceList) && prod.priceList.length)
+  }
 
   const { data: proposals } = useQuery({
     queryKey: ['proposals-select'],
@@ -603,18 +626,18 @@ export default function Quotations() {
                     placeholder="产品名称（可从产品库选）"
                     value={item.name}
                     onChange={(e) => {
-                      const picked = productPickList.find((x) => x.name === e.target.value)
+                      const picked = pickOptions.find((x) => x.value === e.target.value)
                       updateItem(idx, 'name', e.target.value)
-                      updateItem(idx, 'productId', picked?.id || '')
-                      if (picked?.price) updateItem(idx, 'unitPrice', Number(picked.price))
+                      updateItem(idx, 'productId', picked?.productId || '')
+                      if (picked?.price) updateItem(idx, 'unitPrice', picked.price)
                     }}
                     className="col-span-5 px-2 py-1 border border-border rounded text-sm"
                   />
                   <datalist id={`prod-opts-${idx}`}>
-                    {productPickList.map((x) => (
-                      <option key={x.id} value={x.name}>
-                        {x.code ? x.code + ' · ' : ''}
-                        {x.price ? '参考价 ¥' + Number(x.price).toLocaleString('zh-CN') : ''}
+                    {pickOptions.map((x) => (
+                      <option key={x.key} value={x.value}>
+                        {x.hint ? x.hint + ' · ' : ''}
+                        {x.price ? '¥' + x.price.toLocaleString('zh-CN') : ''}
                       </option>
                     ))}
                   </datalist>
@@ -636,6 +659,11 @@ export default function Quotations() {
                   aria-label="删除明细">
                     <MinusCircle size={18} />
                   </button>
+                  {lacksPriceList(item.productId) && (
+                    <p className="col-span-12 text-xs text-warning-fg">
+                      该产品还没有型号价格表，单价需人工确认；在「产品管理」补上价格表后，这里可直接按型号带出价格。
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

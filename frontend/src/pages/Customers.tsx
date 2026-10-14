@@ -19,7 +19,9 @@ import {
   Moon,
   Paperclip,
   FileText,
+  ClipboardPaste,
 } from 'lucide-react'
+import { parseContacts } from '../lib/contactParse'
 import { customerApi } from '../api/services'
 import {
   CUSTOMER_TYPE_OPTIONS,
@@ -404,6 +406,27 @@ export default function Customers() {
   }
 
   const addContactRow = () => setContacts((prev) => [...prev, { name: '' }])
+
+  /** 粘贴名片/签名 → 识别联系人, 追加到草稿(同名同手机的不重复加) */
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const applyPaste = () => {
+    const found = parseContacts(pasteText)
+    if (!found.length) {
+      toast.error('没有识别到姓名、手机或邮箱，请检查粘贴的内容')
+      return
+    }
+    setContacts((prev) => {
+      const seen = new Set(prev.map((c) => `${c.name}|${c.phone || ''}`))
+      const add = found
+        .filter((c) => !seen.has(`${c.name}|${c.phone || ''}`))
+        .map((c) => ({ name: c.name, title: c.title, department: c.department, phone: c.phone, email: c.email, wechat: c.wechat }))
+      return [...prev.filter((c) => c.name?.trim() || c.phone || c.email), ...add]
+    })
+    toast.success(`识别到 ${found.length} 位联系人，请核对后点确定保存`)
+    setPasteText('')
+    setPasteOpen(false)
+  }
   const updateContactRow = <K extends keyof ContactDraft>(idx: number, field: K, value: ContactDraft[K]) =>
     setContacts((prev) => prev.map((c, i) => (i === idx ? { ...c, [field]: value } : c)))
   /** 删除只改草稿；已存在的记下 id，等点保存时才真删（此前只 filter 数组，压根没调接口） */
@@ -643,11 +666,38 @@ export default function Customers() {
           title={`联系人 (${contacts.length})`}
           icon={Phone}
           action={
-            <button type="button" onClick={addContactRow} className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-0.5">
-              <Plus size={13} /> 添加联系人
-            </button>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => setPasteOpen((v) => !v)} className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-0.5">
+                <ClipboardPaste size={13} /> 粘贴识别
+              </button>
+              <button type="button" onClick={addContactRow} className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-0.5">
+                <Plus size={13} /> 添加联系人
+              </button>
+            </div>
           }
         >
+        {pasteOpen && (
+          <div className="mb-2 rounded-md border border-border bg-canvas p-2 space-y-1.5">
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              rows={4}
+              placeholder={'把名片、邮件签名或聊天里的联系方式粘贴到这里，多个联系人用空行隔开。\n例：张伟 | 设备部副部长  手机 13812345678  zhangwei@company.com'}
+              className="w-full px-2 py-1.5 border border-border rounded text-sm text-ink bg-surface"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={applyPaste}
+                disabled={!pasteText.trim()}
+                className="px-3 py-1 rounded bg-accent-500 text-white text-xs disabled:opacity-50"
+              >
+                识别并填入
+              </button>
+              <span className="text-xs text-muted">本地识别，结果填进下方由你确认后随客户一起保存</span>
+            </div>
+          </div>
+        )}
         <div>
           {contacts.length === 0 ? (
             <p className="text-xs text-muted py-2">暂无联系人，点击"添加联系人"创建</p>
