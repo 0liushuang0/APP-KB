@@ -32,9 +32,13 @@ _BINARY_MARK = re.compile(r"OJ\s*PJ|B\*CJ|nonmarkingreturn|/\.null|\\par\b|CJ\s+
 def looks_like_text(text: str, min_length: int = 20) -> bool:
     """判断一段抽取结果是否是人能读的文本。
 
-    两条独立证据满足其一即可：
+    三条独立证据满足其一即可：
       · 中文密度 >= 15%（正常中文技术文档远高于此）
       · 像正常英文：ASCII 字母 >= 60% 且至少 5 个长度 >=3 的单词
+      · 中英双语: 中文 + 英文字母占「非空白字符」>= 75%，且中文 >= 20 字、英文单词 >= 5 个。
+        双语技术文档每种语言各占一部分，常常两条都差一点点（实测一份 3.6 万字的中英规格书：
+        中文 14.3%、字母 59.5%，分别卡在 15% / 60% 下面）；
+        而二进制残渣、乱码里的字母和汉字合起来也远不到这个比例。
 
     在本机 531 块业务对象内容上跑过，误杀 0 条。
     """
@@ -49,7 +53,13 @@ def looks_like_text(text: str, min_length: int = 20) -> bool:
         return True
 
     letters = sum(1 for c in t if c.isascii() and c.isalpha())
-    if letters / len(t) >= 0.60 and len(_WORD.findall(t)) >= 5:
+    words = len(_WORD.findall(t))
+    if letters / len(t) >= 0.60 and words >= 5:
+        return True
+
+    # 中英双语: 看「中文 + 英文字母」占非空白字符的比例
+    non_space = sum(1 for c in t if not c.isspace())
+    if non_space and cjk >= 20 and words >= 5 and (cjk + letters) / non_space >= 0.75:
         return True
     return False
 
@@ -249,6 +259,31 @@ def _pdf_ocr_fallback(content: bytes) -> str:
     return full_text
 
 
+def _docx_textbox_text(doc) -> str:
+    """提取文本框（w:txbxContent）里的文字。
+
+    工程技术方案的参数常写在文本框/图形标注里（在 Word 里画框排版的图签、
+    参数表、示意图标注都是这种形态），python-docx 的 paragraphs/tables 只覆盖
+    正文段落与表格，不覆盖文本框 —— 实测一份正文几乎全在文本框里的方案
+    docx，原逻辑提出 < 20 字符，直接被判成「扫描件」拒掉。
+
+    AlternateContent 会把同一文本框存成 Choice/Fallback 两份，只取 Choice，
+    否则整段文字会翻倍。
+    """
+    from docx.oxml.ns import qn
+
+    _FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+    lines = []
+    for txbx in doc.element.body.iter(qn("w:txbxContent")):
+        if any(a.tag == _FALLBACK for a in txbx.iterancestors()):
+            continue
+        for p in txbx.iter(qn("w:p")):
+            run_text = "".join(t.text or "" for t in p.iter(qn("w:t")))
+            if run_text.strip():
+                lines.append(run_text)
+    return "\n".join(lines)
+
+
 def parse_docx(content: bytes) -> str:
     try:
         doc = DocxDocument(io.BytesIO(content))
@@ -258,6 +293,9 @@ def parse_docx(content: bytes) -> str:
                 parts.append(para.text)
         for table in doc.tables:
             parts.append(_docx_table_to_text(table))
+        textbox_text = _docx_textbox_text(doc)
+        if textbox_text:
+            parts.append(textbox_text)
         return "\n".join(parts)
     except Exception as exc:
         logger.error(f"Failed to parse DOCX: {exc}")

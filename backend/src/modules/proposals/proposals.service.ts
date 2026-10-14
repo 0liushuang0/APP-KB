@@ -1,3 +1,4 @@
+import { fixMulterEncoding } from '../../common/utils/safe-path.util';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
@@ -90,11 +91,12 @@ export class ProposalsService {
     if (query.requirementId) qb.andWhere('p.requirementId = :reqId', { reqId: query.requirementId });
     if (query.keyword) {
       // 项目名称已改由需求提供，关键词覆盖 需求标题 + 客户名
+      // 子查询里的 rq/cc 是裸别名，驼峰列名不会被 TypeORM 替换，必须手工加引号
       qb.andWhere(
         `(p.proposalNo LIKE :kw OR EXISTS(
             SELECT 1 FROM requirements rq
-            LEFT JOIN customers cc ON cc.id = rq.customerId
-            WHERE rq.id = p.requirementId AND (rq.title LIKE :kw OR cc.name LIKE :kw)
+            LEFT JOIN customers cc ON cc.id = rq."customerId"
+            WHERE rq.id = p."requirementId" AND (rq.title LIKE :kw OR cc.name LIKE :kw)
          ))`,
         { kw: `%${query.keyword}%` },
       );
@@ -127,19 +129,42 @@ export class ProposalsService {
       ? await manager
           .createQueryBuilder()
           .select([
-            'r.id AS id',
-            'r.title AS title',
-            'r.requirementNo AS requirementNo',
-            'c.name AS customerName',
-            'c.code AS customerShortName',
+            'r.id AS "id"',
+            'r.title AS "title"',
+            'r.requirementNo AS "requirementNo"',
+            'c.name AS "customerName"',
+            'c.code AS "customerShortName"',
           ])
           .from('requirements', 'r')
-          .leftJoin('customers', 'c', 'c.id = r.customerId')
+          .leftJoin('customers', 'c', 'c.id = r."customerId"')
           .where('r.id IN (:...ids)', { ids: reqIds })
           .getRawMany<any>()
       : [];
 
     const rmap = new Map(chain.map((r) => [r.id, r]));
+
+    /*
+     * 附件计数（输入/输出）：列表操作列直接显示「2/2」，不用逐行点进编辑弹窗数。
+     * source=客户提交的输入资料，deliverable=我方提交的输出资料（与 EntityFileUpload 的口径一致）。
+     */
+    const ids = rows.map((p) => p.id);
+    const counts = ids.length
+      ? await manager
+          .createQueryBuilder()
+          .select(['l."proposalId" AS "id"', 'l."linkRole" AS "role"', 'COUNT(*) AS "n"'])
+          .from('document_links', 'l')
+          .where('l."proposalId" IN (:...ids)', { ids })
+          .groupBy('l."proposalId"')
+          .addGroupBy('l."linkRole"')
+          .getRawMany<{ id: string; role: string; n: string }>()
+      : [];
+    const cmap = new Map<string, { input: number; output: number }>();
+    for (const c of counts) {
+      const cur = cmap.get(c.id) || { input: 0, output: 0 };
+      if (c.role === 'source') cur.input = Number(c.n);
+      if (c.role === 'deliverable') cur.output = Number(c.n);
+      cmap.set(c.id, cur);
+    }
 
     return rows.map((p) => {
       const r = p.requirementId ? rmap.get(p.requirementId) : undefined;
@@ -150,6 +175,7 @@ export class ProposalsService {
         // 没有关联需求就没有项目名称，界面上照实显示，别用旧标题糊过去
         projectName: r?.title,
         requirementNo: r?.requirementNo,
+        attachmentCounts: cmap.get(p.id) || { input: 0, output: 0 },
       };
     });
   }
@@ -240,12 +266,18 @@ export class ProposalsService {
       throw new BadRequestException('无权修改该方案');
     }
 
-    const text = await this.aiService.parseFile(
+    // multer 会把 UTF-8 文件名按 Latin1 读成乱码(「…roll）2026」→「…rollï¼2026」), 先还原
+    file.originalname = fixMulterEncoding(file.originalname);
+    const { text, error: parseError } = await this.aiService.parseFileDetailed(
       file.originalname,
       file.buffer.toString('base64'),
     );
     if (!text?.trim()) {
-      throw new BadRequestException('未能从该文件中解析出文字，请确认是 Word/PDF 且不是扫描件');
+      // AI 服务带回的是用户能照着做的原因（旧版 .doc、扫描件、文本都在图片里等），
+      // 别再吞掉换成笼统的「请确认是 Word/PDF」—— 用户导的明明就是 Word。
+      throw new BadRequestException(
+        parseError || '未能从该文件中解析出文字，请确认是文字版 Word/PDF 且不是扫描件',
+      );
     }
 
     const picked = pickSections(text);
@@ -319,8 +351,26 @@ export class ProposalsService {
          * 上面的 writeBack 已经存过去了。这里再往 proposals.title 里写一份，
          * 就又回到了"两处各存一份、迟早对不上"的老问题。
          */
-        const { projectName: _pn, title: _t, ...rest } = dto as any;
+        const { projectName: _pn, title: _t, proposalNo, ...rest } = dto as any;
         Object.assign(proposal, rest);
+        // 方案编号可编辑：手改的直接用（查重见下）；清空 = 重新按规则生成（继承需求尾号）
+        if (proposalNo !== undefined) {
+          const wanted = String(proposalNo).trim();
+          if (wanted) {
+            if (wanted !== proposal.proposalNo) {
+              const dup = await manager
+                .createQueryBuilder()
+                .select('p2.id', 'id')
+                .from('proposals', 'p2')
+                .where('p2."proposalNo" = :no AND p2.id != :id', { no: wanted, id })
+                .getRawOne<{ id: string }>();
+              if (dup) throw new BadRequestException(`方案编号 ${wanted} 已被其他方案占用`);
+            }
+            proposal.proposalNo = wanted;
+          } else {
+            proposal.proposalNo = await this.nextNo(proposal.requirementId);
+          }
+        }
         return manager.save(proposal);
       },
       async (result) => { await this.sync(result); },
@@ -337,6 +387,25 @@ export class ProposalsService {
     const proposal = await this.findOne(id, user);
     if (!this.permissionService.canManage(user, this.toSubject(proposal))) {
       throw new BadRequestException('无权删除该方案');
+    }
+    /*
+     * 删除前先看有没有报价还挂着它。
+     *
+     * 悬空引用的代价：报价/合同的客户与项目名称全部顺着链取，
+     * 链断在已删除的方案上，列表与弹窗会整片变空（2026-10-14 实际发生过：
+     * 删了 PRO-26-001-A 又重建，QUO-26-001 的 proposalId 还指着旧 id）。
+     * 与客户删除的 removePreview 同一思路：宁可拦下来让用户先处理下游。
+     */
+    const downstream = await this.proposalRepository.manager
+      .createQueryBuilder()
+      .select('q."quotationNo"', 'no')
+      .from('quotations', 'q')
+      .where('q."proposalId" = :id', { id })
+      .getRawMany<{ no: string }>();
+    if (downstream.length) {
+      throw new BadRequestException(
+        `该方案下还有 ${downstream.length} 份报价（${downstream.map((d) => d.no).join('、')}），请先删除或改挂报价后再删除方案`,
+      );
     }
     await this.transactionService.run(
       async (manager) => {
