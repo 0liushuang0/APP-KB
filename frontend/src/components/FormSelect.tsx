@@ -25,6 +25,13 @@ export default function FormSelect({ label, options, helper, error, className = 
         {...props}
         required={required}
       >
+        {/* 受控且当前值为空、选项里又没有空值时补占位项: 否则浏览器会显示第一项, 看起来已选但表单值仍是空
+            (必填校验不过, 确认按钮一直灰着, 用户还看不出哪里没选) */}
+        {props.value === '' && !options.some((o) => o.value === '') && (
+          <option value="" disabled={required}>
+            请选择
+          </option>
+        )}
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}

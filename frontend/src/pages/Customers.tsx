@@ -524,7 +524,7 @@ export default function Customers() {
         <FormSection title="分类与状态">
         <FieldGrid cols={3}>
           <FormSelect label="客户类型" options={CUSTOMER_TYPE_OPTIONS} value={form.customerType} onChange={(e) => setValue('customerType', e.target.value)} />
-          <FormSelect label="所属行业" options={INDUSTRY_OPTIONS} value={form.industry} onChange={(e) => setValue('industry', e.target.value)} error={errors.industry} />
+          <FormSelect label="所属行业" options={INDUSTRY_OPTIONS} value={form.industry} onChange={(e) => setValue('industry', e.target.value)} error={errors.industry} required />
           <FormSelect label="客户等级" options={CUSTOMER_LEVEL_OPTIONS} value={form.level} onChange={(e) => setValue('level', e.target.value)} />
           <FormSelect label="业务状态" options={BUSINESS_STATUS_OPTIONS} value={form.businessStatus} onChange={(e) => setValue('businessStatus', e.target.value)} />
           <FormSelect label="所属区域" options={REGION_OPTIONS} value={form.region} onChange={(e) => setValue('region', e.target.value)} />
