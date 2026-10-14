@@ -228,6 +228,30 @@ export class AiService {
     }
   }
 
+  /**
+   * 对「瞬时」错误重试：连接被重置、超时、5xx（AI 服务正在重启/加载模型/排队）。
+   * 运行日志里文档解析成功率只有 60%，失败几乎都是这几类，隔几秒再试多半就好；
+   * 422（文件本身解析不了）和 4xx 是确定性结果，不重试。
+   */
+  private async postWithRetry(url: string, body: unknown, attempts = 3): Promise<any> {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await this.client.post(url, body);
+      } catch (err) {
+        lastErr = err;
+        const status = (err as any)?.response?.status as number | undefined;
+        const code = (err as any)?.code as string | undefined;
+        const transient =
+          (status === undefined && (code === 'ECONNRESET' || code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED')) ||
+          (status !== undefined && status >= 500);
+        if (!transient || i === attempts - 1) break;
+        await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+      }
+    }
+    throw lastErr;
+  }
+
   async parseFile(filename: string, base64Content: string): Promise<string> {
     return (await this.parseFileDetailed(filename, base64Content)).text;
   }
@@ -244,7 +268,7 @@ export class AiService {
     base64Content: string,
   ): Promise<{ text: string; error?: string }> {
     try {
-      const res = await this.client.post('/embeddings/parse', {
+      const res = await this.postWithRetry('/embeddings/parse', {
         filename,
         content: base64Content,
       });

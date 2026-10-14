@@ -152,6 +152,56 @@ def decode_text(content: bytes, filename: str = "") -> str:
 SUPPORTED_EXTENSIONS = (".pdf", ".docx", ".xlsx", ".xls", ".md", ".txt", ".csv")
 
 
+def _find_soffice() -> str | None:
+    import os
+    import shutil
+
+    env = os.environ.get("SOFFICE_PATH")
+    if env and os.path.isfile(env):
+        return env
+    found = shutil.which("soffice") or shutil.which("soffice.exe")
+    if found:
+        return found
+    for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), "D:\Program Files"):
+        if root:
+            cand = os.path.join(root, "LibreOffice", "program", "soffice.exe")
+            if os.path.isfile(cand):
+                return cand
+    return None
+
+
+def convert_doc_to_docx(content: bytes, timeout: int = 90) -> bytes | None:
+    """用 LibreOffice 把旧版 .doc 转成 .docx 字节；不可用/失败返回 None。
+
+    每次用独立的用户配置目录(临时目录, 用完即删): 不与用户已打开的 LibreOffice 互相占用，也不留残渣。
+    """
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    exe = _find_soffice()
+    if not exe:
+        return None
+    with tempfile.TemporaryDirectory(prefix="aikb_doc_") as tmp:
+        src = Path(tmp) / "in.doc"
+        src.write_bytes(content)
+        profile = (Path(tmp) / "profile").resolve().as_uri()
+        try:
+            r = subprocess.run(
+                [exe, f"-env:UserInstallation={profile}", "--headless", "--convert-to", "docx", "--outdir", tmp, str(src)],
+                capture_output=True, timeout=timeout,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            logger.warning("LibreOffice 转换 .doc 失败: %s", exc)
+            return None
+        out = Path(tmp) / "in.docx"
+        if r.returncode != 0 or not out.exists():
+            logger.warning("LibreOffice 转换 .doc 未产出文件: rc=%s", r.returncode)
+            return None
+        return out.read_bytes()
+
+
 def parse_document(filename: str, content: bytes) -> str:
     try:
         lower_name = filename.lower()
@@ -168,12 +218,15 @@ def parse_document(filename: str, content: bytes) -> str:
         elif lower_name.endswith((".txt", ".csv")):
             text = decode_text(content, filename)
         elif lower_name.endswith(".doc"):
-            # .doc 是 Word 97 的 OLE 二进制格式，python-docx 读不了，
-            # 硬解字节只会得到内部标记。给一句用户能照做的话，别默默入库垃圾。
-            raise ValueError(
-                f"{filename} 是旧版 .doc 格式，无法直接解析。"
-                "请用 Word 打开后「另存为」.docx 或 PDF 再上传。"
-            )
+            # .doc 是 Word 97 的 OLE 二进制格式，python-docx 读不了，硬解字节只会得到内部标记。
+            # 本机装了 LibreOffice 时自动转成 .docx 再解析; 没装才请用户自己另存。
+            converted = convert_doc_to_docx(content)
+            if converted is None:
+                raise ValueError(
+                    f"{filename} 是旧版 .doc 格式，本机没有可用的转换工具（LibreOffice），无法直接解析。"
+                    "请用 Word 打开后「另存为」.docx 或 PDF 再上传。"
+                )
+            text = parse_docx(converted)
         else:
             ext = lower_name.rsplit(".", 1)[-1] if "." in lower_name else "无扩展名"
             raise ValueError(

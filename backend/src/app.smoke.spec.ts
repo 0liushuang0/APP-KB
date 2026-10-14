@@ -40,5 +40,5 @@ describe('isolated team-mode startup', () => {
         fs.rmSync(temporary, { recursive: true, force: true });
       }
     }
-  }, 60000);
+  }, 180000); // 与其它套件并行时冷启动可超过 60 秒(整体运行曾因此误报失败)
 });

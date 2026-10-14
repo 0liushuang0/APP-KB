@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { BackupService } from './backup.service';
+import { firstFullDelayMs, selectBackupsToKeep } from './backup-retention';
 
 /**
  * 自动备份调度器（双层级）。
@@ -10,7 +11,8 @@ import { BackupService } from './backup.service';
  *   · db-only：仅数据库快照，默认每 1 小时（BACKUP_DB_INTERVAL_HOURS），
  *     保留最近 72 份 → 业务数据 RPO ≤ 1 小时
  *   · 全量：数据库 + 附件目录，默认每 6 小时（AUTO_BACKUP_INTERVAL_HOURS），
- *     保留最近 7 份 → 附件与完整恢复能力
+ *     保留 7 份，按自然日分层（每天最新一份）→ 附件与完整恢复能力，且频繁重启不会挤掉历史；
+ *     启动后若距上一份全量不足一个间隔，等到满间隔再做（不再「每次启动都备份」）
  *
  * 配置通过环境变量：
  *   AUTO_BACKUP_ENABLED=true          总开关
@@ -53,10 +55,15 @@ export class BackupSchedulerService implements OnModuleInit, OnModuleDestroy {
         ? `；仅数据库每 ${this.dbIntervalHours} 小时保留 ${this.dbKeepCount} 份（数据 RPO ≤ ${this.dbIntervalHours} 小时）`
         : '；仅数据库层已关闭'),
     );
+    const lastFull = this.lastFullBackupAt();
+    const firstDelay = firstFullDelayMs(lastFull, this.intervalHours);
+    if (lastFull) {
+      this.logger.log(`上一份全量备份：${lastFull.toLocaleString()}，${Math.round(firstDelay / 60000)} 分钟后做下一次`);
+    }
     setTimeout(() => {
       this.runFull();
       this.timers.push(setInterval(() => this.runFull(), fullMs));
-    }, 5 * 60 * 1000);
+    }, firstDelay);
 
     // db-only 层：首次延迟 2 分钟，快速建立第一份数据保护
     if (this.dbIntervalHours > 0) {
@@ -71,6 +78,18 @@ export class BackupSchedulerService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     for (const t of this.timers) clearInterval(t);
     this.timers = [];
+  }
+
+  /** 最近一份全量备份（不含仅数据库层）的时间 */
+  private lastFullBackupAt(): Date | null {
+    try {
+      const full = this.backupService
+        .list()
+        .filter((b) => b.fileName.startsWith('backup-') && !b.fileName.startsWith('backup-db-'));
+      return full.length ? full[0].createdAt : null;
+    } catch {
+      return null;
+    }
   }
 
   private async runFull(): Promise<void> {
@@ -102,7 +121,9 @@ export class BackupSchedulerService implements OnModuleInit, OnModuleDestroy {
         // 全量层（backup-）不含 db-only 层（backup-db-）
         .filter((b) => prefix === 'backup-' ? !b.fileName.startsWith('backup-db-') : true);
       if (all.length <= keep) return;
-      for (const backup of all.slice(keep)) {
+      // 全量层按自然日分层保留; 仅数据库层很小, 仍按最近 N 份
+      const kept = prefix === 'backup-' ? selectBackupsToKeep(all, keep) : new Set(all.slice(0, keep).map((b) => b.fileName));
+      for (const backup of all.filter((b) => !kept.has(b.fileName))) {
         try {
           this.backupService.remove(backup.fileName);
           this.logger.log(`已清理旧备份：${backup.fileName}`);

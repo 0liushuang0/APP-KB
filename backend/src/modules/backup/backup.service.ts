@@ -346,7 +346,8 @@ export class BackupService {
         const stat = fs.statSync(filePath);
         return { fileName, filePath, size: stat.size, createdAt: stat.birthtime };
       })
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      // 创建时间相同(文件系统时间精度/批量复制)时按文件名(内含时间戳)倒序, 保证顺序确定
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.fileName.localeCompare(a.fileName));
   }
 
   getPath(fileName: string): string {
