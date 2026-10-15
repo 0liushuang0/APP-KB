@@ -351,6 +351,11 @@ describe('RequirementsService auto-analysis rules', () => {
   it('refreshes an unconfirmed automatic result when new documents arrive', () => {
     expect(S.shouldAutoAnalyze({ specStatus: 'done', structuredSpec: JSON.stringify({ card: {}, review: true }) })).toBe(true);
   });
+  it('startup backfill only takes requirements that were never analysed', () => {
+    expect(S.neverAnalyzed({ specStatus: 'pending', structuredSpec: null })).toBe(true);
+    expect(S.neverAnalyzed({ specStatus: 'done', structuredSpec: JSON.stringify({ card: {}, review: true }) })).toBe(false);
+    expect(S.neverAnalyzed({ specStatus: 'pending', structuredSpec: null, isCurrent: false })).toBe(false);
+  });
   it('never overwrites a result a person confirmed or edited, nor one being analysed', () => {
     expect(S.shouldAutoAnalyze({ specStatus: 'done', structuredSpec: JSON.stringify({ card: {}, review: false }) })).toBe(false);
     expect(S.shouldAutoAnalyze({ specStatus: 'done', structuredSpec: JSON.stringify({ params: [] }) })).toBe(false);

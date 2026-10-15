@@ -1,3 +1,4 @@
+import { summarizeAutomation } from '../../common/utils/automation-log';
 import { buildFunnel, chainFacts, dealDate, dealsBetween, monthlyTrend, winRate } from './business-metrics';
 
 /**
@@ -52,5 +53,24 @@ describe('business-metrics', () => {
   it('lost and historical requirement versions are excluded from the funnel base', () => {
     const f = buildFunnel([...reqs, { id: 'old', isCurrent: false }, { id: 'lost', status: 'lost' }], props, quotes, contracts);
     expect(f.stages[0].value).toBe(12);
+  });
+});
+
+
+describe('summarizeAutomation', () => {
+  it('counts each object once with its latest figure, and sums batch records', () => {
+    const rows = [
+      { kind: 'spec_extracted', objectId: 'r1', detail: '{"count":1}', createdAt: '2026-10-16T02:33:00Z' },
+      { kind: 'missing_params', objectId: 'r1', detail: '{"count":3}', createdAt: '2026-10-16T02:33:00Z' },
+      // 同一条需求重识别：只算 1 条需求，缺失取最后一次的 5
+      { kind: 'spec_extracted', objectId: 'r1', detail: '{"count":1}', createdAt: '2026-10-16T02:42:00Z' },
+      { kind: 'missing_params', objectId: 'r1', detail: '{"count":5}', createdAt: '2026-10-16T02:42:00Z' },
+      { kind: 'spec_extracted', objectId: 'r2', detail: '{"count":1}', createdAt: '2026-10-16T02:43:00Z' },
+      { kind: 'doc_customer_linked', objectId: null, detail: '{"count":66}', createdAt: '2026-10-16T01:42:00Z' },
+      { kind: 'doc_customer_linked', objectId: 'd9', detail: '{"count":1}', createdAt: '2026-10-16T03:00:00Z' },
+      { kind: 'unknown_kind', objectId: null, detail: '{"count":9}' },
+    ];
+    const out = Object.fromEntries(summarizeAutomation(rows).map((r) => [r.kind, r.count]));
+    expect(out).toEqual({ spec_extracted: 2, missing_params: 5, doc_customer_linked: 67 });
   });
 });

@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit, BadRequestException, Logger } from '@nestjs/common';
 import { buildFunnel, chainFacts, dealDate, dealsBetween, delta, monthlyTrend, winRate } from './business-metrics';
-import { AUTOMATION_LABELS } from '../../common/utils/automation-log';
+import { summarizeAutomation } from '../../common/utils/automation-log';
 import { domainEvents } from '../../common/services/domain-events';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
@@ -386,24 +386,11 @@ export class SystemService implements OnModuleInit {
     const from = new Date(Date.now() - days * 86400000);
     const rows = await this.auditLogRepository
       .createQueryBuilder('a')
-      .select(['a.objectType AS kind', 'a.detail AS detail'])
+      .select(['a.objectType AS kind', 'a.objectId AS "objectId"', 'a.detail AS detail', 'a.createdAt AS "createdAt"'])
       .where('a.action = :a', { a: 'auto' })
       .andWhere('a.createdAt >= :from', { from })
-      .getRawMany<{ kind: string; detail: string }>();
-    const totals = new Map<string, number>();
-    for (const r of rows) {
-      let n = 1;
-      try {
-        n = Number(JSON.parse(r.detail || '{}').count || 1);
-      } catch {
-        /* 旧记录按 1 计 */
-      }
-      totals.set(r.kind, (totals.get(r.kind) || 0) + n);
-    }
-    return [...totals.entries()]
-      .filter(([k, n]) => n > 0 && (AUTOMATION_LABELS as any)[k])
-      .map(([kind, count]) => ({ kind, label: (AUTOMATION_LABELS as any)[kind], count }))
-      .sort((a, b) => b.count - a.count);
+      .getRawMany<{ kind: string; objectId: string | null; detail: string; createdAt: any }>();
+    return summarizeAutomation(rows);
   }
 
   /** $1/$2 占位符在 SQLite 下换成 ?（PG 原样） */

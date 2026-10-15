@@ -88,7 +88,8 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
     let failedInRow = 0;
     let failed = 0;
     for (const r of rows) {
-      if (!RequirementsService.shouldAutoAnalyze(r)) continue;
+      // 只补「从没识别过」的；已有待确认结果的不在启动时重跑（新资料到了由事件触发刷新），免得每次重启都重复调用大模型
+      if (!RequirementsService.neverAnalyzed(r)) continue;
       const sources = await this.collectSources(r.id);
       if (!sources.length) continue;
       try {
@@ -121,6 +122,11 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
     }, delayMs);
     t.unref?.();
     this.autoTimers.set(requirementId, t);
+  }
+
+  /** 从没识别过（启动补识别只处理这类） */
+  static neverAnalyzed(r: Pick<Requirement, 'specStatus' | 'structuredSpec' | 'isCurrent'>): boolean {
+    return r.isCurrent !== false && !r.structuredSpec && (!r.specStatus || r.specStatus === 'pending');
   }
 
   /** 结构化结果是否还是「自动识别、待人确认」 */

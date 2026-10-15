@@ -365,8 +365,9 @@ export const requirementApi = {
     apiClient
       .post(`/requirements/${id}/match-explanation`, { targetType, targetId })
       .then((res) => res.data),
+  // 识别要读完资料再走大模型，常需 40–90 秒：单独放宽超时
   analyzeStructured: (id: string) =>
-    apiClient.post<Requirement>(`/requirements/${id}/analyze-structured`).then((res) => res.data),
+    apiClient.post<Requirement>(`/requirements/${id}/analyze-structured`, undefined, { timeout: 200_000 }).then((res) => res.data),
   updateSpec: (id: string, spec: any) =>
     apiClient.patch<Requirement>(`/requirements/${id}/spec`, { spec }).then((res) => res.data),
   /** 导出预览：与 PDF/DOCX 同一份取数，用于弹窗预览、改值后再导出 */

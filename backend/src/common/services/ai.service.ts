@@ -668,11 +668,12 @@ export class AiService {
     sources: any[],
   ): Promise<any> {
     try {
+      // 资料长、走大模型时常要 40–90 秒；默认 60 秒超时会把正常的识别判成"服务不可用"
       const res = await this.client.post('/requirement/structure', {
         title,
         description,
         sources,
-      });
+      }, { timeout: 180_000 });
       return res.data;
     } catch (err) {
       this.logger.error('Structure requirement failed', err?.message);
