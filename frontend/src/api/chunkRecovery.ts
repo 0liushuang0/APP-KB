@@ -28,19 +28,23 @@ export function shouldReload(store: Pick<Storage, 'getItem' | 'setItem'>, now = 
 }
 
 export function installChunkRecovery(win: Window = window): void {
-  const recover = () => {
-    if (shouldReload(win.sessionStorage)) win.location.reload()
-  }
-  // vite 的预加载失败事件(拦下默认的抛错, 直接恢复)
+  /*
+   * 只有真的要刷新时才拦下默认行为。
+   * vite:preloadError 被 preventDefault 后，失败的 import 不再抛错而是返回 undefined，
+   * React.lazy 随即报「Cannot read properties of undefined (reading 'default')」白屏
+   * （前端错误日志 2026-10-15 23:20 实测一次）。30 秒内已刷新过、不再刷新时，
+   * 必须让错误照常抛出，交给错误边界给出可读提示。
+   */
   win.addEventListener('vite:preloadError', (e: Event) => {
+    if (!shouldReload(win.sessionStorage)) return
     e.preventDefault()
-    recover()
+    win.location.reload()
   })
   // React.lazy / 动态 import 的失败以未处理的 Promise 拒绝出现
   win.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
-    if (isChunkLoadError(e.reason)) {
+    if (isChunkLoadError(e.reason) && shouldReload(win.sessionStorage)) {
       e.preventDefault()
-      recover()
+      win.location.reload()
     }
   })
 }
