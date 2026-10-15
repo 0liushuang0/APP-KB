@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import DeleteImpact from '../components/DeleteImpact'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -25,6 +26,7 @@ import StatCards from '../components/StatCards'
 import FormInput from '../components/FormInput'
 import FormTextarea from '../components/FormTextarea'
 import FormSelect from '../components/FormSelect'
+import CustomerFilterSelect from '../components/CustomerFilterSelect'
 import type { AfterSalesTicket } from '../types'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
 
@@ -59,6 +61,7 @@ export default function AfterSales() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [customerFilter, setCustomerFilter] = useState('')
 
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
@@ -68,13 +71,12 @@ export default function AfterSales() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { list, isLoading, isError, error, refetch, onSort, sortBy, sortOrder, pagination } = usePagedQuery<AfterSalesTicket>({
-    key: ['after-sales', statusFilter],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined },
+    key: ['after-sales', statusFilter, customerFilter],
+    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined },
     fetcher: (params) => afterSalesApi.list(params) as any,
   })
 
   const statsQuery = useQuery({ queryKey: ['after-sales-stats'], queryFn: () => afterSalesApi.stats() })
-
   useRegisterPageAssistant({
     key: 'after-sales',
     label: '售后管理',
@@ -118,6 +120,7 @@ export default function AfterSales() {
           onChange={(e) => setSearch(e.target.value)}
           className="eo-input !w-60 !py-1.5 !text-sm"
         />
+        <CustomerFilterSelect value={customerFilter} onChange={setCustomerFilter} />
         <Button onClick={openCreate} size="sm" className="!py-1.5 !text-sm">
           <Plus size={14} className="mr-1" /> 新建工单
         </Button>
@@ -143,7 +146,7 @@ export default function AfterSales() {
     )
     return () => setPageActions(null)
      
-  }, [selectedKeys])
+  }, [selectedKeys, customerFilter])
 
   const { values: form, errors, isValid, setValue, setValues, validateAll, reset } = useFormValidation({
     initialValues: {
@@ -154,6 +157,19 @@ export default function AfterSales() {
     },
     rules: { title: required('请输入工单标题') },
   })
+
+  // 项目 → 售后：设备型号从该项目的报价明细带出，不必再手敲
+  const modelsQuery = useQuery({
+    queryKey: ['after-sales-models', (form as any).projectId],
+    queryFn: () => afterSalesApi.modelsForProject((form as any).projectId),
+    enabled: !!(form as any).projectId && modalOpen,
+  })
+  const projectModels = modelsQuery.data || []
+  useEffect(() => {
+    // 只有一种设备时直接填上；多种时留给人选
+    if (modalOpen && !editing && projectModels.length === 1 && !form.productModel) setValue('productModel', projectModels[0].value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectModels.length, modalOpen])
 
   // 带 ?fromProjectId= 进来：自动打开新建弹窗并预填项目/客户，打通「项目 → 售后」链路
   useEffect(() => {
@@ -369,7 +385,18 @@ export default function AfterSales() {
               resolve={resolveCustomer}
               placeholder="输入客户名称搜索"
             />
-            <FormInput label="设备型号" value={form.productModel} onChange={(e) => setValue('productModel', e.target.value)} placeholder="如：BJP-1200" />
+            {/* 项目所供设备的型号来自报价明细：下拉可选，也可手填 */}
+            <FormInput
+              label="设备型号"
+              value={form.productModel}
+              onChange={(e) => setValue('productModel', e.target.value)}
+              placeholder={projectModels.length ? '从本项目所供设备中选择，或直接输入' : '如：BJP-1200'}
+              list="aftersales-project-models"
+              helper={projectModels.length ? `本项目报价里有 ${projectModels.length} 种设备，点输入框可选` : undefined}
+            />
+            <datalist id="aftersales-project-models">
+              {projectModels.map((m) => <option key={m.value} value={m.value} />)}
+            </datalist>
           </FieldGrid>
           <FormTextarea label="故障描述" rows={3} value={form.description} onChange={(e) => setValue('description', e.target.value)} placeholder="详细描述故障现象、发生时间、影响范围…" />
         </FormSection>
@@ -472,7 +499,8 @@ export default function AfterSales() {
 
       {/* 删除确认 */}
       <Modal open={!!deleteId} onClose={() => setDeleteId(null)} title="删除工单" onConfirm={() => deleteId && deleteMutation.mutate(deleteId)} confirmText="删除" confirmVariant="danger" loading={deleteMutation.isPending}>
-        <p className="text-sm text-ink-soft">确定删除该售后工单吗？此操作不可撤销。</p>
+        <p className="text-sm text-ink-soft">确定删除该售后工单吗？</p>
+        <DeleteImpact type="afterSale" id={deleteId} />
       </Modal>
     </div>
   )

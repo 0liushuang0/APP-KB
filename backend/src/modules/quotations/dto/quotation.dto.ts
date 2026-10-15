@@ -27,6 +27,18 @@ export class CreateQuotationDto {
 
   @IsOptional()
   @IsString()
+  paymentTerms?: string;
+
+  @IsOptional()
+  @IsNumber()
+  deliveryDays?: number;
+
+  @IsOptional()
+  @IsNumber()
+  warrantyMonths?: number;
+
+  @IsOptional()
+  @IsString()
   ownerId?: string;
 
   @IsOptional()
@@ -146,6 +158,11 @@ export class SuggestQuotationDto {
 }
 
 export class QueryQuotationDto extends PaginationQueryDto {
+  /** 工作台「我的今天」直达筛选（见各 service 的 focus 分支） */
+  @IsOptional()
+  @IsString()
+  focus?: string;
+
   @IsOptional()
   @IsString()
   keyword?: string;
@@ -153,4 +170,9 @@ export class QueryQuotationDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  /** 客户筛选；'none' 表示未关联客户的报价 */
+  @IsOptional()
+  @IsString()
+  customerId?: string;
 }

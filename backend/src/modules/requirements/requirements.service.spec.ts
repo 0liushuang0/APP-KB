@@ -44,6 +44,7 @@ const makeMocks = () => {
         getRepository: jest.fn().mockReturnValue({
           delete: jest.fn().mockResolvedValue(undefined),
           update: jest.fn().mockResolvedValue(undefined),
+          find: jest.fn().mockResolvedValue([]),
         }),
         createQueryBuilder: jest.fn().mockReturnValue({
           delete: jest.fn().mockReturnThis(),
@@ -60,6 +61,11 @@ const makeMocks = () => {
   const aiService = {
     chat: jest.fn().mockResolvedValue('AI分析结果'),
     analyzeRequirement: jest.fn().mockResolvedValue({ spec: {}, summary: '摘要' }),
+    structureRequirement: jest.fn().mockResolvedValue({
+      card: { product_category: '剪切设备', fields: [{ key: 'width', label: '带宽', value: 1450 }], missing: [{ field: 'x', label: '交货地点', severity: 'high', hint: '' }] },
+      summary: '摘要',
+      digest: '字段 1 个',
+    }),
     followupDraft: jest.fn().mockResolvedValue({ wechat: '微信草稿', email: '邮件草稿' }),
   };
   const permissionQuery = { apply: jest.fn() };
@@ -81,6 +87,7 @@ const makeMocks = () => {
       { next: jest.fn().mockResolvedValue('REQ-2026-001') } as any,
       { create: jest.fn(), approve: jest.fn() } as any,
       { remove: jest.fn().mockResolvedValue(undefined) } as any,
+      { capture: jest.fn() } as any,
     );
 
   return {
@@ -309,7 +316,45 @@ describe('RequirementsService', () => {
 
       const result = await svc.analyzeStructured('r1', user());
       expect(result.specStatus).toBe('done');
-      expect(aiService.analyzeRequirement).toHaveBeenCalled();
+      // 走需求结构化引擎（需求卡：字段 + 缺失项），手动识别不标「待确认」
+      expect(aiService.structureRequirement).toHaveBeenCalled();
+      const spec = JSON.parse(result.structuredSpec);
+      expect(spec.card.fields).toHaveLength(1);
+      expect(spec.card.missing[0].label).toBe('交货地点');
+      expect(spec.review).toBe(false);
     });
+
+    it('AI 不可用时不记成「已完成」，恢复原状态并报错', async () => {
+      const { svc, requirementRepository, aiService } = makeMocks();
+      requirementRepository.findOne.mockResolvedValue({ id: 'r1', title: 't', description: '描述', visibility: 'public', ownerId: 'u1', specStatus: 'pending' });
+      requirementRepository.save.mockImplementation(async (r: any) => r);
+      (aiService.structureRequirement as jest.Mock).mockResolvedValueOnce({ card: {}, error: '需求结构化服务暂时不可用' });
+      await expect(svc.analyzeStructured('r1', user())).rejects.toThrow('需求结构化服务暂时不可用');
+      const last = requirementRepository.save.mock.calls[requirementRepository.save.mock.calls.length - 1][0];
+      expect(last.specStatus).toBe('pending');
+    });
+
+    it('没有资料也没有描述时直接提示上传资料', async () => {
+      const { svc, requirementRepository } = makeMocks();
+      requirementRepository.findOne.mockResolvedValue({ id: 'r1', title: 't', description: '', visibility: 'public', ownerId: 'u1' });
+      await expect(svc.analyzeStructured('r1', user())).rejects.toThrow('上传客户的技术附件');
+    });
+  });
+});
+
+describe('RequirementsService auto-analysis rules', () => {
+  const S = RequirementsService as any;
+  it('analyses requirements that were never analysed', () => {
+    expect(S.shouldAutoAnalyze({ specStatus: 'pending', structuredSpec: null })).toBe(true);
+    expect(S.shouldAutoAnalyze({ specStatus: undefined, structuredSpec: null })).toBe(true);
+  });
+  it('refreshes an unconfirmed automatic result when new documents arrive', () => {
+    expect(S.shouldAutoAnalyze({ specStatus: 'done', structuredSpec: JSON.stringify({ card: {}, review: true }) })).toBe(true);
+  });
+  it('never overwrites a result a person confirmed or edited, nor one being analysed', () => {
+    expect(S.shouldAutoAnalyze({ specStatus: 'done', structuredSpec: JSON.stringify({ card: {}, review: false }) })).toBe(false);
+    expect(S.shouldAutoAnalyze({ specStatus: 'done', structuredSpec: JSON.stringify({ params: [] }) })).toBe(false);
+    expect(S.shouldAutoAnalyze({ specStatus: 'analyzing', structuredSpec: null })).toBe(false);
+    expect(S.shouldAutoAnalyze({ specStatus: 'pending', isCurrent: false })).toBe(false);
   });
 });

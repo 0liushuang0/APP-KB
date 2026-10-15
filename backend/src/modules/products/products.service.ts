@@ -1,4 +1,5 @@
 import { buildProductContent } from '../../common/services/index-content.builder';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { normalizeUniqueOptional } from '../../common/utils/normalize.util';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,6 +34,7 @@ export class ProductsService {
     private approvalsService: ApprovalsService,
     private readonly tx: TransactionService,
     private permissionQuery: PermissionQueryService,
+    private readonly trash: BusinessTrashService,
   ) {
     this.uploadDir = path.resolve(process.cwd(), 'data', 'uploads', 'products');
     if (!fs.existsSync(this.uploadDir)) {
@@ -293,6 +295,11 @@ export class ProductsService {
     const attachments = await this.attachmentRepository.find({ where: { productId: id } });
     await this.tx.run(
       async (manager) => {
+        await this.trash.capture(manager, 'product', id, `${product.code || ''} ${product.name || ''}`.trim(), [
+          { table: 'products', column: 'id', ids: [id] },
+          { table: 'product_boms', column: 'productId', ids: [id] },
+          { table: 'product_attachments', column: 'productId', ids: [id] },
+        ], user?.userId);
         await manager.getRepository(ProductBom).delete({ productId: id });
         await manager.getRepository(ProductAttachment).delete({ productId: id });
         await manager.getRepository(Product).delete(id);

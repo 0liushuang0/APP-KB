@@ -587,7 +587,7 @@ export default function Solutions() {
             { key: 'solutionType', title: '方案类型', render: (row) => solutionTypeLabel(row.solutionType) },
             { key: 'productId', title: '适用产品线', render: (row) => productName(row.productId) || '—' },
             { key: 'version', title: '版本', render: (row) => `v${row.version || 1}` },
-            { key: 'status', title: '状态', render: (row) => <StatusBadge status={row.status} /> },
+            { key: 'status', title: '状态', render: (row) => <StatusBadge kind="library" status={row.status} /> },
           ]}
           rowKey={(row) => row.id}
           onRowDoubleClick={(row) => openDetail(row)}
@@ -825,7 +825,7 @@ export default function Solutions() {
             <DetailHeader
               title={detailQuery.data?.name}
               code={detailQuery.data?.solutionNo || `v${detailQuery.data?.version || 1}`}
-              badge={<StatusBadge status={detailQuery.data?.status} />}
+              badge={<StatusBadge kind="library" status={detailQuery.data?.status} />}
               stats={[
                 { label: '方案类型', value: solutionTypeLabel(detailQuery.data?.solutionType) },
                 { label: '适用产品线', value: productName(detailQuery.data?.productId) },

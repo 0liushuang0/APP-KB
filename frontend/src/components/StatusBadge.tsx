@@ -24,10 +24,10 @@ const TONE_DOT: Record<Tone, string> = {
 }
 
 const statusMap: Record<string, { label: string; tone: Tone }> = {
-  // 个人知识库内容状态（沿用后端历史状态码）
-  approved: { label: '可用', tone: 'success' },
-  pending: { label: '待整理', tone: 'warning' },
-  rejected: { label: '已停用', tone: 'danger' },
+  // 业务单据（需求/方案/报价/合同/售后）审批态。资料、产品等库内容用 kind="library" 显示「可用/待整理/已停用」
+  approved: { label: '已审核', tone: 'success' },
+  pending: { label: '待审核', tone: 'warning' },
+  rejected: { label: '已驳回', tone: 'danger' },
   draft: { label: '草稿', tone: 'neutral' },
 
   // 标准方案生命周期
@@ -81,14 +81,27 @@ const statusMap: Record<string, { label: string; tone: Tone }> = {
   blacklist: { label: '黑名单', tone: 'danger' },
 }
 
+/**
+ * 同一个状态码在不同对象上的说法不同：approved 对报价是「已审核」、对资料是「可用」、对项目是「已立项」。
+ * 原来全系统统一显示「可用」，报价单上写着"可用"让人摸不着头脑。
+ */
+const KIND_LABELS: Record<string, Record<string, string>> = {
+  library: { approved: '可用', pending: '待整理', rejected: '已停用' },
+  project: { approved: '已立项', active: '进行中' },
+}
+
 interface StatusBadgeProps {
   status?: string
   /** 覆盖默认文案，用于状态码相同但语境不同的场景 */
   label?: string
+  /** 对象类别：library（资料/产品/模板等库内容）、project；不传 = 业务单据 */
+  kind?: 'library' | 'project'
 }
 
-export default function StatusBadge({ status, label }: StatusBadgeProps) {
-  const item = status ? statusMap[status] : undefined
+export default function StatusBadge({ status, label, kind }: StatusBadgeProps) {
+  const base = status ? statusMap[status] : undefined
+  const kindLabel = kind && status ? KIND_LABELS[kind]?.[status] : undefined
+  const item = kindLabel ? { label: kindLabel, tone: base?.tone ?? ('success' as Tone) } : base
   if (!item && !label) return <span className="text-xs text-muted">-</span>
 
   const tone = item?.tone ?? 'neutral'

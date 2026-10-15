@@ -38,6 +38,7 @@ const makeMocks = () => {
       const savedCustomer = { id: 'c1', name: '测试客户', visibility: 'public', ownerId: 'u1' };
       const fakeRepo = {
         delete: jest.fn().mockResolvedValue(undefined),
+        find: jest.fn().mockResolvedValue([]),
       };
       const manager = {
         create: jest.fn().mockReturnValue(savedCustomer),
@@ -84,6 +85,7 @@ const makeMocks = () => {
       findSimilarCustomers: jest.fn().mockResolvedValue({ similar_customers: [], total: 0 }),
       analyzeCrossSell: jest.fn().mockResolvedValue({ recommendations: [], total_opportunities: 0 }),
     } as any,
+    { capture: jest.fn() } as any,
   );
 
   return {

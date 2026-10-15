@@ -1,4 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { buildProjectDraft } from './project-draft';
+import { evaluateHealth } from './project-health';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Project, ProjectStage, ProjectRisk } from './entities/project.entity';
@@ -55,6 +58,7 @@ export class ProjectsService {
     private permissionQuery: PermissionQueryService,
     private sharedFields: SharedFieldsService,
     private readonly numbering: NumberingService,
+    private readonly trash: BusinessTrashService,
   ) {}
 
   /**
@@ -135,6 +139,11 @@ export class ProjectsService {
     const qb = this.projectRepository.createQueryBuilder('p');
 
     if (query.status) qb.andWhere('p.status = :status', { status: query.status });
+    if ((query as any).focus === 'risk') qb.andWhere("p.health IN ('red','yellow')");
+    if (query.dealStage) qb.andWhere('p.dealStage = :ds', { ds: query.dealStage });
+    // 'none' 是前端"未关联客户"筛选项
+    if (query.customerId === 'none') qb.andWhere('p.customerId IS NULL');
+    else if (query.customerId) qb.andWhere('p.customerId = :cid', { cid: query.customerId });
     if (query.keyword) {
       qb.andWhere('(p.name LIKE :kw OR p.projectNo LIKE :kw)', { kw: `%${query.keyword}%` });
     }
@@ -143,7 +152,7 @@ export class ProjectsService {
     // 否则 private/department 分支会引用不存在的 p.ownerId 列导致查询失败。
     this.permissionQuery.apply(qb, 'p', user, { owner: 'managerId' });
 
-    const result = await paginate(qb, 'p', query, ['createdAt', 'name', 'status', 'dealStage', 'projectNo']);
+    const result = await paginate(qb, 'p', query, ['createdAt', 'name', 'status', 'dealStage', 'projectNo'], { field: 'projectNo', order: 'ASC' });
     return { ...result, list: await this.attachRelations(result.list) };
   }
 
@@ -177,6 +186,22 @@ export class ProjectsService {
       : [];
 
     const map = new Map(chain.map((x) => [x.requirementId, x]));
+
+    /*
+     * 交货期：沿 项目→报价→合同 取合同约定的 deliveryDate，
+     * 单一数据源（合同），项目列表实时同步显示，不另存一份防漂移。
+     */
+    const quoIds = [...new Set(rows.map((r) => r.quotationId).filter(Boolean))];
+    const deliveries = quoIds.length
+      ? await manager
+          .createQueryBuilder()
+          .select(['ct."quotationId" AS "quotationId"', 'to_char(MAX(ct."deliveryDate"), \'YYYY-MM-DD\') AS "deliveryDate"'])
+          .from('contracts', 'ct')
+          .where('ct."quotationId" IN (:...ids)', { ids: quoIds })
+          .groupBy('ct."quotationId"')
+          .getRawMany<{ quotationId: string; deliveryDate: string | null }>()
+      : [];
+    const dmap = new Map(deliveries.map((d) => [d.quotationId, d.deliveryDate]));
 
     /*
      * 直接从合同立项的项目可能没回填 requirementId（立项时链路查询失败、
@@ -228,6 +253,8 @@ export class ProjectsService {
         // 没关联需求时退回项目自己的名称，至少不是空白
         projectName: link?.projectName || p.name,
         legacyName: p.name,
+        // 交货期：合同约定的 deliveryDate（经报价链取），列表提醒排产
+        deliveryDate: (p.quotationId ? dmap.get(p.quotationId) : undefined) ?? null,
         attachmentCounts: cmap.get(p.id) || { input: 0, output: 0 },
       };
     });
@@ -404,6 +431,41 @@ export class ProjectsService {
    * 删除项目：阶段、风险、时间线、文档链接与主行一起删（事务保护），向量清理放事务外。
    * Requirement.projectId 反向引用不级联置空——项目取消不等于需求作废。
    */
+  async draftFromContract(contractId: string) {
+    const m = this.projectRepository.manager;
+    const c: any = await m
+      .createQueryBuilder()
+      .select(['c.title AS title', 'c."customerId" AS "customerId"', 'c."signedDate" AS "signedDate"', 'c."effectiveDate" AS "effectiveDate"',
+        'c."deliveryDate" AS "deliveryDate"', 'c."quotationId" AS "quotationId"'])
+      .from('contracts', 'c')
+      .where('CAST(c.id AS TEXT) = :id', { id: contractId })
+      .getRawOne();
+    if (!c) throw new NotFoundException('合同不存在');
+    // 沿 合同 → 报价 → 方案 → 需求 取交货期天数与需求类型
+    let deliveryDays: number | null = null;
+    let requirementType: string | null = null;
+    if (c.quotationId) {
+      const q: any = await m
+        .createQueryBuilder()
+        .select(['q."deliveryDays" AS "deliveryDays"', 'r."requirementType" AS "requirementType"'])
+        .from('quotations', 'q')
+        .leftJoin('proposals', 'p', 'CAST(p.id AS TEXT) = q."proposalId"')
+        .leftJoin('requirements', 'r', 'CAST(r.id AS TEXT) = p."requirementId"')
+        .where('CAST(q.id AS TEXT) = :id', { id: c.quotationId })
+        .getRawOne();
+      deliveryDays = q?.deliveryDays != null ? Number(q.deliveryDays) : null;
+      requirementType = q?.requirementType || null;
+    }
+    const tpl: any = await m
+      .createQueryBuilder()
+      .select('s.value', 'value')
+      .from('system_configs', 's')
+      .where('s.key = :k', { k: 'project_stage_template' })
+      .getRawOne();
+    const title = String(c.title || '').replace(/\s*(采购)?合同$/, '');
+    return buildProjectDraft({ ...c, title, deliveryDays, requirementType, template: tpl?.value });
+  }
+
   async remove(id: string, user: CurrentUser): Promise<void> {
     const project = await this.findOne(id, user);
     if (!this.permissionService.canManage(user, this.toSubject(project))) {
@@ -411,6 +473,13 @@ export class ProjectsService {
     }
     await this.tx.run(
       async (manager) => {
+        await this.trash.capture(manager, 'project', id, `${project.projectNo || ''} ${project.name || ''}`.trim(), [
+          { table: 'projects', column: 'id', ids: [id] },
+          { table: 'project_stages', column: 'projectId', ids: [id] },
+          { table: 'project_risks', column: 'projectId', ids: [id] },
+          { table: 'project_timeline', column: 'projectId', ids: [id] },
+          { table: 'document_links', column: 'projectId', ids: [id] },
+        ], user?.userId);
         await manager.getRepository(ProjectStage).delete({ projectId: id });
         await manager.getRepository(ProjectRisk).delete({ projectId: id });
         await manager.getRepository(ProjectTimeline).delete({ projectId: id });
@@ -695,15 +764,14 @@ export class ProjectsService {
       project.progress = Math.round((stages.filter(isDone).length / total) * 100);
     }
 
-    // 健康度
-    const hasOverdue = stages.some((s) => s.endDate && new Date(s.endDate) < new Date() && s.status !== 'done' && s.status !== 'completed');
-    const hasHighRisk = risks.some((r) => r.level === 'high' || r.level === '严重');
-    const hasMediumRisk = risks.some((r) => r.level === 'medium');
-    const nearDeadline = project.endDate && new Date(project.endDate).getTime() - Date.now() < 7 * 86400000 && project.progress < 80;
-
-    if (hasOverdue || hasHighRisk) project.health = 'red';
-    else if (hasMediumRisk || nearDeadline) project.health = 'yellow';
-    else project.health = 'green';
+    // 健康度：与每日定时重算共用同一规则（见 project-health.ts）
+    project.health = evaluateHealth({
+      status: project.status,
+      progress: project.progress,
+      endDate: project.endDate,
+      stages,
+      risks,
+    }).health;
 
     // 业务状态
     if (project.progress === 100) project.businessStatus = '已完成';

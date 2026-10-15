@@ -157,6 +157,11 @@ export class CreateProjectRiskDto {
 }
 
 export class QueryProjectDto extends PaginationQueryDto {
+  /** 工作台「我的今天」直达筛选（见各 service 的 focus 分支） */
+  @IsOptional()
+  @IsString()
+  focus?: string;
+
   @IsOptional()
   @IsString()
   keyword?: string;
@@ -164,4 +169,14 @@ export class QueryProjectDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  /** 商机阶段筛选（requirement_registered…won/lost） */
+  @IsOptional()
+  @IsString()
+  dealStage?: string;
+
+  /** 客户筛选；'none' 表示未关联客户的项目 */
+  @IsOptional()
+  @IsString()
+  customerId?: string;
 }

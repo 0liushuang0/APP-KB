@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import DeleteImpact from '../components/DeleteImpact'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Search, Plus, Eye, Pencil, Trash2, Download, ClipboardList, Layers, Hourglass, CheckCircle2, DollarSign, XCircle, FileText } from 'lucide-react'
+import { Search, Plus, Eye, Pencil, Trash2, Download, ClipboardList, Layers, Hourglass, DollarSign, FileText, AlertTriangle, CalendarClock, Sparkles } from 'lucide-react'
+import FocusBar, { useFocus } from '../components/FocusBar'
 import { requirementApi, customerApi, paramTemplateApi } from '../api/services'
 import { useDebounce } from '../hooks/useDebounce'
 import { toList } from '../utils/apiList'
@@ -29,9 +31,33 @@ import FormTextarea from '../components/FormTextarea'
 import DataTable from '../components/DataTable'
 import BatchEditBar from '../components/BatchEditBar'
 import StatusBadge from '../components/StatusBadge'
+import CustomerFilterSelect from '../components/CustomerFilterSelect'
 import PageLoader from '../components/PageLoader'
 import ErrorState from '../components/ErrorState'
 import PageHeader from '../components/PageHeader'
+
+/**
+ * 落地阶段：由 方案→报价→合同 派生链路自动推导（后端 attachLandStage），
+ * 需求登记后"推进到哪一步、有没有落地"不用人工翻四张表串联。
+ * 分档互斥：已登记 → 方案阶段 → 报价阶段 → 已签约；成交/失单取需求自身状态。
+ */
+const LAND_STAGE_OPTIONS = [
+  { value: 'registered', label: '已登记' },
+  { value: 'proposal', label: '方案阶段' },
+  { value: 'quotation', label: '报价阶段' },
+  { value: 'contract', label: '已签约' },
+  { value: 'won', label: '已成交' },
+  { value: 'lost', label: '已失单' },
+] as const
+
+const LAND_STAGE_META: Record<string, { label: string; cls: string }> = {
+  registered: { label: '已登记', cls: 'text-muted bg-canvas border-border' },
+  proposal: { label: '方案阶段', cls: 'text-info-fg bg-info-bg border-info-line' },
+  quotation: { label: '报价阶段', cls: 'text-warning-fg bg-warning-bg border-warning-line' },
+  contract: { label: '已签约', cls: 'text-accent-600 bg-accent-50 border-accent-200' },
+  won: { label: '已成交', cls: 'text-success-fg bg-success-bg border-success-line' },
+  lost: { label: '已失单', cls: 'text-danger-fg bg-danger-bg border-danger-line' },
+}
 
 const initialForm = {
   title: '',
@@ -94,6 +120,9 @@ export default function Requirements() {
   }
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  /** 客户筛选（'none' = 未关联客户）；落地阶段筛选（landStage） */
+  const [customerFilter, setCustomerFilter] = useState('')
+  const [landFilter, setLandFilter] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   /** 导出预览弹窗：装当前要导出的需求 id */
   const [exportId, setExportId] = useState<string | null>(null)
@@ -107,6 +136,7 @@ export default function Requirements() {
   })
 
   const setPageActions = usePageActions()
+  const { focus, setFocus } = useFocus()
 
   const {
     list: listData,
@@ -120,9 +150,23 @@ export default function Requirements() {
     refetch,
   } = usePagedQuery<Requirement>({
     key: ['requirements'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined },
+    filters: {
+      keyword: debouncedSearch || undefined,
+      status: statusFilter || undefined,
+      customerId: customerFilter || undefined,
+      landStage: landFilter || undefined,
+      focus: focus || undefined,
+    },
     fetcher: (params) => requirementApi.list(params) as any,
     initialPageSize: 15,
+  })
+
+  // 同类产品历史报价区间：填预计金额时作参考（不自动填）
+  const { data: amountRef } = useQuery({
+    queryKey: ['req-amount-ref', form.templateCategory],
+    queryFn: () => requirementApi.amountReference(form.templateCategory),
+    enabled: modalOpen && !!form.templateCategory,
+    staleTime: 300_000,
   })
 
   const { data: templates } = useQuery({
@@ -130,8 +174,7 @@ export default function Requirements() {
     queryFn: () => paramTemplateApi.list(),
   })
 
-  /**
-   * 客户候选走服务端搜索。
+  /** 客户候选走服务端搜索。
    *
    * 原来是 `customerApi.list()` 一次拉全量再塞进 <select>，服务端分页上线后
    * 这个调用只回第一页 20 条、而且返回的是 {list,total} 不是数组，
@@ -244,6 +287,14 @@ export default function Requirements() {
 
   const templatesArray = toList<any>(templates)
 
+  /** 当前选定客户的联系人：联系人字段的选择联动数据源（datalist + 自动带出） */
+  const { data: customerDetail } = useQuery({
+    queryKey: ['customer-contacts-for-req', form.customerId],
+    queryFn: () => customerApi.get(form.customerId!),
+    enabled: modalOpen && !!form.customerId,
+  })
+  const customerContacts: any[] = (customerDetail as any)?.contacts || []
+
   useEffect(() => {
     setPageActions(
       <>
@@ -267,6 +318,20 @@ export default function Requirements() {
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+        {/* 落地阶段：由 方案→报价→合同 派生链路自动推导，不用人工维护 */}
+        <select
+          value={landFilter}
+          onChange={(e) => setLandFilter(e.target.value)}
+          className="eo-input !w-32 !py-1 !text-xs"
+          aria-label="按落地阶段筛选"
+          title="按需求推进到哪一步筛选（由方案/报价/合同自动推导）"
+        >
+          <option value="">全部落地阶段</option>
+          {LAND_STAGE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <CustomerFilterSelect value={customerFilter} onChange={setCustomerFilter} />
         {statusFilter && (
           <button onClick={() => setStatusFilter('')} className="text-caption text-muted hover:text-ink transition-colors">
             清除
@@ -295,7 +360,7 @@ export default function Requirements() {
     )
     return () => setPageActions(null)
      
-  }, [statusFilter, debouncedSearch, selectedKeys])
+  }, [statusFilter, landFilter, customerFilter, debouncedSearch, selectedKeys])
   const templateOptions = templatesArray.map((t) => ({ value: t.category, label: t.category?.includes('/') ? t.category.split('/').join(' / ') : t.category }))
 
   useRegisterPageAssistant({
@@ -317,7 +382,7 @@ export default function Requirements() {
         .slice(0, 40)
         .map(
           (x: Requirement, i: number) =>
-            `${i + 1}. ${(x as any).requirementNo || ''} ${x.title || ''}｜客户 ${(x as any).customer?.name || (x as any).customerName || '—'}｜类型 ${(x as any).requirementType || '—'}｜优先级 ${(x as any).priority || '—'}｜状态 ${x.status || '—'}`,
+            `${i + 1}. ${(x as any).requirementNo || ''} ${x.title || ''}｜客户 ${(x as any).customer?.name || (x as any).customerName || '—'}｜类型 ${(x as any).requirementType || '—'}｜优先级 ${(x as any).priority || '—'}｜状态 ${x.status || '—'}｜落地阶段 ${LAND_STAGE_META[(x as any).landStage]?.label || '—'}`,
         ),
     ]
       .filter(Boolean)
@@ -326,21 +391,30 @@ export default function Requirements() {
 
   const { stats, isLoading: statsLoading } = useModuleStats()
   const r = stats?.requirements
+  // 统计卡即筛选：点一下列表就只剩那几条（与工作台「我的今天」同一口径）
   const requirementCards = [
-    { label: '需求总数', value: r?.total ?? 0, icon: ClipboardList },
-    { label: '待处理', value: r?.pending ?? 0, icon: Hourglass },
-    { label: '已确认', value: r?.ready ?? 0, icon: CheckCircle2 },
+    { label: '需求总数', value: r?.total ?? 0, icon: ClipboardList, onClick: () => setFocus(''), active: !focus },
+    { label: '跟进超期', value: r?.followupOverdue ?? 0, icon: AlertTriangle, alert: true, onClick: () => setFocus('followup-overdue'), active: focus === 'followup-overdue' },
+    { label: '7 天内跟进', value: r?.followupDue ?? 0, icon: CalendarClock, onClick: () => setFocus('followup'), active: focus === 'followup' },
+    { label: '参数待确认', value: r?.review ?? 0, icon: Sparkles, title: 'AI 已从资料里自动识别出参数，等你核对', onClick: () => setFocus('review'), active: focus === 'review' },
+    { label: '待完善', value: r?.incomplete ?? 0, icon: Hourglass, title: '还没识别参数，或识别后仍缺关键参数', onClick: () => setFocus('incomplete'), active: focus === 'incomplete' },
     { label: '已报价', value: r?.quoted ?? 0, icon: DollarSign },
-    { label: '已失单', value: r?.lost ?? 0, icon: XCircle },
     { label: '本月新增', value: r?.newThisMonth ?? 0, icon: Plus },
   ]
+  const FOCUS_LABELS: Record<string, string> = {
+    'followup-overdue': '跟进日期已过的需求（最早的在前）',
+    followup: '7 天内要跟进的需求',
+    review: 'AI 已识别参数、等你确认的需求',
+    incomplete: '还缺参数的需求',
+  }
 
   return (
     <div>
       <PageHeader title="需求" titleEm="管理" />
 
       {/* 统计卡片：与业务概览顶部同一套组件，各模块高度与配色一致 */}
-      <StatCards className="mb-4" loading={statsLoading} skeletonCount={6} items={requirementCards} />
+      <StatCards className="mb-4" loading={statsLoading} skeletonCount={7} items={requirementCards} />
+      <FocusBar focus={focus} labels={FOCUS_LABELS} onClear={() => setFocus('')} count={pagination?.total} />
 
       {isLoading && !listData.length && <PageLoader />}
       {isError && <ErrorState message={error?.message || '加载失败'} onRetry={refetch} />}
@@ -382,8 +456,70 @@ export default function Requirements() {
                   <span className="text-warning-fg text-xs">未指定</span>
                 ),
             },
-            { key: 'priority', title: '优先级', sortable: true, render: (row) => priorityLabel(row.priority) },
+            {
+              key: 'priority',
+              title: '优先级',
+              sortable: true,
+              render: (row) => {
+                const hint = (row as any).priorityHint
+                const set = (row as any).priority
+                // 与建议不一致时给提示：系统按金额/客户等级推的档，供人确认（减少凭感觉排优先级）
+                const mismatch = hint && set && hint !== set
+                return (
+                  <span className="inline-flex items-center gap-1">
+                    {priorityLabel(row.priority)}
+                    {hint && (
+                      <span
+                        className={`text-[10px] px-1 py-0.5 rounded border ${
+                          hint === 'high'
+                            ? 'text-danger-fg border-danger-line bg-danger-bg'
+                            : hint === 'medium'
+                              ? 'text-warning-fg border-warning-line bg-warning-bg'
+                              : 'text-muted border-border'
+                        }`}
+                        title={`系统建议：${hint === 'high' ? '高' : hint === 'medium' ? '中' : '低'}（按期望金额与客户等级推算）${mismatch ? '，与当前设置不一致，建议复核' : ''}`}
+                      >
+                        {mismatch ? `建议${hint === 'high' ? '高' : hint === 'medium' ? '中' : '低'}` : '✓'}
+                      </span>
+                    )}
+                  </span>
+                )
+              },
+            },
+            {
+              key: 'nextFollowUpDate',
+              title: '下次跟进',
+              sortable: true,
+              render: (row: any) => {
+                if (!row.nextFollowUpDate) return <span className="text-muted">—</span>
+                const d = String(row.nextFollowUpDate).slice(0, 10)
+                const today = new Date().toISOString().slice(0, 10)
+                const closed = ['won', 'lost', 'closed'].includes(row.status)
+                const overdue = !closed && d < today
+                return (
+                  <span className={`tabular-nums ${overdue ? 'text-danger-fg font-medium' : d === today ? 'text-warning-fg' : 'text-ink-soft'}`} title={overdue ? '跟进日期已过' : undefined}>
+                    {d === today ? '今天' : d.slice(5)}{overdue ? ' 超期' : ''}
+                  </span>
+                )
+              },
+            },
             { key: 'status', title: '状态', sortable: true, render: (row) => <StatusBadge status={row.status} label={requirementStatusLabel(row.status)} /> },
+            {
+              key: 'landStage',
+              title: '落地阶段',
+              render: (row) => {
+                const meta = LAND_STAGE_META[(row as any).landStage]
+                if (!meta) return <span className="text-muted">—</span>
+                return (
+                  <span
+                    className={`text-xs px-1.5 py-0.5 rounded border whitespace-nowrap ${meta.cls}`}
+                    title="由方案→报价→合同链路自动推导，无需人工维护"
+                  >
+                    {meta.label}
+                  </span>
+                )
+              },
+            },
             { key: 'createdAt', title: '创建时间', sortable: true, render: (row) => new Date(row.createdAt).toLocaleDateString() },
           ]}
           rowKey={(row) => row.id}
@@ -531,10 +667,33 @@ export default function Requirements() {
 
           <FormSection title="联系人信息">
           <FieldGrid>
-            <FormInput label="联系人" value={form.contactName} onChange={(e) => setValue('contactName', e.target.value)} placeholder="需求提出人姓名" />
+            {/* 联系人与客户中心联动：选定客户后可从其联系人里选（自动带出电话邮箱），
+                新填的联系人保存时会自动沉淀到客户中心该客户名下 */}
+            <FormInput
+              label="联系人"
+              list="req-contact-options"
+              value={form.contactName}
+              onChange={(e) => {
+                const name = e.target.value
+                setValue('contactName', name)
+                // 姓名与客户中心联系人精确匹配 → 自动带出电话/邮箱（不覆盖已填值）
+                const hit = customerContacts.find((c) => c.name === name.trim())
+                if (hit) {
+                  if (!form.contactPhone && hit.phone) setValue('contactPhone', hit.phone)
+                  if (!form.contactEmail && hit.email) setValue('contactEmail', hit.email)
+                }
+              }}
+              placeholder="需求提出人姓名"
+              helper={form.customerId ? '输入时可选该客户的已有联系人；新联系人保存后自动同步到客户中心' : '先选择关联客户，可选其已有联系人'}
+            />
             <FormInput label="联系电话" value={form.contactPhone} onChange={(e) => setValue('contactPhone', e.target.value)} />
             <FormInput label="邮箱" value={form.contactEmail} onChange={(e) => setValue('contactEmail', e.target.value)} />
           </FieldGrid>
+          <datalist id="req-contact-options">
+            {customerContacts.map((c) => (
+              <option key={c.id || c.name} value={c.name}>{[c.department, c.title, c.phone].filter(Boolean).join(' · ')}</option>
+            ))}
+          </datalist>
           </FormSection>
 
           <FormSection title="需求描述">
@@ -544,10 +703,18 @@ export default function Requirements() {
           {/* 商机管理：填了之后工作台漏斗按金额聚合，销售过程有预判有跟进 */}
           <FormSection title="商机信息" hint="选填。预计金额与概率驱动漏斗金额视图，跟进日期用于提醒">
           <FieldGrid>
-            <FormInput label="预计成交金额" type="number" min="0" value={form.expectedAmount} onChange={(e) => setValue('expectedAmount', e.target.value)} placeholder="如 250000" />
+            <FormInput
+              label="预计成交金额"
+              type="number"
+              min="0"
+              value={form.expectedAmount}
+              onChange={(e) => setValue('expectedAmount', e.target.value)}
+              placeholder={amountRef?.median ? `同类参考 ${Math.round(amountRef.median).toLocaleString('zh-CN')}` : '如 250000'}
+              helper={amountRef?.count ? `同类产品历史报价 ${amountRef.count} 单：${Math.round(amountRef.min || 0).toLocaleString('zh-CN')} ~ ${Math.round(amountRef.max || 0).toLocaleString('zh-CN')} 元（仅供参考）` : undefined}
+            />
             <FormInput label="预计成交日期" type="date" value={form.expectedDealDate} onChange={(e) => setValue('expectedDealDate', e.target.value)} />
             <FormInput label="赢单概率 (%)" type="number" min="0" max="100" value={form.winProbability} onChange={(e) => setValue('winProbability', e.target.value)} placeholder="0-100" />
-            <FormInput label="下次跟进日期" type="date" value={form.nextFollowUpDate} onChange={(e) => setValue('nextFollowUpDate', e.target.value)} />
+            <FormInput label="下次跟进日期" type="date" value={form.nextFollowUpDate} onChange={(e) => setValue('nextFollowUpDate', e.target.value)} helper={!editing && !form.nextFollowUpDate ? '不填则默认 7 天后，到期出现在工作台「我的今天」' : undefined} />
             <FormInput label="输单原因" value={form.lossReason} onChange={(e) => setValue('lossReason', e.target.value)} placeholder="失单时填写，沉淀经验" />
           </FieldGrid>
           </FormSection>
@@ -595,11 +762,12 @@ export default function Requirements() {
                 <li>· <b className="text-warning-fg">{removePreview.projectsCount}</b> 个项目将解除关联</li>
               )}
             </ul>
-            <p className="text-xs text-muted">方案/项目为解除关联（保留数据），附件与资料为物理删除，不可恢复。</p>
+            <p className="text-xs text-muted">方案/项目为解除关联（保留数据，还原需求时自动接回）；只挂在本需求上的资料进入资料回收站。</p>
           </div>
         ) : (
           <p className="text-sm text-ink-soft">确定要删除该需求吗？该需求无关联客户资料与下游。</p>
         )}
+        <DeleteImpact type="requirement" id={deleteId} refs={false} />
       </Modal>
 
       {/* 导出预览：按文档版式预览、改值后再导出 PDF/Word */}

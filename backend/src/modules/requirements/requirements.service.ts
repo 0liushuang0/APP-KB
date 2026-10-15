@@ -3,9 +3,16 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
+import { Repository, Like, In } from 'typeorm';
+import { Document } from '../documents/entities/document.entity';
+import { hasRealParsedText } from '../../common/utils/parsed-text.util';
+import { recordAutomation } from '../../common/utils/automation-log';
+import { domainEvents } from '../../common/services/domain-events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { safeUploadTarget } from '../../common/utils/safe-path.util';
@@ -28,12 +35,148 @@ import { KnowledgeSyncService } from '../../common/services/knowledge-sync.servi
 import { TransactionService } from '../../common/services/transaction.service';
 import { AiService } from '../../common/services/ai.service';
 import { ApprovalsService } from '../approvals/approvals.service';
-import { Customer } from '../customers/entities/customer.entity';
+import { Customer, ContactPerson } from '../customers/entities/customer.entity';
 import { DocumentsService } from '../documents/documents.service';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 
 @Injectable()
-export class RequirementsService {
+export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApplicationBootstrap {
   private readonly logger = new Logger(RequirementsService.name);
+
+  /*
+   * 资料到了就自动识别。
+   *
+   * 需求页一直写着「上传客户原始资料后点击结构化识别，系统会自动抽取技术参数」，
+   * 实际上传的资料进了资料模块（document_links），识别读的却是需求附件表（0 条），
+   * AI 只看到标题和描述。现在：挂在需求下的资料解析完（或已解析的资料被挂上来），
+   * 等几秒把同一批上传合并，自动跑一次识别，结果标「待确认」由人核对。
+   */
+  private autoTimers = new Map<string, NodeJS.Timeout>();
+  private unsubscribers: Array<() => void> = [];
+  static readonly AUTO_DELAY_MS = 8_000;
+
+  onModuleInit(): void {
+    if (process.env.REQ_AUTO_ANALYZE === 'false' || process.env.NODE_ENV === 'test') return;
+    this.unsubscribers.push(
+      domainEvents.onEvent('document.parsed', async ({ documentId }) => {
+        const links = await this.documentLinkRepository.find({ where: { documentId } });
+        for (const l of links) if (l.requirementId) this.scheduleAutoAnalyze(l.requirementId);
+      }),
+      domainEvents.onEvent('document.linked', ({ requirementId }) => {
+        if (requirementId) this.scheduleAutoAnalyze(requirementId);
+      }),
+    );
+  }
+
+  /**
+   * 补识别一次历史需求：自动识别上线前就挂好资料、但从没识别过的需求（实测 8 条）。
+   * 启动 2 分钟后逐条串行跑（每条约 40 秒），AI 服务连续失败 2 次就停，下次启动再来；
+   * 人确认/修改过的结果不会被覆盖（shouldAutoAnalyze）。
+   */
+  onApplicationBootstrap(): void {
+    if (process.env.REQ_AUTO_ANALYZE === 'false' || process.env.NODE_ENV === 'test') return;
+    const t = setTimeout(() => {
+      this.backfillAutoAnalyze().catch((e) => this.logger.warn(`历史需求补识别中止：${e?.message}`));
+    }, 120_000);
+    t.unref?.();
+    this.autoTimers.set('__backfill__', t);
+  }
+
+  async backfillAutoAnalyze(): Promise<{ done: number; failed: number }> {
+    const rows = await this.requirementRepository.find({ select: ['id', 'requirementNo', 'specStatus', 'structuredSpec', 'isCurrent'] as any });
+    let done = 0;
+    let failedInRow = 0;
+    let failed = 0;
+    for (const r of rows) {
+      if (!RequirementsService.shouldAutoAnalyze(r)) continue;
+      const sources = await this.collectSources(r.id);
+      if (!sources.length) continue;
+      try {
+        await this.analyzeStructured(r.id, null as any, { auto: true });
+        done++;
+        failedInRow = 0;
+      } catch (e: any) {
+        failed++;
+        failedInRow++;
+        this.logger.warn(`需求 ${r.requirementNo} 补识别失败：${e?.message}`);
+        if (failedInRow >= 2) break;
+      }
+    }
+    if (done || failed) this.logger.log(`历史需求补识别：完成 ${done} 条，失败 ${failed} 条`);
+    return { done, failed };
+  }
+
+  onModuleDestroy(): void {
+    this.unsubscribers.forEach((u) => u());
+    this.autoTimers.forEach((t) => clearTimeout(t));
+    this.autoTimers.clear();
+  }
+
+  scheduleAutoAnalyze(requirementId: string, delayMs = RequirementsService.AUTO_DELAY_MS): void {
+    const prev = this.autoTimers.get(requirementId);
+    if (prev) clearTimeout(prev);
+    const t = setTimeout(() => {
+      this.autoTimers.delete(requirementId);
+      this.autoAnalyze(requirementId).catch((e) => this.logger.warn(`需求 ${requirementId} 自动识别失败：${e?.message}`));
+    }, delayMs);
+    t.unref?.();
+    this.autoTimers.set(requirementId, t);
+  }
+
+  /** 结构化结果是否还是「自动识别、待人确认」 */
+  static isReviewPending(structuredSpec?: string | null): boolean {
+    if (!structuredSpec) return false;
+    try {
+      return JSON.parse(structuredSpec)?.review === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 是否应该自动识别：没识别过、或上次是自动识别且还没人确认（新资料到了可以刷新）。
+   * 人确认/修改过的结果绝不覆盖。
+   */
+  static shouldAutoAnalyze(r: Pick<Requirement, 'specStatus' | 'structuredSpec' | 'isCurrent'>): boolean {
+    if (r.isCurrent === false) return false;
+    if (r.specStatus === 'analyzing') return false;
+    if (!r.structuredSpec || r.specStatus === 'pending' || !r.specStatus) return true;
+    return RequirementsService.isReviewPending(r.structuredSpec);
+  }
+
+  private async autoAnalyze(requirementId: string): Promise<void> {
+    const r = await this.requirementRepository.findOne({ where: { id: requirementId } });
+    if (!r || !RequirementsService.shouldAutoAnalyze(r)) return;
+    const sources = await this.collectSources(requirementId);
+    if (!sources.length) return;
+    await this.analyzeStructured(requirementId, null as any, { auto: true });
+    this.logger.log(`需求 ${r.requirementNo} 已根据 ${sources.length} 份资料自动识别参数`);
+  }
+
+  /**
+   * 识别用的资料正文：需求附件 + 挂在需求下的业务资料（document_links → documents.parsedText）。
+   * 解析失败的占位话术/状态标记不算正文。
+   */
+  async collectSources(requirementId: string): Promise<Array<{ source_id: string; source_type: string; file_name: string; raw_text: string }>> {
+    const MAX = 200_000;
+    const out: Array<{ source_id: string; source_type: string; file_name: string; raw_text: string }> = [];
+    const atts = await this.attachmentRepository.find({ where: { requirementId } });
+    for (const a of atts) {
+      if (hasRealParsedText(a.parsedText)) out.push({ source_id: a.id, source_type: 'file', file_name: a.fileName, raw_text: a.parsedText.slice(0, MAX) });
+    }
+    const links = await this.documentLinkRepository.find({ where: { requirementId } });
+    const docIds = [...new Set(links.map((l) => l.documentId).filter(Boolean))];
+    if (docIds.length) {
+      const docs = await this.documentLinkRepository.manager.getRepository(Document).find({
+        where: { id: In(docIds) },
+        select: ['id', 'fileName', 'parsedText'],
+      });
+      for (const d of docs) {
+        if (hasRealParsedText(d.parsedText)) out.push({ source_id: d.id, source_type: 'file', file_name: d.fileName, raw_text: d.parsedText.slice(0, MAX) });
+      }
+    }
+    return out;
+  }
   private uploadDir: string;
 
   constructor(
@@ -61,6 +204,7 @@ export class RequirementsService {
     private numbering: NumberingService,
     private approvalsService: ApprovalsService,
     private documentsService: DocumentsService,
+    private readonly trash: BusinessTrashService,
   ) {
     this.uploadDir = path.resolve(process.cwd(), 'data', 'uploads', 'requirements');
     if (!fs.existsSync(this.uploadDir)) {
@@ -74,7 +218,61 @@ export class RequirementsService {
 
     if (query.category) qb.andWhere('r.category = :category', { category: query.category });
     if (query.status) qb.andWhere('r.status = :status', { status: query.status });
-    if (query.customerId) qb.andWhere('r.customerId = :customerId', { customerId: query.customerId });
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+    switch ((query as any).focus) {
+      case 'followup-overdue':
+        qb.andWhere('r.nextFollowUpDate IS NOT NULL AND r.nextFollowUpDate < :fToday', { fToday: todayStr })
+          .andWhere("(r.status IS NULL OR r.status NOT IN ('lost','closed','won'))");
+        break;
+      case 'followup':
+        qb.andWhere('r.nextFollowUpDate BETWEEN :fToday AND :fIn7', { fToday: todayStr, fIn7: inDays(7) })
+          .andWhere("(r.status IS NULL OR r.status NOT IN ('lost','closed','won'))");
+        break;
+      case 'review':
+        // 结构化结果以 2 空格缩进存储：自动识别待确认 = "review": true
+        qb.andWhere('r.structuredSpec LIKE :fReview', { fReview: '%"review": true%' });
+        break;
+      case 'incomplete':
+        qb.andWhere(`(r.specStatus IS NULL OR r.specStatus = 'pending'
+          OR (r.structuredSpec LIKE :fMiss AND r.structuredSpec NOT LIKE :fNoMiss))`, { fMiss: '%"missing": [%', fNoMiss: '%"missing": []%' });
+        break;
+    }
+    // 'none' 是前端"未关联客户"筛选项：业务链上确实存在没挂客户的需求，要能单独捞出来补录
+    if (query.customerId === 'none') qb.andWhere('r.customerId IS NULL');
+    else if (query.customerId) qb.andWhere('r.customerId = :customerId', { customerId: query.customerId });
+    // 落地阶段：按 方案→报价→合同 派生链路的存在性过滤，与 attachLandStage 的推导口径一致（互斥分档）
+    if (query.landStage) {
+      const hasProposal = `EXISTS (SELECT 1 FROM proposals pl WHERE pl."requirementId" = r.id)`;
+      const hasQuotation = `EXISTS (
+        SELECT 1 FROM quotations qq JOIN proposals pp ON pp.id = qq."proposalId"
+        WHERE pp."requirementId" = r.id)`;
+      const hasContract = `EXISTS (
+        SELECT 1 FROM contracts ct
+        JOIN quotations q2 ON q2.id = ct."quotationId"
+        JOIN proposals p2 ON p2.id = q2."proposalId"
+        WHERE p2."requirementId" = r.id)`;
+      switch (query.landStage) {
+        case 'won':
+          qb.andWhere('r.status = :wonStage', { wonStage: 'won' });
+          break;
+        case 'lost':
+          qb.andWhere('r.status = :lostStage', { lostStage: 'lost' });
+          break;
+        case 'contract':
+          qb.andWhere(`${hasContract} AND r.status NOT IN ('won','lost')`);
+          break;
+        case 'quotation':
+          qb.andWhere(`${hasQuotation} AND NOT ${hasContract}`);
+          break;
+        case 'proposal':
+          qb.andWhere(`${hasProposal} AND NOT ${hasQuotation}`);
+          break;
+        default:
+          qb.andWhere(`NOT ${hasProposal}`);
+          break;
+      }
+    }
     if (query.keyword) {
       // 标题/编号 + 需求描述 + 客户名 一起搜（按客户名找需求很常见）
       qb.andWhere(
@@ -88,9 +286,96 @@ export class RequirementsService {
 
     this.permissionQuery.apply(qb, 'r', user);
 
-    const result = await paginate(qb, 'r', query, ['createdAt', 'title', 'priority', 'status', 'requirementNo', 'requirementDate']);
+    // 看跟进类待办时，最该先联系的排最前
+    const focusSort = String((query as any).focus || '').startsWith('followup') ? { field: 'nextFollowUpDate', order: 'ASC' as const } : { field: 'requirementNo', order: 'ASC' as const };
+    const result = await paginate(qb, 'r', query, ['createdAt', 'title', 'priority', 'status', 'requirementNo', 'requirementDate', 'nextFollowUpDate'], focusSort);
     const withCustomer = await this.attachCustomerNames(result.list);
-    return { ...result, list: await this.attachAttachmentCounts(withCustomer) };
+    const withCounts = await this.attachAttachmentCounts(withCustomer);
+    const withStage = await this.attachLandStage(withCounts);
+    /*
+     * 优先级建议：按 期望金额 / 客户等级 推一个建议档，列表显示"建议优先级"
+     * —— 系统给依据，人只做确认，减少逐条凭感觉定优先级的人为判断。
+     * 不改动用户已设的 priority，两者并排展示。
+     */
+    return {
+      ...result,
+      list: withStage.map((r: any) => ({ ...r, priorityHint: this.suggestPriority(r) })),
+    };
+  }
+
+  /**
+   * 需求落地阶段：从 方案→报价→合同 派生链路自动推导（三次批量查询，防 N+1）。
+   *
+   * 需求登记后"走到哪一步"原来要靠人脑串联四张表；这里系统直接给结论：
+   * 已登记(没方案) → 方案阶段(有方案没报价) → 报价阶段(有报价没合同)
+   * → 已签约(有合同) / 已成交、已失单(需求自身状态，优先级最高)。
+   * 分档互斥，与 findAll 的 landStage 筛选口径保持一致。
+   */
+  private async attachLandStage<T extends { id: string; status?: string }>(
+    rows: T[],
+  ): Promise<(T & { landStage: string })[]> {
+    if (!rows.length) return rows.map((r) => ({ ...r, landStage: 'registered' }));
+    const mgr = this.requirementRepository.manager;
+    const ids = rows.map((r) => r.id);
+
+    const proposalIds = new Set(
+      (
+        await mgr
+          .createQueryBuilder()
+          .select('pl."requirementId" AS rid')
+          .from('proposals', 'pl')
+          .where('pl."requirementId" IN (:...ids)', { ids })
+          .getRawMany<{ rid: string }>()
+      ).map((x) => x.rid),
+    );
+    const quotationIds = new Set(
+      (
+        await mgr
+          .createQueryBuilder()
+          .select('pp."requirementId" AS rid')
+          .from('quotations', 'qq')
+          .innerJoin('proposals', 'pp', 'pp.id = qq."proposalId"')
+          .where('pp."requirementId" IN (:...ids)', { ids })
+          .getRawMany<{ rid: string }>()
+      ).map((x) => x.rid),
+    );
+    const contractIds = new Set(
+      (
+        await mgr
+          .createQueryBuilder()
+          .select('p2."requirementId" AS rid')
+          .from('contracts', 'ct')
+          .innerJoin('quotations', 'q2', 'q2.id = ct."quotationId"')
+          .innerJoin('proposals', 'p2', 'p2.id = q2."proposalId"')
+          .where('p2."requirementId" IN (:...ids)', { ids })
+          .getRawMany<{ rid: string }>()
+      ).map((x) => x.rid),
+    );
+
+    return rows.map((r) => ({
+      ...r,
+      landStage:
+        r.status === 'lost'
+          ? 'lost'
+          : r.status === 'won'
+            ? 'won'
+            : contractIds.has(r.id)
+              ? 'contract'
+              : quotationIds.has(r.id)
+                ? 'quotation'
+                : proposalIds.has(r.id)
+                  ? 'proposal'
+                  : 'registered',
+    }));
+  }
+
+  /** 期望金额 ≥50万 或 A 级客户 → 建议高；≥10万 或 B 级 → 建议中；其余低 */
+  private suggestPriority(r: any): 'high' | 'medium' | 'low' {
+    const amount = Number(r.expectedAmount || 0);
+    const level = (r as any).customerLevel;
+    if (amount >= 500000 || level === 'A') return 'high';
+    if (amount >= 100000 || level === 'B') return 'medium';
+    return 'low';
   }
 
   /**
@@ -138,15 +423,21 @@ export class RequirementsService {
 
     const customers = await this.requirementRepository.manager
       .createQueryBuilder()
-      .select(['c.id AS id', 'c.name AS name', 'c.code AS code'])
+      .select(['c.id AS "id"', 'c.name AS "name"', 'c.code AS "code"', 'c.level AS "level"'])
       .from('customers', 'c')
       .where('c.id IN (:...ids)', { ids })
-      .getRawMany<{ id: string; name: string; code: string }>();
+      .getRawMany<{ id: string; name: string; code: string; level?: string }>();
 
     const map = new Map(customers.map((c) => [c.id, c]));
     return rows.map((r) => {
       const c = r.customerId ? map.get(r.customerId) : undefined;
-      return { ...r, customerName: c?.name ?? null, customerShortName: c?.code || c?.name || null };
+      return {
+        ...r,
+        customerName: c?.name ?? null,
+        customerShortName: c?.code || c?.name || null,
+        // 客户等级：优先级建议的依据之一
+        customerLevel: c?.level ?? null,
+      };
     });
   }
 
@@ -349,8 +640,11 @@ export class RequirementsService {
   async create(dto: CreateRequirementDto, user: CurrentUser): Promise<Requirement> {
     const requirementNo = await this.generateNo();
     const skipApproval = this.permissionService.skipApproval();
+    // 下次跟进日期默认 7 天后：原来 12 条需求全空，工作台「今日待办」永远显示"无"
+    const nextFollowUpDate = (dto as any).nextFollowUpDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const requirement = this.requirementRepository.create({
       ...dto,
+      nextFollowUpDate,
       requirementNo,
       ownerId: user?.userId,
       departmentId: dto.departmentId || user?.departmentId,
@@ -371,6 +665,7 @@ export class RequirementsService {
       },
       async (row) => { await this.sync(row); },
     );
+    await this.syncContactToCustomer(saved);
     return saved;
   }
 
@@ -382,7 +677,44 @@ export class RequirementsService {
     Object.assign(requirement, dto);
     const saved = await this.requirementRepository.save(requirement);
     await this.sync(saved);
+    await this.syncContactToCustomer(saved);
     return saved;
+  }
+
+  /**
+   * 联系人联动：需求里填的联系人沉淀到客户中心该客户名下。
+   *
+   * · 同名联系人：只**补空**（客户档案里电话/邮箱为空才回填），
+   *   客户中心维护的更全信息永远不被需求侧覆盖
+   * · 新联系人：直接新增到该客户（联系人是在跟需求接触中认识的，落档案）
+   */
+  private async syncContactToCustomer(requirement: Requirement): Promise<void> {
+    const { customerId, contactName, contactPhone, contactEmail } = requirement as any;
+    if (!customerId || !contactName?.trim()) return;
+    try {
+      const cpRepo = this.customerRepository.manager.getRepository(ContactPerson);
+      const existing = await cpRepo.findOne({
+        where: { customerId, name: contactName.trim() },
+      });
+      if (existing) {
+        const patch: Partial<ContactPerson> = {};
+        if (!existing.phone && contactPhone?.trim()) patch.phone = contactPhone.trim();
+        if (!existing.email && contactEmail?.trim()) patch.email = contactEmail.trim();
+        if (Object.keys(patch).length) await cpRepo.update(existing.id, patch);
+      } else {
+        await cpRepo.save(
+          cpRepo.create({
+            customerId,
+            name: contactName.trim(),
+            phone: contactPhone?.trim() || null,
+            email: contactEmail?.trim() || null,
+          }),
+        );
+      }
+    } catch (err) {
+      // 同步失败不阻断需求保存：联系人沉淀是增值动作，主流程优先
+      console.warn('联系人同步到客户中心失败：', (err as Error).message);
+    }
   }
 
   /** 审核通过需求（团队模式）。与方案/报价的 approve 模式一致。 */
@@ -470,6 +802,19 @@ export class RequirementsService {
 
     await this.transactionService.run(
       async (manager) => {
+        const [downProposals, downProjects] = await Promise.all([
+          manager.getRepository(Proposal).find({ where: { requirementId: id }, select: ['id'] }),
+          manager.getRepository(Project).find({ where: { requirementId: id }, select: ['id'] }),
+        ]);
+        await this.trash.capture(manager, 'requirement', id, `${requirement.requirementNo || ''} ${requirement.title || ''}`.trim(), [
+          { table: 'requirements', column: 'id', ids: [id] },
+          { table: 'requirement_attachments', column: 'requirementId', ids: [id] },
+          { table: 'requirement_logs', column: 'requirementId', ids: [id] },
+          { table: 'document_links', column: 'requirementId', ids: [id] },
+        ], user?.userId, [
+          { table: 'proposals', column: 'requirementId', ids: downProposals.map((p) => p.id) },
+          { table: 'projects', column: 'requirementId', ids: downProjects.map((p) => p.id) },
+        ]);
         // 附件行
         await manager.getRepository(RequirementAttachment).delete({ requirementId: id });
         // 需求记录
@@ -585,35 +930,100 @@ export class RequirementsService {
     return saved;
   }
 
-  async analyzeStructured(id: string, user: CurrentUser): Promise<Requirement> {
-    const requirement = await this.findOne(id, user);
+  async analyzeStructured(id: string, user: CurrentUser, opts: { auto?: boolean } = {}): Promise<Requirement> {
+    const requirement = opts.auto
+      ? await this.requirementRepository.findOne({ where: { id } })
+      : await this.findOne(id, user);
+    if (!requirement) throw new NotFoundException('需求不存在');
+
+    const sources = await this.collectSources(id);
+    if (!sources.length && !(requirement.description || '').trim()) {
+      throw new BadRequestException('还没有可识别的内容：请先在「需求资料」里上传客户的技术附件，或填写需求描述');
+    }
+
+    const prevStatus = requirement.specStatus;
     requirement.specStatus = 'analyzing';
     await this.requirementRepository.save(requirement);
 
-    const attachments = await this.attachmentRepository.find({ where: { requirementId: id } });
-    const rawTexts = attachments
-      .map((a) => a.parsedText)
-      .filter((t) => t);
+    const result = await this.aiService.structureRequirement(requirement.title, requirement.description || '', sources);
+    const card = result?.card;
+    const ok = !result?.error && card && Array.isArray(card.fields) && (card.fields.length > 0 || (card.missing || []).length > 0);
+    if (!ok) {
+      // 失败不能记成"已完成"：原实现 AI 不可用时也存一个空结果并标 done，页面显示"已识别"却什么都没有
+      requirement.specStatus = prevStatus === 'done' ? 'done' : 'pending';
+      await this.requirementRepository.save(requirement);
+      throw new BadRequestException(result?.error || 'AI 识别服务暂时不可用，请稍后重试');
+    }
 
-    const result = await this.aiService.analyzeRequirement(
-      requirement.title,
-      requirement.description || '',
-      rawTexts,
+    requirement.structuredSpec = JSON.stringify(
+      {
+        card,
+        summary: result.summary || '',
+        digest: result.digest || '',
+        // 自动识别的结果先标「待确认」，人核对（保存或点确认）后清掉
+        review: !!opts.auto,
+        sources: sources.map((x) => x.file_name),
+        analyzedAt: new Date().toISOString(),
+      },
+      null,
+      2,
     );
-
-    requirement.structuredSpec = JSON.stringify(result.spec, null, 2);
-    requirement.aiAnalysis = result.summary || '';
+    if (result.summary) requirement.aiAnalysis = result.summary;
     requirement.specStatus = 'done';
-    requirement.analyzedBy = user?.userId;
+    requirement.analyzedBy = user?.userId || 'system';
     requirement.analyzedAt = new Date();
     const saved = await this.requirementRepository.save(requirement);
-
     await this.sync(saved);
+
+    if (opts.auto) {
+      await recordAutomation(this.requirementRepository.manager, 'spec_extracted', 1, id);
+      await recordAutomation(this.requirementRepository.manager, 'missing_params', (card.missing || []).length, id);
+    }
     return saved;
+  }
+
+  /**
+   * 同类产品的历史报价区间：新建需求填「预计金额」时给个参考。
+   * 只按已有报价统计（报价 → 方案 → 需求的产品类型），样本少于 1 条就不给。
+   */
+  async amountReference(category?: string): Promise<{ count: number; median?: number; min?: number; max?: number }> {
+    if (!category?.trim()) return { count: 0 };
+    const rows: Array<{ amount: any }> = await this.requirementRepository.manager
+      .createQueryBuilder()
+      .select('q.amount', 'amount')
+      .from('quotations', 'q')
+      .innerJoin('proposals', 'p', 'CAST(p.id AS TEXT) = q."proposalId"')
+      .innerJoin('requirements', 'r', 'CAST(r.id AS TEXT) = p."requirementId"')
+      .where('r."templateCategory" = :c', { c: category.trim() })
+      .andWhere('q.amount > 0')
+      .getRawMany();
+    const vals = rows.map((r) => Number(r.amount)).filter((n) => n > 0).sort((a, b) => a - b);
+    if (!vals.length) return { count: 0 };
+    const mid = Math.floor(vals.length / 2);
+    const median = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+    return { count: vals.length, median, min: vals[0], max: vals[vals.length - 1] };
+  }
+
+  /** 人工确认自动识别的结果（不改内容，只去掉「待确认」） */
+  async confirmSpec(id: string, user: CurrentUser): Promise<Requirement> {
+    const requirement = await this.findOne(id, user);
+    if (!requirement.structuredSpec) throw new BadRequestException('还没有识别结果');
+    try {
+      const spec = JSON.parse(requirement.structuredSpec);
+      spec.review = false;
+      spec.confirmedBy = user?.userId;
+      spec.confirmedAt = new Date().toISOString();
+      requirement.structuredSpec = JSON.stringify(spec, null, 2);
+    } catch {
+      throw new BadRequestException('识别结果格式异常，请重新识别');
+    }
+    return this.requirementRepository.save(requirement);
   }
 
   async updateSpec(id: string, spec: any, user: CurrentUser): Promise<Requirement> {
     const requirement = await this.findOne(id, user);
+    // 人改过就是确认过：去掉「待确认」标记
+    if (spec && typeof spec === 'object' && 'review' in spec) spec.review = false;
     requirement.structuredSpec = JSON.stringify(spec, null, 2);
     requirement.specStatus = 'done';
     const saved = await this.requirementRepository.save(requirement);

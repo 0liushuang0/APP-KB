@@ -1,4 +1,7 @@
 import { Injectable, OnModuleInit, BadRequestException, Logger } from '@nestjs/common';
+import { buildFunnel, chainFacts, dealDate, dealsBetween, delta, monthlyTrend, winRate } from './business-metrics';
+import { AUTOMATION_LABELS } from '../../common/utils/automation-log';
+import { domainEvents } from '../../common/services/domain-events';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -60,6 +63,11 @@ export class SystemService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // 任何业务写操作成功后统计缓存立即失效：新建/删除完回到工作台、列表页，数字就是新的
+    domainEvents.onEvent('data.changed', () => {
+      this.dashboardCache = null;
+      this.moduleStatsCache = null;
+    });
     await this.initialize();
   }
 
@@ -169,65 +177,35 @@ export class SystemService implements OnModuleInit {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-    const [
-      customers,
-      proposalRows,
-      quotations,
-      requirements,
-      allProjects,
-      allQuotations,
-      allRequirements,
-    ] = await Promise.all([
-      this.customerRepository.count(),
-      // 只取关联字段：漏斗要按"有方案的需求"切分金额，不需要整个实体
-      this.proposalRepository.find({ select: ['id', 'requirementId'] }),
-      this.quotationRepository.count(),
-      this.requirementRepository.count(),
-      this.projectRepository.find(),
-      this.quotationRepository.find(),
+    const [customers, allRequirements, proposals, quotations, contracts, projects, tickets] = await Promise.all([
+      this.customerRepository.find({ select: ['id', 'name', 'code'] as any }), // 客户简称存在 code 列（历史遗留）
       this.requirementRepository.find(),
+      this.proposalRepository.find(),
+      this.quotationRepository.find(),
+      this.contractRepository.find(),
+      this.projectRepository.find(),
+      this.dataSource.query(
+        `SELECT id, "ticketNo", title, status, priority, "customerId", "createdAt" FROM after_sales_tickets`,
+      ) as Promise<any[]>,
     ]);
-    const proposals = proposalRows.length;
-
-    const inMonth = (d: Date | string | undefined, from: Date, to?: Date) => {
+    const requirements = allRequirements.filter((r) => r.isCurrent !== false);
+    const custName = new Map(customers.map((c: any) => [String(c.id), c.code || c.name]));
+    const since = (d: any, from: Date, to?: Date) => {
       if (!d) return false;
       const t = new Date(d).getTime();
       return t >= from.getTime() && (!to || t < to.getTime());
     };
+    const sum = (rows: any[]) => rows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
-    const amount = (q: { amount?: number }) => Number(q.amount || 0);
+    const monthReqs = requirements.filter((r) => since(r.createdAt, monthStart)).length;
+    const lastMonthReqs = requirements.filter((r) => since(r.createdAt, lastMonthStart, monthStart)).length;
+    const monthQuote = sum(quotations.filter((q) => since(q.createdAt, monthStart)));
+    const lastMonthQuote = sum(quotations.filter((q) => since(q.createdAt, lastMonthStart, monthStart)));
+    const monthDeals = dealsBetween(contracts as any, monthStart);
+    const lastMonthDeals = dealsBetween(contracts as any, lastMonthStart, monthStart);
 
-    // 本月 vs 上月，用于 KPI 环比
-    const monthQuotations = allQuotations.filter((q) => inMonth(q.createdAt, monthStart));
-    const lastMonthQuotations = allQuotations.filter((q) =>
-      inMonth(q.createdAt, lastMonthStart, monthStart),
-    );
-    const monthRequirements = allRequirements.filter((r) => inMonth(r.createdAt, monthStart));
-    const lastMonthRequirements = allRequirements.filter((r) =>
-      inMonth(r.createdAt, lastMonthStart, monthStart),
-    );
-
-    const wonProjects = allProjects.filter((p) => p.dealStage === 'won');
-    const monthWon = wonProjects.filter((p) => inMonth(p.updatedAt, monthStart));
-    const lastMonthWon = wonProjects.filter((p) => inMonth(p.updatedAt, lastMonthStart, monthStart));
-
-    const wonAmount = (projects: typeof allProjects) =>
-      projects.reduce((sum, p) => {
-        const q = allQuotations.find((x) => x.id === p.quotationId);
-        return sum + (q ? amount(q) : 0);
-      }, 0);
-
-    // 环比：上期为 0 时不算百分比，避免出现 Infinity%
-    const delta = (cur: number, prev: number): number | null =>
-      prev === 0 ? null : Math.round(((cur - prev) / prev) * 1000) / 10;
-
-    const monthQuoteAmount = monthQuotations.reduce((s, q) => s + amount(q), 0);
-    const lastMonthQuoteAmount = lastMonthQuotations.reduce((s, q) => s + amount(q), 0);
-    const monthWonAmount = wonAmount(monthWon);
-    const needsAttention = allRequirements.filter((requirement) => {
-      if (requirement.isCurrent === false) return false;
+    const needsAttention = requirements.filter((requirement: any) => {
       if (!requirement.specStatus || requirement.specStatus === 'pending') return true;
       if (requirement.specStatus !== 'done' || !requirement.structuredSpec) return false;
       try {
@@ -239,84 +217,198 @@ export class SystemService implements OnModuleInit {
       }
     }).length;
 
-    // 转化漏斗：需求 → 方案 → 报价 → 成交。
-    // 数量之外同时按金额切分——商机字段（预计成交金额）让漏斗从
-    // "数了多少单"升级为"押了多少金额在管道里"。
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-    const activeReqs = allRequirements.filter(
-      (r) => r.isCurrent !== false && r.status !== 'lost',
-    );
-    const reqAmount = (arr: typeof activeReqs) =>
-      round2(arr.reduce((s, r) => s + Number((r as any).expectedAmount || 0), 0));
-    const reqIdsWithProposal = new Set(
-      proposalRows.map((p) => p.requirementId).filter(Boolean),
-    );
-    const quotedAmount = round2(
-      allQuotations.reduce((s, q) => s + Number(q.amount || 0), 0),
-    );
-    const wonQuotationAmount = round2(
-      wonProjects.reduce((sum, p) => {
-        const q = allQuotations.find((x) => x.id === p.quotationId);
-        return sum + (q ? Number(q.amount || 0) : 0);
-      }, 0),
-    );
-    const funnel = [
-      {
-        stage: '需求登记',
-        value: requirements,
-        amount: reqAmount(activeReqs),
-      },
-      {
-        stage: '方案编制',
-        value: proposals,
-        amount: reqAmount(activeReqs.filter((r) => reqIdsWithProposal.has(r.id))),
-      },
-      { stage: '报价提交', value: quotations, amount: quotedAmount },
-      { stage: '成交', value: wonProjects.length, amount: wonQuotationAmount },
-    ].map((s, i, arr) => ({
-      ...s,
-      // 相对首环节的通过率，比相邻环节更能反映整体转化
-      rate: arr[0].value > 0 ? Math.round((s.value / arr[0].value) * 100) : 0,
-      amountRate: arr[0].amount > 0 ? Math.round((s.amount / arr[0].amount) * 100) : 0,
-    }));
+    const funnel = buildFunnel(requirements as any, proposals as any, quotations as any, contracts as any);
+    const activeProjects = projects.filter((p) => ['ongoing', 'active'].includes(String(p.status))).length;
 
-    // 近 6 个月报价额趋势
-    const trend: Array<{ month: string; amount: number; count: number; won: number }> = [];
-    for (let i = 0; i < 6; i++) {
-      const from = new Date(sixMonthsAgo.getFullYear(), sixMonthsAgo.getMonth() + i, 1);
-      const to = new Date(sixMonthsAgo.getFullYear(), sixMonthsAgo.getMonth() + i + 1, 1);
-      const inRange = allQuotations.filter((q) => inMonth(q.createdAt, from, to));
-      trend.push({
-        month: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}`,
-        amount: inRange.reduce((s, q) => s + amount(q), 0),
-        count: inRange.length,
-        won: wonProjects.filter((p) => inMonth(p.updatedAt, from, to)).length,
-      });
-    }
+    // ── 流水线：六列计数 + 每列最该先看的 4 张卡（后端一次算好，前端不再拉 6 张表各 200 条） ──
+    const PRIO: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+    const HEALTH: Record<string, number> = { red: 0, yellow: 1, green: 2 };
+    const ts = (d: any) => (d ? new Date(d).getTime() : 0);
+    const card = (x: any) => ({ ...x, customerName: x.customerId ? custName.get(String(x.customerId)) || '' : '' });
+    const pipeline = {
+      requirement: {
+        count: requirements.length,
+        amount: 0,
+        items: requirements
+          .filter((r) => r.status !== 'lost')
+          .sort((a: any, b: any) => (PRIO[a.priority] ?? 9) - (PRIO[b.priority] ?? 9) || ts(b.createdAt) - ts(a.createdAt))
+          .slice(0, 4)
+          .map((r: any) => card({ id: r.id, title: r.title, no: r.requirementNo, status: r.status, priority: r.priority, date: r.requirementDate || r.createdAt, customerId: r.customerId, link: `/requirements/${r.id}` })),
+      },
+      proposal: {
+        count: proposals.length,
+        amount: 0,
+        items: [...proposals]
+          .sort((a, b) => ts(b.createdAt) - ts(a.createdAt))
+          .slice(0, 4)
+          .map((p: any) => card({ id: p.id, title: p.title, no: p.proposalNo, status: p.status, date: p.createdAt, customerId: p.customerId, link: `/proposals?highlight=${p.id}` })),
+      },
+      quotation: {
+        count: quotations.length,
+        amount: sum(quotations),
+        items: [...quotations]
+          .sort((a, b) => ts(b.createdAt) - ts(a.createdAt))
+          .slice(0, 4)
+          .map((q: any) => card({ id: q.id, title: q.projectName || q.quotationNo, no: q.quotationNo, status: q.status, amount: Number(q.amount || 0), date: q.createdAt, customerId: q.customerId, link: `/quotations?highlight=${q.id}` })),
+      },
+      contract: {
+        count: contracts.length,
+        amount: sum(contracts),
+        items: [...contracts]
+          .sort((a: any, b: any) => (dealDate(b)?.getTime() || 0) - (dealDate(a)?.getTime() || 0))
+          .slice(0, 4)
+          .map((c: any) => card({ id: c.id, title: c.title || c.contractNo, no: c.contractNo, status: c.status, amount: Number(c.amount || 0), date: dealDate(c), customerId: c.customerId, link: `/contracts?highlight=${c.id}` })),
+      },
+      project: {
+        count: projects.length,
+        amount: 0,
+        items: [...projects]
+          .sort((a: any, b: any) => (HEALTH[a.health] ?? 1) - (HEALTH[b.health] ?? 1) || (ts(a.endDate) || 9e15) - (ts(b.endDate) || 9e15))
+          .slice(0, 4)
+          .map((p: any) => card({ id: p.id, title: p.name, no: p.projectNo, status: p.status, health: p.health, progress: p.progress, date: p.endDate, customerId: p.customerId, link: `/projects?highlight=${p.id}` })),
+      },
+      afterSales: {
+        count: tickets.length,
+        amount: 0,
+        items: [...tickets]
+          .sort((a: any, b: any) => Number(['resolved', 'closed'].includes(a.status)) - Number(['resolved', 'closed'].includes(b.status)) || (PRIO[a.priority] ?? 9) - (PRIO[b.priority] ?? 9) || ts(b.createdAt) - ts(a.createdAt))
+          .slice(0, 4)
+          .map((t: any) => card({ id: t.id, title: t.title, no: t.ticketNo, status: t.status, priority: t.priority, date: t.createdAt, customerId: t.customerId, link: `/after-sales?highlight=${t.id}` })),
+      },
+    };
 
     return {
-      // 兼容既有前端字段
-      customers,
-      proposals,
-      quotations,
-      requirements,
-
+      customers: customers.length,
+      proposals: proposals.length,
+      quotations: quotations.length,
+      requirements: requirements.length,
       kpi: {
-        monthRequirements: monthRequirements.length,
-        monthRequirementsDelta: delta(monthRequirements.length, lastMonthRequirements.length),
+        monthRequirements: monthReqs,
+        monthRequirementsDelta: delta(monthReqs, lastMonthReqs),
         needsAttention,
-        activeProjects: allProjects.filter(
-          (p) => p.dealStage !== 'won' && p.dealStage !== 'lost',
-        ).length,
-        monthQuoteAmount,
-        monthQuoteAmountDelta: delta(monthQuoteAmount, lastMonthQuoteAmount),
-        monthWonAmount,
-        monthWonAmountDelta: delta(monthWonAmount, wonAmount(lastMonthWon)),
-        winRate: quotations > 0 ? Math.round((wonProjects.length / quotations) * 100) : 0,
+        activeProjects,
+        monthQuoteAmount: monthQuote,
+        monthQuoteAmountDelta: delta(monthQuote, lastMonthQuote),
+        // 成交 = 签约合同（与流水线「合同成交」同一口径）
+        monthWonAmount: monthDeals.amount,
+        monthWonAmountDelta: delta(monthDeals.amount, lastMonthDeals.amount),
+        monthDeals: monthDeals.count,
+        dealsTotal: contracts.length,
+        dealAmountTotal: sum(contracts),
+        winRate: winRate(quotations as any, contracts as any),
       },
-      funnel,
-      trend,
+      funnel: funnel.stages,
+      directDeals: funnel.direct,
+      trend: monthlyTrend(quotations as any, contracts as any, now, 6),
+      pipeline,
+      todos: await this.computeTodos(),
+      automation: await this.automationSummary(),
     };
+  }
+
+  /**
+   * 我的今天：需要人推动的事，每类都给计数和直达链接（带筛选参数，点过去就是那几条）。
+   */
+  private async computeTodos() {
+    const today = new Date().toISOString().slice(0, 10);
+    const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const stale = new Date(Date.now() - 14 * 86400000);
+
+    const one = (sql: string, params: any[] = []) =>
+      this.dataSource.query(this.portable(sql), params).then((rows: any[]) => Number((rows[0] || {}).n || 0));
+
+    const [approvals, followups, followupsOverdue, warranties, projectsRisk, deliveriesSoon] = await Promise.all([
+      one(`SELECT COUNT(*) AS n FROM approval_flows WHERE status = 'pending'`),
+      one(
+        `SELECT COUNT(*) AS n FROM requirements
+         WHERE ("isCurrent" IS NULL OR "isCurrent" = true) AND "nextFollowUpDate" IS NOT NULL
+           AND "nextFollowUpDate" BETWEEN $1 AND $2 AND (status IS NULL OR status NOT IN ('lost', 'closed', 'won'))`,
+        [today, in7],
+      ),
+      one(
+        `SELECT COUNT(*) AS n FROM requirements
+         WHERE ("isCurrent" IS NULL OR "isCurrent" = true) AND "nextFollowUpDate" IS NOT NULL
+           AND "nextFollowUpDate" < $1 AND (status IS NULL OR status NOT IN ('lost', 'closed', 'won'))`,
+        [today],
+      ),
+      one(
+        `SELECT COUNT(*) AS n FROM contracts
+         WHERE "warrantyExpiryDate" IS NOT NULL AND "warrantyExpiryDate" > $1 AND "warrantyExpiryDate" <= $2`,
+        [today, in30],
+      ),
+      one(`SELECT COUNT(*) AS n FROM projects WHERE health IN ('red', 'yellow')`),
+      one(
+        `SELECT COUNT(*) AS n FROM contracts
+         WHERE "deliveryDate" IS NOT NULL AND "deliveryDate" >= $1 AND "deliveryDate" <= $2
+           AND (status IS NULL OR status NOT IN ('completed', 'terminated'))`,
+        [today, in7],
+      ),
+    ]);
+
+    // 报价超 14 天没有签约（已审核/已发送、且没有合同挂着它）
+    const [quotes, contractQuoteIds] = await Promise.all([
+      this.quotationRepository.find({ select: ['id', 'status', 'updatedAt', 'createdAt'] as any }),
+      this.contractRepository.find({ select: ['quotationId'] as any }),
+    ]);
+    const signed = new Set(contractQuoteIds.map((c: any) => c.quotationId).filter(Boolean));
+    const quotesStale = quotes.filter(
+      (q: any) => ['approved', 'sent', 'pending'].includes(String(q.status)) && !signed.has(q.id) &&
+        new Date(q.updatedAt || q.createdAt).getTime() < stale.getTime(),
+    ).length;
+
+    // 自动识别出参数、等人确认的需求
+    const specRows: Array<{ s: string }> = await this.dataSource.query(
+      `SELECT "structuredSpec" AS s FROM requirements WHERE ("isCurrent" IS NULL OR "isCurrent" = true) AND "structuredSpec" IS NOT NULL`,
+    );
+    const specsToConfirm = specRows.filter((r) => {
+      try {
+        return JSON.parse(r.s)?.review === true;
+      } catch {
+        return false;
+      }
+    }).length;
+
+    return {
+      approvals,
+      followups,
+      followupsOverdue,
+      warranties,
+      projectsRisk,
+      deliveriesSoon,
+      quotesStale,
+      specsToConfirm,
+    };
+  }
+
+  /** 本周系统替你做了什么：只数事实（来自 audit_logs 里 action='auto' 的记录） */
+  private async automationSummary(days = 7): Promise<Array<{ kind: string; label: string; count: number }>> {
+    const from = new Date(Date.now() - days * 86400000);
+    const rows = await this.auditLogRepository
+      .createQueryBuilder('a')
+      .select(['a.objectType AS kind', 'a.detail AS detail'])
+      .where('a.action = :a', { a: 'auto' })
+      .andWhere('a.createdAt >= :from', { from })
+      .getRawMany<{ kind: string; detail: string }>();
+    const totals = new Map<string, number>();
+    for (const r of rows) {
+      let n = 1;
+      try {
+        n = Number(JSON.parse(r.detail || '{}').count || 1);
+      } catch {
+        /* 旧记录按 1 计 */
+      }
+      totals.set(r.kind, (totals.get(r.kind) || 0) + n);
+    }
+    return [...totals.entries()]
+      .filter(([k, n]) => n > 0 && (AUTOMATION_LABELS as any)[k])
+      .map(([kind, count]) => ({ kind, label: (AUTOMATION_LABELS as any)[kind], count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  /** $1/$2 占位符在 SQLite 下换成 ?（PG 原样） */
+  private portable(sql: string): string {
+    return this.dataSource.options.type === 'postgres' ? sql : sql.replace(/\$\d+/g, '?');
   }
 
   /**
@@ -452,6 +544,10 @@ export class SystemService implements OnModuleInit {
       rows.filter((r) => r.status && values.includes(r.status)).length;
 
     const contractStatus = countBy(contracts, (c) => c.status);
+    const todayStr = now.toISOString().slice(0, 10);
+    const in7Str = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+    // 已报价/已成交按 需求→方案→报价→合同 的链路推出，与工作台漏斗同一口径
+    const chain = chainFacts(requirements as any, proposals as any, quotations as any, contracts as any);
 
     return {
       customers: {
@@ -461,6 +557,10 @@ export class SystemService implements OnModuleInit {
         lead: customers.filter((c) => (c as any).businessStatus === '流失').length,
         sleeping: customers.filter((c) => (c as any).businessStatus === '沉默').length,
         newThisMonth: customers.filter((c) => since(c.createdAt, monthStart)).length,
+        // 客户分布（客户页的分布条形图），只给计数
+        byIndustry: countBy(customers, (c) => (c as any).industry || '未填'),
+        byRegion: countBy(customers, (c) => (c as any).region || '未填'),
+        byLevel: countBy(customers, (c) => (c as any).level || '未填'),
       },
       requirements: {
         total: requirements.length,
@@ -469,9 +569,24 @@ export class SystemService implements OnModuleInit {
           (r) => !r.status || ['pending', 'analyzing', 'analyzed', 'structuring'].includes(r.status),
         ).length,
         ready: bucket(requirements, 'ready', 'structured', 'approved'),
-        quoted: bucket(requirements, 'quoted'),
+        quoted: requirements.filter((r) => chain.reqQuoted.has(r.id) || r.status === 'quoted').length,
+        won: requirements.filter((r) => chain.reqSigned.has(r.id) || r.status === 'won').length,
         lost: bucket(requirements, 'lost'),
         newThisMonth: requirements.filter((r) => since(r.createdAt, monthStart)).length,
+        // 与工作台「我的今天」、列表 focus 筛选同一口径
+        review: requirements.filter((r: any) => /"review": true/.test(r.structuredSpec || '')).length,
+        incomplete: requirements.filter((r: any) =>
+          !r.specStatus || r.specStatus === 'pending' ||
+          (/"missing": \[/.test(r.structuredSpec || '') && !/"missing": \[\]/.test(r.structuredSpec || ''))).length,
+        followupDue: requirements.filter((r: any) => {
+          if (!r.nextFollowUpDate || ['lost', 'closed', 'won'].includes(r.status)) return false;
+          const d = String(r.nextFollowUpDate).slice(0, 10);
+          return d >= todayStr && d <= in7Str;
+        }).length,
+        followupOverdue: requirements.filter((r: any) => {
+          if (!r.nextFollowUpDate || ['lost', 'closed', 'won'].includes(r.status)) return false;
+          return String(r.nextFollowUpDate).slice(0, 10) < todayStr;
+        }).length,
       },
       proposals: {
         total: proposals.length,
@@ -486,9 +601,12 @@ export class SystemService implements OnModuleInit {
         pending: bucket(quotations, 'pending'),
         approved: bucket(quotations, 'approved'),
         sent: bucket(quotations, 'sent'),
-        won: bucket(quotations, 'won'),
+        won: quotations.filter((q) => chain.quoteSigned.has(q.id) || q.status === 'won').length,
         lost: bucket(quotations, 'lost'),
         monthAmount: sum(quotations.filter((q) => since(q.createdAt, monthStart))),
+        stale: quotations.filter((q: any) =>
+          ['approved', 'sent', 'pending'].includes(q.status) && !chain.quoteSigned.has(q.id) &&
+          new Date(q.updatedAt || q.createdAt).getTime() < now.getTime() - 14 * 86400000).length,
       },
       contracts: {
         total: contracts.length,
@@ -497,6 +615,11 @@ export class SystemService implements OnModuleInit {
         completed: contractStatus.completed || 0,
         totalAmount: sum(contracts),
         // 质保 30 天内到期：到期前要主动联系客户，晚了就是投诉
+        deliverySoon: contracts.filter((c: any) => {
+          if (!c.deliveryDate || ['completed', 'terminated'].includes(c.status)) return false;
+          const d = String(c.deliveryDate instanceof Date ? c.deliveryDate.toISOString() : c.deliveryDate).slice(0, 10);
+          return d >= todayStr && d <= in7Str;
+        }).length,
         warrantyExpiring: contracts.filter((c) => {
           const d = (c as any).warrantyExpiryDate;
           if (!d) return false;
@@ -511,7 +634,9 @@ export class SystemService implements OnModuleInit {
         planning: bucket(projects, 'planning', 'pending'),
         completed: bucket(projects, 'completed'),
         paused: bucket(projects, 'paused'),
-        highRisk: projects.filter((p) => (p as any).riskLevel === 'high').length,
+        // 原来读的 riskLevel 字段并不存在，恒为 0；改看每日重算的健康度
+        highRisk: projects.filter((p) => (p as any).health === 'red').length,
+        atRisk: projects.filter((p) => ['red', 'yellow'].includes((p as any).health)).length,
       },
       /*
        * 资料类页面是分页加载的，页面自己数不出总数，只能在这里算。

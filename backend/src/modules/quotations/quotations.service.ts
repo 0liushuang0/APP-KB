@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { draftItems } from './quotation-draft';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Quotation, QuotationItem } from './entities/quotation.entity';
@@ -34,6 +36,7 @@ export class QuotationsService {
     private permissionQuery: PermissionQueryService,
     private numbering: NumberingService,
     private sharedFields: SharedFieldsService,
+    private readonly trash: BusinessTrashService,
   ) {}
 
   /** 列表（服务端分页，权限已下沉到 SQL） */
@@ -41,6 +44,15 @@ export class QuotationsService {
     const qb = this.quotationRepository.createQueryBuilder('q');
 
     if (query.status) qb.andWhere('q.status = :status', { status: query.status });
+    if ((query as any).focus === 'stale') {
+      // 已审核/已发送超过 14 天、还没有合同挂着它
+      qb.andWhere("q.status IN ('approved','sent','pending')")
+        .andWhere('q.updatedAt < :fStale', { fStale: new Date(Date.now() - 14 * 86400000) })
+        .andWhere(`NOT EXISTS (SELECT 1 FROM contracts fc WHERE fc."quotationId" = CAST(q.id AS TEXT))`);
+    }
+    // 'none' 是前端"未关联客户"筛选项
+    if (query.customerId === 'none') qb.andWhere('q.customerId IS NULL');
+    else if (query.customerId) qb.andWhere('q.customerId = :cid', { cid: query.customerId });
     if (query.keyword) {
       // 报价号 + 关联方案号 + 需求标题 + 客户名 一起搜（顺着 报价→方案→需求→客户 取值）。
       // 之前只匹配 quotationNo，但前端 placeholder 写"搜索编号/客户"，按客户名搜必然空。
@@ -58,7 +70,7 @@ export class QuotationsService {
 
     this.permissionQuery.apply(qb, 'q', user);
 
-    const result = await paginate(qb, 'q', query, ['createdAt', 'quotationNo', 'amount', 'status']);
+    const result = await paginate(qb, 'q', query, ['createdAt', 'quotationNo', 'amount', 'status'], { field: 'quotationNo', order: 'ASC' });
     return { ...result, list: await this.attachRelations(result.list) };
   }
 
@@ -80,6 +92,8 @@ export class QuotationsService {
             'p.id AS "proposalId"',
             'r.title AS "projectName"',
             'r.requirementNo AS "requirementNo"',
+            // SQL 端格式化 date，避免时区时间戳导致前端显示差一天
+            'to_char(r."requirementDate", \'YYYY-MM-DD\') AS "requirementDate"',
             'c.name AS "customerName"',
             'c.code AS "customerShortName"',
           ])
@@ -140,9 +154,76 @@ export class QuotationsService {
         customerShortName: link?.customerShortName || link?.customerName || fb?.customerShortName || fb?.customerName || null,
         projectName: link?.projectName,
         requirementNo: link?.requirementNo,
+        // 客户需求时间：从链路需求实时取，与客户中心同步（提醒报价别拖过客户预期）
+        requirementDate: link?.requirementDate ?? null,
         attachmentCounts: cmap.get(q.id) || { input: 0, output: 0 },
       };
     });
+  }
+
+  /**
+   * 方案 → 报价的草稿：原来弹窗里项目名称、明细、金额全空，用户要对着方案重新敲一遍。
+   * 现在：项目名称 = 方案标题；明细按需求产品类型从产品库带出（规则见 quotation-draft.ts）；
+   * 金额自动合计；付款/交货/质保取该客户上一份报价的条款作默认值（没有就留空）。
+   */
+  async draftFromProposal(proposalId: string) {
+    const m = this.quotationRepository.manager;
+    const prop: any = await m
+      .createQueryBuilder()
+      .select(['p.id AS id', 'p.title AS title', 'p."customerId" AS "customerId"', 'p."requirementId" AS "requirementId"', 'p."productDescription" AS "productDescription"'])
+      .from('proposals', 'p')
+      .where('CAST(p.id AS TEXT) = :id', { id: proposalId })
+      .getRawOne();
+    if (!prop) throw new NotFoundException('方案不存在');
+    let req: any = null;
+    if (prop.requirementId) {
+      req = await m
+        .createQueryBuilder()
+        .select(['r.title AS title', 'r."templateCategory" AS "templateCategory"', 'r."structuredSpec" AS "structuredSpec"'])
+        .from('requirements', 'r')
+        .where('CAST(r.id AS TEXT) = :id', { id: prop.requirementId })
+        .getRawOne();
+    }
+    // 需求卡里抽到的参数值也参与型号匹配（如 1450）
+    let specText = '';
+    try {
+      const spec = req?.structuredSpec ? JSON.parse(req.structuredSpec) : null;
+      const card = spec?.card ?? spec;
+      const fields = Array.isArray(card?.fields) ? card.fields : Array.isArray(card?.params) ? card.params : [];
+      specText = fields.map((f: any) => `${f.label || f.key || ''}${f.normalized ?? f.value ?? ''}`).join(' ');
+    } catch {
+      /* 规格解析失败不影响草稿 */
+    }
+    const text = [prop.title, req?.title, specText].filter(Boolean).join(' ');
+    const products = await m
+      .createQueryBuilder()
+      .select(['x.id AS id', 'x.name AS name', 'x.category AS category', 'x.price AS price', 'x.unit AS unit', 'x."priceList" AS "priceList"'])
+      .from('products', 'x')
+      .getRawMany();
+    const parsed = products.map((x: any) => {
+      let priceList: any = null;
+      try {
+        priceList = typeof x.priceList === 'string' ? JSON.parse(x.priceList) : x.priceList;
+      } catch {
+        priceList = null;
+      }
+      return { ...x, priceList };
+    });
+    const items = draftItems({ category: req?.templateCategory, text }, parsed);
+
+    const last: any = prop.customerId
+      ? await this.quotationRepository.findOne({ where: { customerId: prop.customerId }, order: { createdAt: 'DESC' } as any })
+      : null;
+    return {
+      projectName: prop.title || req?.title || '',
+      customerId: prop.customerId,
+      items,
+      amount: items.reduce((s, i) => s + (i.unitPrice || 0) * (i.quantity || 1), 0),
+      paymentTerms: last?.paymentTerms || '',
+      deliveryDays: last?.deliveryDays ?? null,
+      warrantyMonths: last?.warrantyMonths ?? null,
+      termsFrom: last?.paymentTerms || last?.deliveryDays || last?.warrantyMonths ? last.quotationNo : null,
+    };
   }
 
   /** 报价编号继承所关联方案的流水号：PROP-2026-007 → QUO-2026-007 */
@@ -397,6 +478,10 @@ export class QuotationsService {
     }
     await this.tx.run(
       async (manager) => {
+        await this.trash.capture(manager, 'quotation', id, quotation.quotationNo || id, [
+          { table: 'quotations', column: 'id', ids: [id] },
+          { table: 'quotation_items', column: 'quotationId', ids: [id] },
+        ], user?.userId);
         await manager.getRepository(QuotationItem).delete({ quotationId: id });
         await manager.getRepository(Quotation).delete(id);
       },

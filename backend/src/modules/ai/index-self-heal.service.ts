@@ -1,4 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
+import { recordAutomation } from '../../common/utils/automation-log';
 import { ReindexService, REINDEXABLE_TYPES } from './reindex.service';
 
 /**
@@ -21,7 +24,10 @@ export class IndexSelfHealService implements OnModuleInit, OnModuleDestroy {
   /** 类型 → 上次重建后观察到的「应有:已索引」，相同则认为已补到上限 */
   private settled = new Map<string, string>();
 
-  constructor(private readonly reindex: ReindexService) {}
+  constructor(
+    private readonly reindex: ReindexService,
+    @InjectDataSource() private readonly dataSource?: DataSource,
+  ) {}
 
   onModuleInit(): void {
     if ((process.env.INDEX_SELF_HEAL ?? 'true') === 'false') return;
@@ -60,6 +66,7 @@ export class IndexSelfHealService implements OnModuleInit, OnModuleDestroy {
         `索引落后，自动补建：${lagging.map((r) => `${r.label} ${r.indexed}/${r.expected}`).join('、')}`,
       );
       await this.reindex.reindex(types);
+      if (this.dataSource) await recordAutomation(this.dataSource.manager, 'index_healed', types.length);
 
       // 补建后重新读一次，记下每个类型的最终状态；仍补不齐的下次不再重复清空重写
       const after = await this.reindex.getHealth();

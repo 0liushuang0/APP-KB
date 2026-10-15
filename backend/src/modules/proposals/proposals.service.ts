@@ -1,4 +1,5 @@
 import { fixMulterEncoding } from '../../common/utils/safe-path.util';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
@@ -80,6 +81,7 @@ export class ProposalsService {
     private sharedFields: SharedFieldsService,
     private documentsService: DocumentsService,
     private documentLinks: DocumentLinksService,
+    private readonly trash: BusinessTrashService,
   ) {}
 
   /** 列表（服务端分页，权限已下沉到 SQL） */
@@ -87,7 +89,9 @@ export class ProposalsService {
     const qb = this.proposalRepository.createQueryBuilder('p');
 
     if (query.status) qb.andWhere('p.status = :status', { status: query.status });
-    if (query.customerId) qb.andWhere('p.customerId = :customerId', { customerId: query.customerId });
+    // 'none' 是前端"未关联客户"筛选项
+    if (query.customerId === 'none') qb.andWhere('p.customerId IS NULL');
+    else if (query.customerId) qb.andWhere('p.customerId = :customerId', { customerId: query.customerId });
     if (query.requirementId) qb.andWhere('p.requirementId = :reqId', { reqId: query.requirementId });
     if (query.keyword) {
       // 项目名称已改由需求提供，关键词覆盖 需求标题 + 客户名
@@ -104,7 +108,7 @@ export class ProposalsService {
 
     this.permissionQuery.apply(qb, 'p', user);
 
-    const result = await paginate(qb, 'p', query, ['createdAt', 'status', 'proposalNo', 'version']);
+    const result = await paginate(qb, 'p', query, ['createdAt', 'status', 'proposalNo', 'version'], { field: 'proposalNo', order: 'ASC' });
     return { ...result, list: await this.attachRelations(result.list) };
   }
 
@@ -132,6 +136,8 @@ export class ProposalsService {
             'r.id AS "id"',
             'r.title AS "title"',
             'r.requirementNo AS "requirementNo"',
+            // date 列经驱动会转成带时区的 UTC 时间戳，前端截取会差一天；SQL 端格式化成 YYYY-MM-DD
+            'to_char(r."requirementDate", \'YYYY-MM-DD\') AS "requirementDate"',
             'c.name AS "customerName"',
             'c.code AS "customerShortName"',
           ])
@@ -175,6 +181,8 @@ export class ProposalsService {
         // 没有关联需求就没有项目名称，界面上照实显示，别用旧标题糊过去
         projectName: r?.title,
         requirementNo: r?.requirementNo,
+        // 客户需求时间（客户发出需求我方收到）：从需求实时取，与客户中心永远同步
+        requirementDate: r?.requirementDate ?? null,
         attachmentCounts: cmap.get(p.id) || { input: 0, output: 0 },
       };
     });
@@ -409,6 +417,11 @@ export class ProposalsService {
     }
     await this.transactionService.run(
       async (manager) => {
+        await this.trash.capture(manager, 'proposal', id, `${proposal.proposalNo || ''} ${proposal.title || ''}`.trim(), [
+          { table: 'proposals', column: 'id', ids: [id] },
+          { table: 'proposal_versions', column: 'proposalId', ids: [id] },
+          { table: 'document_links', column: 'proposalId', ids: [id] },
+        ], user?.userId);
         await manager.getRepository(ProposalVersion).delete({ proposalId: id });
         await manager.getRepository(DocumentLink).delete({ proposalId: id });
         await manager.getRepository(Proposal).delete(id);

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AfterSalesTicket } from './entities/ticket.entity';
 import { AfterSalesService } from './after-sales.service';
@@ -12,7 +13,7 @@ import { KnowledgeSyncService } from '../../common/services/knowledge-sync.servi
 import { AiService } from '../../common/services/ai.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AfterSalesTicket]), NotificationsModule],
+  imports: [TypeOrmModule.forFeature([AfterSalesTicket]), NotificationsModule, RecycleBinModule],
   controllers: [AfterSalesController],
   providers: [
     AfterSalesService,

@@ -289,8 +289,8 @@ export default function Customer360() {
         })}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
+      {/* Tabs：手机上横向滑动，标签不再被挤成一字一行 */}
+      <div className="flex gap-1 border-b border-border overflow-x-auto [scrollbar-width:none]">
         {([
           /* 顺序按业务推进：需求 → 方案 → 报价 → 文档 → 项目 */
           { key: 'overview', label: '概览' },
@@ -307,7 +307,7 @@ export default function Customer360() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
               activeTab === tab.key
                 ? 'border-accent-500 text-accent-600'
                 : 'border-transparent text-muted hover:text-ink'

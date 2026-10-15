@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Customer, ContactPerson, FollowUpRecord } from './entities/customer.entity';
 import { CustomersService } from './customers.service';
@@ -21,6 +22,7 @@ import { AfterSalesTicket } from '../after-sales/entities/ticket.entity';
 
 @Module({
   imports: [
+    RecycleBinModule,
     TypeOrmModule.forFeature([
       Customer,
       ContactPerson,

@@ -5,23 +5,32 @@ import StatusBadge from '../../components/StatusBadge'
 describe('StatusBadge', () => {
   it('renders approved status with success tone', () => {
     render(<StatusBadge status="approved" />)
-    const badge = screen.getByText('可用')
+    const badge = screen.getByText('已审核')
     expect(badge).toBeInTheDocument()
     expect(badge.className).toContain('bg-success-bg')
   })
 
   it('renders pending status with warning tone', () => {
     render(<StatusBadge status="pending" />)
-    const badge = screen.getByText('待整理')
+    const badge = screen.getByText('待审核')
     expect(badge).toBeInTheDocument()
     expect(badge.className).toContain('bg-warning-bg')
   })
 
   it('renders rejected status with danger tone', () => {
     render(<StatusBadge status="rejected" />)
-    const badge = screen.getByText('已停用')
+    const badge = screen.getByText('已驳回')
     expect(badge).toBeInTheDocument()
     expect(badge.className).toContain('bg-danger-bg')
+  })
+
+  it('library items keep 可用/待整理/已停用 with the same tones', () => {
+    const { rerender } = render(<StatusBadge status="approved" kind="library" />)
+    expect(screen.getByText('可用').className).toContain('bg-success-bg')
+    rerender(<StatusBadge status="pending" kind="library" />)
+    expect(screen.getByText('待整理').className).toContain('bg-warning-bg')
+    rerender(<StatusBadge status="rejected" kind="library" />)
+    expect(screen.getByText('已停用').className).toContain('bg-danger-bg')
   })
 
   it('renders draft status with neutral tone', () => {

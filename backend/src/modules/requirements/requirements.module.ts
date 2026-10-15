@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Requirement, RequirementAttachment, RequirementLog } from './entities/requirement.entity';
 import { RequirementPdfService } from './requirement-pdf.service';
@@ -18,7 +19,7 @@ import { ApprovalsModule } from '../approvals/approvals.module';
 import { DocumentsModule } from '../documents/documents.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Requirement, RequirementAttachment, RequirementLog, Customer, Proposal, Solution, Project, DocumentLink]), ApprovalsModule, DocumentsModule],
+  imports: [TypeOrmModule.forFeature([Requirement, RequirementAttachment, RequirementLog, Customer, Proposal, Solution, Project, DocumentLink]), ApprovalsModule, DocumentsModule, RecycleBinModule],
   controllers: [RequirementsController],
   providers: [RequirementPdfService, PermissionQueryService, RequirementsService, AiService, PermissionService, KnowledgeSyncService, TransactionService],
   exports: [RequirementsService],

@@ -110,6 +110,9 @@ export const quotationApi = {
   /** 历史版本：每次修改自动存档（头字段 + 明细），审计/对账可回放 */
   getVersions: (id: string) => apiClient.get<any[]>(`/quotations/${id}/versions`).then((res) => res.data),
   suggest: (dto: any) => apiClient.post('/quotations/suggest', dto).then((res) => res.data),
+  /** 方案 → 报价草稿：项目名称、按需求产品类型带出的明细（含理由）、上一份报价的商务条款 */
+  draftFromProposal: (proposalId: string) =>
+    apiClient.get<any>(`/quotations/draft-from-proposal/${proposalId}`).then((res) => res.data),
 }
 
 export const contractApi = {
@@ -218,6 +221,9 @@ export const supplierProductApi = {
 }
 
 export const projectApi = {
+  /** 合同 → 项目草稿：开工/完工日期、项目类型、按标准模板切好的阶段 */
+  draftFromContract: (contractId: string) =>
+    apiClient.get<any>(`/projects/draft-from-contract/${contractId}`).then((res) => res.data),
   list: (params?: any) =>
     apiClient.get<Project[] | PaginatedResponse<Project>>('/projects', { params }).then((res) => res.data),
   get: (id: string) => apiClient.get<Project>(`/projects/${id}`).then((res) => res.data),
@@ -329,6 +335,11 @@ export const documentApi = {
 }
 
 export const requirementApi = {
+  /** 确认自动识别出的参数（去掉「待确认」） */
+  confirmSpec: (id: string) => apiClient.post<Requirement>(`/requirements/${id}/confirm-spec`).then((res) => res.data),
+  /** 同类产品历史报价区间（预计金额参考） */
+  amountReference: (category: string) =>
+    apiClient.get<{ count: number; median?: number; min?: number; max?: number }>('/requirements/amount-reference', { params: { category } }).then((res) => res.data),
   list: (params?: any) =>
     apiClient.get<Requirement[]>('/requirements', { params }).then((res) => res.data),
   get: (id: string) => apiClient.get<Requirement>(`/requirements/${id}`).then((res) => res.data),
@@ -710,6 +721,29 @@ export const afterSalesApi = {
   convertToReq: (id: string) => apiClient.post<{ requirementNo: string; requirementId: string }>(`/after-sales/${id}/convert-to-requirement`).then((res) => res.data),
   convertToFaq: (id: string) => apiClient.post<{ fileName: string }>(`/after-sales/${id}/convert-to-faq`).then((res) => res.data),
   stats: () => apiClient.get<any>('/after-sales/stats').then((res) => res.data),
+  /** 项目所供设备型号（来自报价明细） */
+  modelsForProject: (projectId: string) =>
+    apiClient.get<Array<{ value: string; label: string }>>(`/after-sales/models-for-project/${projectId}`).then((res) => res.data),
+}
+
+/** 业务记录回收站（客户/需求/方案/报价/合同/项目/售后/产品）与删除影响提示 */
+export const recycleBinApi = {
+  business: () => apiClient.get<any[]>('/recycle-bin/business').then((res) => res.data),
+  restore: (id: string) => apiClient.post<any>(`/recycle-bin/business/${id}/restore`).then((res) => res.data),
+  purge: (id: string) => apiClient.delete(`/recycle-bin/business/${id}`).then((res) => res.data),
+  impact: (type: string, id: string) =>
+    apiClient.get<Array<{ label: string; count: number }>>(`/recycle-bin/impact/${type}/${id}`).then((res) => res.data),
+}
+
+/** 工作任务：业务流程之外的日常工作记录（会议/出差/报告/协作…） */
+export const workTaskApi = {
+  list: (params?: any) =>
+    apiClient.get<any[]>('/work-tasks', { params }).then((res) => res.data),
+  get: (id: string) => apiClient.get<any>(`/work-tasks/${id}`).then((res) => res.data),
+  create: (dto: any) => apiClient.post<any>('/work-tasks', dto).then((res) => res.data),
+  update: (id: string, dto: any) => apiClient.patch<any>(`/work-tasks/${id}`, dto).then((res) => res.data),
+  remove: (id: string) => apiClient.delete(`/work-tasks/${id}`).then((res) => res.data),
+  myOpenCount: () => apiClient.get<any>('/work-tasks/my-open-count').then((res) => res.data),
 }
 
 export async function downloadJsonExport(tables?: string[]): Promise<void> {

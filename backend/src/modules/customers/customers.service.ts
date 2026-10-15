@@ -1,4 +1,5 @@
 import { buildCustomerContent } from '../../common/services/index-content.builder';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In } from 'typeorm';
@@ -55,6 +56,7 @@ export class CustomersService {
     private permissionQuery: PermissionQueryService,
     private numbering: NumberingService,
     private aiService: AiService,
+    private readonly trash: BusinessTrashService,
   ) {}
 
   /** 列表（服务端分页，权限已下沉到 SQL） */
@@ -85,7 +87,7 @@ export class CustomersService {
 
     this.permissionQuery.apply(qb, 'c', user);
 
-    const result = await paginate(qb, 'c', query, ['createdAt', 'name', 'status', 'code', 'customerCode', 'industry']);
+    const result = await paginate(qb, 'c', query, ['createdAt', 'name', 'status', 'code', 'customerCode', 'industry'], { field: 'customerCode', order: 'ASC' });
 
     /*
      * 附件计数：客户附件没有输入/输出语义，显示单个数字。
@@ -317,6 +319,31 @@ export class CustomersService {
           if (!ids.length) return;
           await manager.createQueryBuilder().delete().from(table).where(`"${col}" IN (:...ids)`, { ids }).execute();
         };
+        // 先整套快照进回收站（主表在前，还原时按此顺序写回）
+        const tickets = await manager.getRepository(AfterSalesTicket).find({ where: { customerId: id }, select: ['id'] });
+        await this.trash.capture(manager, 'customer', id, customer.name || id, [
+          { table: 'customers', column: 'id', ids: [id] },
+          { table: 'contact_persons', column: 'customerId', ids: [id] },
+          { table: 'follow_up_records', column: 'customerId', ids: [id] },
+          { table: 'requirements', column: 'id', ids: reqIds },
+          { table: 'proposals', column: 'id', ids: propIds },
+          { table: 'quotations', column: 'id', ids: quoIds },
+          { table: 'contracts', column: 'id', ids: conIds },
+          { table: 'projects', column: 'id', ids: prjIds },
+          { table: 'after_sales_tickets', column: 'id', ids: tickets.map((t) => t.id) },
+          { table: 'requirement_attachments', column: 'requirementId', ids: reqIds },
+          { table: 'proposal_versions', column: 'proposalId', ids: propIds },
+          { table: 'quotation_items', column: 'quotationId', ids: quoIds },
+          { table: 'project_stages', column: 'projectId', ids: prjIds },
+          { table: 'project_risks', column: 'projectId', ids: prjIds },
+          { table: 'project_timeline', column: 'projectId', ids: prjIds },
+          { table: 'document_links', column: 'customerId', ids: [id] },
+          { table: 'document_links', column: 'requirementId', ids: reqIds },
+          { table: 'document_links', column: 'proposalId', ids: propIds },
+          { table: 'document_links', column: 'quotationId', ids: quoIds },
+          { table: 'document_links', column: 'contractId', ids: conIds },
+          { table: 'document_links', column: 'projectId', ids: prjIds },
+        ], user?.userId);
         await delByCol('quotation_items', 'quotationId', quoIds);
         await delByCol('proposal_versions', 'proposalId', propIds);
         await delByCol('project_stages', 'projectId', prjIds);

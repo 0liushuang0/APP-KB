@@ -1057,7 +1057,7 @@ export default function ParamTemplates() {
                                       <span className="flex-1 min-w-0 truncate text-body-sm font-medium text-ink">
                                         {t.category?.split('/').pop() || t.category || '未分类'}
                                       </span>
-                                      <StatusBadge status={t.status} />
+                                      <StatusBadge kind="library" status={t.status} />
                                     </div>
                                     <p className="text-caption text-muted mt-1">
                                       {fieldCountOf(t)} 个字段 · v{t.version}
@@ -1108,7 +1108,7 @@ export default function ParamTemplates() {
                     <h2 className="text-lg font-serif font-semibold text-ink">
                       {selectedTemplate.category?.split('/').pop() || selectedTemplate.category}
                     </h2>
-                    <StatusBadge status={selectedTemplate.status} />
+                    <StatusBadge kind="library" status={selectedTemplate.status} />
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                     <span>分类: {selectedTemplate.category?.includes('/') ? selectedTemplate.category.split('/').join(' › ') : selectedTemplate.category}</span>

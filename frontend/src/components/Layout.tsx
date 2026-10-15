@@ -28,6 +28,7 @@ import {
   Workflow,
   HelpCircle,
   Stamp,
+  ListTodo,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '../api/client'
@@ -42,7 +43,8 @@ import { PageAssistantProvider } from '../contexts/PageAssistantContext'
 import AssistantWidget from './AssistantWidget'
 import { isZhEmbedded, onZhTheme } from '../lib/zh-embed'
 
-type NavItem = { path: string; label: string; icon: typeof LayoutDashboard; teamOnly?: boolean }
+/** also：同属这一入口的其它页面（入口下用页签切换），在这些页面上入口同样高亮 */
+type NavItem = { path: string; label: string; icon: typeof LayoutDashboard; teamOnly?: boolean; also?: string[] }
 type NavGroup = { label: string; items: NavItem[] }
 
 const navGroups: NavGroup[] = [
@@ -52,6 +54,7 @@ const navGroups: NavGroup[] = [
       { path: '/', label: '业务概览', icon: Workflow },
       { path: '/ai-assistant', label: '智能问答', icon: Bot },
       { path: '/approvals', label: '审批中心', icon: Stamp },
+      { path: '/work-tasks', label: '工作任务', icon: ListTodo },
     ],
   },
   {
@@ -66,29 +69,42 @@ const navGroups: NavGroup[] = [
       { path: '/after-sales', label: '售后管理', icon: Headset },
     ],
   },
+  /*
+   * 2026-10-16 入口收敛（20 → 15）：资料原来有 3 个入口（再加客户 360 的资料页共 4 处），
+   * 产品与标准方案、工程计算与需求模板也各占一格。合并成一个入口 + 页内页签，
+   * 老链接（/knowledge、/solutions 等）全部保留，从别处跳过来照常打开。帮助中心移到顶栏问号。
+   */
   {
-    label: '产品方案',
+    label: '产品与知识',
     items: [
-      { path: '/products', label: '产品管理', icon: Package },
-      { path: '/solutions', label: '标准方案', icon: Layers },
-    ],
-  },
-  {
-    label: '知识供应',
-    items: [
-      { path: '/documents', label: '业务资料', icon: Files },
-      { path: '/customer-docs', label: '客户资料', icon: FolderOpen },
-      { path: '/knowledge', label: '知识资料', icon: BookOpen },
-      { path: '/param-templates', label: '需求模板', icon: SlidersHorizontal },
-      { path: '/calc-tools', label: '工程计算', icon: Calculator },
+      { path: '/products', label: '产品与方案', icon: Package, also: ['/products/tree', '/solutions'] },
+      { path: '/documents', label: '资料中心', icon: Files, also: ['/customer-docs', '/knowledge'] },
+      { path: '/calc-tools', label: '工具箱', icon: Calculator, also: ['/param-templates'] },
       { path: '/suppliers', label: '供应管理', icon: Truck },
-      { path: '/help', label: '帮助中心', icon: HelpCircle },
     ],
   },
 ]
 
+/** 合并入口下的页签（渲染在内容区顶部） */
+const SECTION_TABS: Array<Array<{ path: string; label: string; icon: typeof LayoutDashboard }>> = [
+  [
+    { path: '/products', label: '产品管理', icon: Package },
+    { path: '/solutions', label: '标准方案', icon: Layers },
+  ],
+  [
+    { path: '/documents', label: '业务资料', icon: Files },
+    { path: '/customer-docs', label: '客户资料', icon: FolderOpen },
+    { path: '/knowledge', label: '知识资料', icon: BookOpen },
+  ],
+  [
+    { path: '/calc-tools', label: '工程计算', icon: Calculator },
+    { path: '/param-templates', label: '需求模板', icon: SlidersHorizontal },
+  ],
+]
+const SUB_LABELS: Record<string, string> = Object.fromEntries(SECTION_TABS.flat().map((t) => [t.path, t.label]))
+
 const allNavItems = navGroups.flatMap((g) => g.items)
-const labelByPath: Record<string, string> = Object.fromEntries(allNavItems.map((n) => [n.path, n.label]))
+const labelByPath: Record<string, string> = { ...Object.fromEntries(allNavItems.map((n) => [n.path, n.label])), ...SUB_LABELS, '/help': '帮助中心' }
 const groupByPath: Record<string, string> = Object.fromEntries(
   navGroups.flatMap((g) => g.items.map((n) => [n.path, g.label])),
 )
@@ -132,9 +148,11 @@ export default function Layout() {
     if (path === '/') return location.pathname === '/'
     if (path === '/settings') return location.pathname === '/settings'
     // /products 不应在 /products/tree 时高亮
-    if (path === '/products') return location.pathname === '/products'
-    return location.pathname === path || location.pathname.startsWith(`${path}/`)
+    const item = allNavItems.find((n) => n.path === path)
+    const hit = (p: string) => location.pathname === p || location.pathname.startsWith(`${p}/`)
+    return hit(path) || !!item?.also?.some(hit)
   }
+  const sectionTabs = SECTION_TABS.find((tabs) => tabs.some((t) => location.pathname === t.path || location.pathname.startsWith(`${t.path}/`)))
 
   const activeItem = allNavItems.find((n) => isActive(n.path))
   // /settings 及子页不在导航列表里，单独映射，避免退回「AI 工作台 / 智能问答」
@@ -292,20 +310,31 @@ export default function Layout() {
           >
             {collapsed ? <PanelLeft size={17} /> : <PanelLeftClose size={17} />}
           </button>
-          <div className="zh-crumb hidden sm:flex">
-            <span className="zh-crumb-group">{currentGroup}</span>
-            <span className="zh-crumb-sep">/</span>
+          {/* 面包屑不参与挤压：原来筛选项一多就被压成「客户业务 / !」 */}
+          <div className="zh-crumb hidden sm:flex shrink-0 whitespace-nowrap">
+            <span className="zh-crumb-group hidden xl:inline">{currentGroup}</span>
+            <span className="zh-crumb-sep hidden xl:inline">/</span>
             <span className="zh-crumb-page">{currentLabel}</span>
           </div>
           <div className="flex-1" />
           {/* 页面操作区（搜索/标签/新建）居中偏右，紧贴主题 */}
+          {/* 操作区放不下时横向滚动，而不是把面包屑挤没 */}
           {pageActions && (
-            <div className="flex items-center gap-1.5 flex-shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto [scrollbar-width:none]">
               {pageActions}
             </div>
           )}
           {/* 主题/放大/通知 固定最右侧 */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => navigate('/help')}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-canvas transition-colors"
+              title="帮助中心"
+              aria-label="帮助中心"
+            >
+              <HelpCircle size={17} />
+            </button>
             <span className="zh-embed-hide contents"><ThemeToggle /></span>
             <FullscreenToggle />
             <NotificationBell />
@@ -323,6 +352,24 @@ export default function Layout() {
           <div className="zh-main-inner h-full pb-24">
             <PageActionsContext.Provider value={setPageActions}>
               <PageAssistantProvider>
+                {sectionTabs && (
+                  <nav className="mb-3 flex items-center gap-1 border-b border-border overflow-x-auto" aria-label="页签">
+                    {sectionTabs.map((t) => {
+                      const on = location.pathname === t.path || location.pathname.startsWith(`${t.path}/`)
+                      return (
+                        <Link
+                          key={t.path}
+                          to={t.path}
+                          className={`flex items-center gap-1.5 px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors ${
+                            on ? 'border-accent-500 text-accent-700 font-medium' : 'border-transparent text-muted hover:text-ink'
+                          }`}
+                        >
+                          <t.icon size={14} /> {t.label}
+                        </Link>
+                      )
+                    })}
+                  </nav>
+                )}
                 <Outlet />
                 {/*
                   AI 助手统一在这里渲染：页面只需用 useRegisterPageAssistant 声明

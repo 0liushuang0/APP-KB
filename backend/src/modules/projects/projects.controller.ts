@@ -23,6 +23,12 @@ export class ProjectsController {
     return this.projectsService.findAll(query, user);
   }
 
+  /** 合同 → 项目草稿：开工/完工日期、项目类型、按标准模板切好的阶段 */
+  @Get('draft-from-contract/:contractId')
+  draftFromContract(@Param('contractId') contractId: string) {
+    return this.projectsService.draftFromContract(contractId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {
     return this.projectsService.findOne(id, user);

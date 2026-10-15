@@ -15,6 +15,10 @@ export interface StatCardItem {
   /** 点了跳哪去；不传就是纯展示 */
   onClick?: () => void
   title?: string
+  /** 作为筛选时：当前是否选中 */
+  active?: boolean
+  /** 需要关注（>0 时数字着警示色） */
+  alert?: boolean
 }
 
 interface Props {
@@ -57,7 +61,7 @@ export default function StatCards({ items, loading, skeletonCount, className = '
   }
 
   return (
-    <div className={`flex gap-2 flex-wrap ${className}`}>
+    <div className={`flex gap-2 flex-nowrap overflow-x-auto pb-1 -mb-1 sm:flex-wrap sm:overflow-visible ${className}`}>
       {items.map((item) => {
         const Icon = item.icon
         const hasDelta = item.delta !== undefined && item.delta !== null
@@ -72,9 +76,10 @@ export default function StatCards({ items, loading, skeletonCount, className = '
           <Tag
             key={item.label}
             {...attrs}
+            aria-pressed={item.onClick && item.active !== undefined ? !!item.active : undefined}
             className={`eo-card p-3 flex-1 min-w-[110px] text-left ${
               item.onClick ? 'hover:shadow-pop hover:border-accent-300 transition-all' : ''
-            }`}
+            } ${item.active ? 'ring-2 ring-accent-500 border-accent-300' : ''}`}
           >
             {/*
               min-w-0 是必需的：flex item 默认 min-width:auto，标签一长（「本月报价额」）
@@ -90,7 +95,7 @@ export default function StatCards({ items, loading, skeletonCount, className = '
               带「元」的卡片会比不带的高一点点，各模块之间来回切就能看出来错位。
             */}
             <div className="flex items-baseline gap-0.5 min-w-0 whitespace-nowrap">
-              <span className="text-lg font-bold text-ink leading-none">{item.value}</span>
+              <span className={`text-lg font-bold leading-none ${item.alert && Number(item.value) > 0 ? 'text-danger-fg' : 'text-ink'}`}>{item.value}</span>
               {item.suffix && (
                 <span className="text-caption text-muted leading-none">{item.suffix}</span>
               )}

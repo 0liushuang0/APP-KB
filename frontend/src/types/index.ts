@@ -190,6 +190,8 @@ export interface Contract {
   expiryDate?: string
   paymentTerms?: string
   deliveryTerms?: string
+  /** 交货期（合同约定的交货日期，项目跟踪同步显示） */
+  deliveryDate?: string
   status: string
   createdAt: string
   updatedAt: string
@@ -747,6 +749,7 @@ export type LinkEntityType =
   | 'contract'
   | 'project'
   | 'afterSale'
+  | 'workTask'
 
 export type DocStage = 'raw' | 'requirement' | 'analysis' | 'solution' | 'quotation' | 'contract'
 
@@ -1445,6 +1448,14 @@ export interface BusinessModuleStats {
     quoted: number
     lost: number
     newThisMonth: number
+    /** 跟进超期（下次跟进日期已过且未失单/关闭） */
+    followupOverdue: number
+    /** 7 天内应跟进 */
+    followupDue: number
+    /** 参数待确认（AI 已识别出参数等人工核对） */
+    review: number
+    /** 待完善（未识别参数或缺关键参数） */
+    incomplete: number
   }
   proposals: {
     total: number

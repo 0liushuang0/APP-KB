@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Proposal, ProposalVersion } from './entities/proposal.entity';
 import { Requirement } from '../requirements/entities/requirement.entity';
@@ -14,7 +15,7 @@ import { DocumentsModule } from '../documents/documents.module';
 import { ApprovalsModule } from '../approvals/approvals.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Proposal, ProposalVersion, Requirement, Customer]), ApprovalsModule, DocumentsModule],
+  imports: [TypeOrmModule.forFeature([Proposal, ProposalVersion, Requirement, Customer]), ApprovalsModule, DocumentsModule, RecycleBinModule],
   controllers: [ProposalsController],
   providers: [PermissionQueryService, ProposalsService, AiService, PermissionService, KnowledgeSyncService, TransactionService],
   exports: [ProposalsService],

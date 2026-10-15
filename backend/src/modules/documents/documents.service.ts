@@ -45,6 +45,8 @@ import {
   sanitizeFileName,
 } from '../../common/utils/safe-path.util';
 import { RecycleBinService } from '../recycle-bin/recycle-bin.service';
+import { recordAutomation } from '../../common/utils/automation-log';
+import { domainEvents } from '../../common/services/domain-events';
 
 @Injectable()
 export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
@@ -73,6 +75,53 @@ export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
     setTimeout(() => {
       this.reparseFailedDocuments().catch((e) => this.logger.warn(`历史资料重解析中止: ${e?.message}`));
     }, 90_000).unref?.();
+    setTimeout(() => {
+      this.linkCustomersFromChain().catch((e) => this.logger.warn(`资料归属客户补齐中止: ${e?.message}`));
+    }, 30_000).unref?.();
+  }
+
+  /**
+   * 资料自动归属客户。
+   *
+   * 518 份业务资料客户字段全空，但其中 66 份挂在需求/方案/报价/合同/项目/售后单据上，
+   * 单据的客户是确定的 —— 不需要任何猜测。只补空，且一份资料推出多个客户时不填。
+   */
+  async linkCustomersFromChain(): Promise<number> {
+    const rows: Array<{ did: string; cid: string }> = await this.documentRepository.manager.query(`
+      SELECT l."documentId" AS did,
+             COALESCE(NULLIF(l."customerId", ''), r."customerId", p."customerId", q."customerId",
+                      c."customerId", pj."customerId", t."customerId") AS cid
+      FROM document_links l
+      LEFT JOIN requirements r ON CAST(r.id AS TEXT) = l."requirementId"
+      LEFT JOIN proposals p ON CAST(p.id AS TEXT) = l."proposalId"
+      LEFT JOIN quotations q ON CAST(q.id AS TEXT) = l."quotationId"
+      LEFT JOIN contracts c ON CAST(c.id AS TEXT) = l."contractId"
+      LEFT JOIN projects pj ON CAST(pj.id AS TEXT) = l."projectId"
+      LEFT JOIN after_sales_tickets t ON CAST(t.id AS TEXT) = l."afterSaleId"`);
+    const byDoc = new Map<string, Set<string>>();
+    for (const r of rows) {
+      if (!r.cid) continue;
+      if (!byDoc.has(r.did)) byDoc.set(r.did, new Set());
+      byDoc.get(r.did)!.add(r.cid);
+    }
+    let n = 0;
+    for (const [did, set] of byDoc) {
+      if (set.size !== 1) continue;
+      const [cid] = [...set];
+      const res = await this.documentRepository
+        .createQueryBuilder()
+        .update(Document)
+        .set({ customerId: cid } as any)
+        .where('id = :id', { id: did })
+        .andWhere(`("customerId" IS NULL OR "customerId" = '')`)
+        .execute();
+      n += res.affected || 0;
+    }
+    if (n) {
+      this.logger.log(`资料归属客户：按所挂单据自动补齐 ${n} 份`);
+      await recordAutomation(this.documentRepository.manager, 'doc_customer_linked', n);
+    }
+    return n;
   }
 
   /** 解析失败需要按当前解析器重来的业务资料（不含知识库、图片） */
@@ -365,6 +414,10 @@ export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
         'l.proposalId AS "proposalId"',
         'l.quotationId AS "quotationId"',
         'l.projectId AS "projectId"',
+        'l.contractId AS "contractId"',
+        'l.afterSaleId AS "afterSaleId"',
+        'l.solutionId AS "solutionId"',
+        'l.workTaskId AS "workTaskId"',
         'l.customerId AS "customerId"',
       ])
       .from('document_links', 'l')
@@ -380,15 +433,39 @@ export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
           ? '技术方案'
           : l.quotationId
             ? '报价管理'
-            : l.projectId
-              ? '项目跟踪'
-              : l.customerId
-                ? '客户中心'
-                : '';
+            : l.contractId
+              ? '合同管理'
+              : l.projectId
+                ? '项目跟踪'
+                : l.afterSaleId
+                  ? '售后管理'
+                  : l.solutionId
+                    ? '标准方案'
+                    : l.workTaskId
+                      ? '工作任务'
+                      : l.customerId
+                        ? '客户中心'
+                        : '';
       if (owner && !map.has(l.documentId)) map.set(l.documentId, owner);
     }
 
-    return rows.map((d) => ({ ...d, ownerModule: map.get(d.id) || null }));
+    const customerIds = [...new Set(rows.map((r) => r.customerId).filter(Boolean))];
+    const names = new Map<string, string>();
+    if (customerIds.length) {
+      const cs = await this.documentRepository.manager
+        .createQueryBuilder()
+        .select(['c.id AS id', 'c.name AS name', 'c.code AS "shortName"']) // 客户简称存在 code 列
+        .from('customers', 'c')
+        .where('CAST(c.id AS TEXT) IN (:...ids)', { ids: customerIds })
+        .getRawMany<any>();
+      for (const c of cs) names.set(String(c.id), c.shortName || c.name);
+    }
+
+    return rows.map((d) => ({
+      ...d,
+      ownerModule: map.get(d.id) || null,
+      customerName: d.customerId ? names.get(String(d.customerId)) || null : null,
+    }));
   }
 
   async findOne(id: string, user: CurrentUser): Promise<Document> {
@@ -836,6 +913,9 @@ export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
       }));
 
       await this.aiService.addChunks(chunks);
+      await recordAutomation(this.documentRepository.manager, 'doc_parsed', 1, doc.id);
+      // 通知关心它的模块（如：挂在需求下的技术附件 → 自动结构化识别）
+      domainEvents.emitEvent('document.parsed', { documentId: doc.id });
       return 'indexed';
     } catch (err) {
       this.logger.error('Process document error', err?.message);

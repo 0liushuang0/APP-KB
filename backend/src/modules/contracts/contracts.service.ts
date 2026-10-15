@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Contract } from './entities/contract.entity';
@@ -12,6 +13,7 @@ import { PermissionService, CurrentUser } from '../../common/services/permission
 import { PermissionQueryService } from '../../common/services/permission-query.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { paginate, PaginatedResult } from '../../common/dto/pagination.dto';
+import { toLocalDate } from '../../common/utils/date-format.util';
 
 @Injectable()
 export class ContractsService {
@@ -26,6 +28,7 @@ export class ContractsService {
     private permissionQuery: PermissionQueryService,
     private approvalsService: ApprovalsService,
     private readonly tx: TransactionService,
+    private readonly trash: BusinessTrashService,
   ) {}
 
   /** 合同编号继承报价的流水号 */
@@ -58,7 +61,17 @@ export class ContractsService {
   async findAll(query: QueryContractDto, user: CurrentUser): Promise<PaginatedResult<Contract>> {
     const qb = this.contractRepository.createQueryBuilder('c');
     if (query.status) qb.andWhere('c.status = :status', { status: query.status });
-    if (query.customerId) qb.andWhere('c.customerId = :cid', { cid: query.customerId });
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+    if ((query as any).focus === 'delivery') {
+      qb.andWhere('c.deliveryDate BETWEEN :fToday AND :fIn7', { fToday: todayStr, fIn7: inDays(7) })
+        .andWhere("(c.status IS NULL OR c.status NOT IN ('completed','terminated'))");
+    } else if ((query as any).focus === 'warranty') {
+      qb.andWhere('c.warrantyExpiryDate > :fToday AND c.warrantyExpiryDate <= :fIn30', { fToday: todayStr, fIn30: inDays(30) });
+    }
+    // 'none' 是前端"未关联客户"筛选项
+    if (query.customerId === 'none') qb.andWhere('c.customerId IS NULL');
+    else if (query.customerId) qb.andWhere('c.customerId = :cid', { cid: query.customerId });
     if (query.keyword) {
       // 合同号/标题 + 客户名 一起搜
       qb.andWhere(
@@ -68,7 +81,7 @@ export class ContractsService {
       );
     }
     this.permissionQuery.apply(qb, 'c', user);
-    const result = await paginate(qb, 'c', query, ['createdAt', 'contractNo', 'amount', 'status']);
+    const result = await paginate(qb, 'c', query, ['createdAt', 'contractNo', 'amount', 'status'], { field: 'contractNo', order: 'ASC' });
     return { ...result, list: await this.attachRelations(result.list) };
   }
 
@@ -83,6 +96,8 @@ export class ContractsService {
             'q.id AS "quotationId"',
             'q.quotationNo AS "quotationNo"',
             'r.title AS "projectName"',
+            // SQL 端格式化 date，避免时区时间戳导致前端显示差一天
+            'to_char(r."requirementDate", \'YYYY-MM-DD\') AS "requirementDate"',
             'c.name AS "customerName"',
             'c.code AS "customerShortName"',
           ])
@@ -144,6 +159,10 @@ export class ContractsService {
         customerShortName: link?.customerShortName || link?.customerName || fb?.customerShortName || fb?.customerName || null,
         projectName: link?.projectName,
         quotationNo: link?.quotationNo,
+        // 客户需求时间：从链路需求实时取，与客户中心同步
+        requirementDate: link?.requirementDate ?? null,
+        // 交货期为 date 列（实体路径），统一转本地 YYYY-MM-DD，防前端截取差一天
+        deliveryDate: toLocalDate((c as any).deliveryDate),
         attachmentCounts: ccmap.get(c.id) || { input: 0, output: 0 },
       };
     });
@@ -242,6 +261,11 @@ export class ContractsService {
     }
     await this.tx.run(
       async (manager) => {
+        await this.trash.capture(manager, 'contract', id, `${contract.contractNo || ''} ${contract.title || ''}`.trim(), [
+          { table: 'contracts', column: 'id', ids: [id] },
+          { table: 'contract_payments', column: 'contractId', ids: [id] },
+        ], user?.userId);
+        await manager.getRepository(ContractPayment).delete({ contractId: id });
         await manager.getRepository(Contract).delete(id);
       },
       async () => {

@@ -208,7 +208,17 @@ export default function RequirementDetail() {
     queryKey: ['requirement', id],
     queryFn: () => requirementApi.get(id!),
     enabled: !!id,
+    // 资料挂上来后系统会自动识别：识别中、或有资料但还没识别时轮询，结果出来自动显示
+    refetchInterval: (q: any) => {
+      const d = q.state.data as any
+      if (!d) return false
+      if (d.specStatus === 'analyzing') return 4000
+      if ((!d.specStatus || d.specStatus === 'pending') && awaitingAuto.current) return 6000
+      return false
+    },
   })
+  /** 本页刚上传过资料：等待自动识别（最多 3 分钟） */
+  const awaitingAuto = useRef(false)
 
   const detail = detailQuery.data
 
@@ -223,6 +233,21 @@ export default function RequirementDetail() {
     queryFn: () => documentApi.byEntity('requirement', id!),
     enabled: !!id,
   })
+
+  // 资料数变多 = 刚上传了资料：开始等自动识别（3 分钟后停止轮询）
+  const docCount = (docsQuery.data as any[] | undefined)?.length ?? -1
+  const prevDocCount = useRef(-1)
+  useEffect(() => {
+    if (prevDocCount.current >= 0 && docCount > prevDocCount.current) {
+      awaitingAuto.current = true
+      detailQuery.refetch()
+      const t = setTimeout(() => { awaitingAuto.current = false }, 180_000)
+      prevDocCount.current = docCount
+      return () => clearTimeout(t)
+    }
+    prevDocCount.current = docCount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docCount])
 
   const proposalsQuery = useQuery({
     queryKey: ['proposals', 'by-requirement', id],
@@ -318,6 +343,23 @@ export default function RequirementDetail() {
   })
 
   const { fields, card } = useMemo(() => toParamFields(detail?.structuredSpec), [detail?.structuredSpec])
+  /** 自动识别的结果是否还等人确认；识别依据了哪些资料 */
+  const specMeta = useMemo(() => {
+    try {
+      const sp = detail?.structuredSpec ? JSON.parse(detail.structuredSpec) : null
+      return { review: sp?.review === true, sources: Array.isArray(sp?.sources) ? (sp.sources as string[]) : [] }
+    } catch {
+      return { review: false, sources: [] as string[] }
+    }
+  }, [detail?.structuredSpec])
+  const confirmSpecMutation = useMutation({
+    mutationFn: () => requirementApi.confirmSpec(id!),
+    onSuccess: () => {
+      toast.success('已确认识别结果')
+      detailQuery.refetch()
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || '确认失败'),
+  })
 
   const missingCritical = fields.filter(
     (f) =>
@@ -633,6 +675,32 @@ export default function RequirementDetail() {
         activeTab={tab}
         onTabChange={setTab}
       >
+        {/* 自动识别状态：识别中 / 待人确认 */}
+        {(detail as any).specStatus === 'analyzing' && (
+          <div className="eo-card p-4 border-l-4 border-l-info-fg flex items-center gap-3">
+            <Sparkles size={17} className="text-info-fg animate-pulse flex-shrink-0" />
+            <div className="text-sm text-ink">AI 正在阅读需求资料、识别技术参数（通常 30–60 秒），完成后自动显示，无需刷新</div>
+          </div>
+        )}
+        {specMeta.review && (detail as any).specStatus === 'done' && (
+          <div className="eo-card p-4 border-l-4 border-l-accent-500 flex items-start gap-3 flex-wrap">
+            <Sparkles size={17} className="text-accent-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-[220px] text-sm">
+              <div className="font-medium text-ink">
+                AI 已根据 {specMeta.sources.length || '上传的'} 份资料自动识别出 {fields.length} 个参数
+                {Array.isArray((card as any)?.missing) && (card as any).missing.length > 0 && `，还缺 ${(card as any).missing.length} 项`}，请核对
+              </div>
+              {specMeta.sources.length > 0 && (
+                <div className="text-caption text-muted mt-0.5 truncate" title={specMeta.sources.join('、')}>依据：{specMeta.sources.join('、')}</div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setTab('params')}>去核对</Button>
+              <Button size="sm" onClick={() => confirmSpecMutation.mutate()} loading={confirmSpecMutation.isPending}>确认无误</Button>
+            </div>
+          </div>
+        )}
+
         {/* 缺失关键参数提示 —— 这些正是要向客户补充确认的字段 */}
         {tab !== 'params' && missingCritical.length > 0 && (
           <div className="eo-card p-4 border-l-4 border-l-warning-fg flex items-start gap-3">
@@ -704,7 +772,7 @@ export default function RequirementDetail() {
                 bare
                 icon={Sparkles}
                 title="尚未结构化解析"
-                description="上传客户原始资料后点击「结构化识别」，系统会自动抽取技术参数并标出缺失项"
+                description="把客户的技术附件上传到「关联资料」，系统会自动识别技术参数并标出缺失项（也可点「结构化识别」立即识别）"
                 action={
                   <Button onClick={() => analyzeMutation.mutate()} loading={analyzeMutation.isPending}>
                     <Sparkles size={15} className="mr-1" /> 结构化识别

@@ -54,6 +54,12 @@ export class RequirementsController {
     return this.requirementsService.explainMatch(id, user, body?.targetType, body?.targetId);
   }
 
+  /** 同类产品历史报价（新建需求时给预计金额作参考，只提示不自动填） */
+  @Get('amount-reference')
+  amountReference(@Query('category') category: string) {
+    return this.requirementsService.amountReference(category);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {
     return this.requirementsService.findOne(id, user);
@@ -168,6 +174,12 @@ export class RequirementsController {
   @Post(':id/analyze-structured')
   analyzeStructured(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {
     return this.requirementsService.analyzeStructured(id, user);
+  }
+
+  /** 确认自动识别的参数（去掉「待确认」） */
+  @Post(':id/confirm-spec')
+  confirmSpec(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {
+    return this.requirementsService.confirmSpec(id, user);
   }
 
   @Patch(':id/spec')

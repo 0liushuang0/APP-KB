@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Quotation, QuotationItem } from './entities/quotation.entity';
 import { QuotationVersion } from './entities/quotation-version.entity';
@@ -16,6 +17,7 @@ import { SystemConfig } from '../system-config/entities/system-config.entity';
 
 @Module({
   imports: [
+    RecycleBinModule,
     TypeOrmModule.forFeature([Quotation, QuotationItem, QuotationVersion, Customer, ContactPerson, SystemConfig]),
     ApprovalsModule,
   ],

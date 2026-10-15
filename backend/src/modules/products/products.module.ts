@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product, ProductBom, ProductAttachment } from './entities/product.entity';
 import { ProductsService } from './products.service';
@@ -13,7 +14,7 @@ import { KnowledgeSyncService } from '../../common/services/knowledge-sync.servi
 import { ApprovalsModule } from '../approvals/approvals.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Product, ProductBom, ProductAttachment]), ApprovalsModule],
+  imports: [TypeOrmModule.forFeature([Product, ProductBom, ProductAttachment]), ApprovalsModule, RecycleBinModule],
   controllers: [ProductsController, ProductCompletenessController],
   providers: [PermissionQueryService, TransactionService, ProductsService, ProductCompletenessService, AiService, PermissionService, KnowledgeSyncService],
   exports: [ProductsService, ProductCompletenessService],

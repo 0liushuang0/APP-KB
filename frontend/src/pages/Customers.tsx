@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import DistributionBars from '../components/charts/DistributionBars'
+import DeleteImpact from '../components/DeleteImpact'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
+import { BarChart3,
   Search,
   Plus,
   Eye,
@@ -18,7 +20,6 @@ import {
   UserPlus,
   Moon,
   Paperclip,
-  FileText,
   ClipboardPaste,
 } from 'lucide-react'
 import { parseContacts } from '../lib/contactParse'
@@ -44,6 +45,7 @@ import ExportButton from '../components/ExportButton'
 import type { Customer } from '../types'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
+import EntityFileUpload from '../components/EntityFileUpload'
 import AttachmentBadge from '../components/AttachmentBadge'
 import Drawer from '../components/Drawer'
 import FormInput from '../components/FormInput'
@@ -56,7 +58,6 @@ import ErrorState from '../components/ErrorState'
 import PageHeader from '../components/PageHeader'
 import { FormSection, FieldGrid, DetailHeader, DetailSection, DescList } from '../components/layout-kit'
 import { documentApi } from '../api/services'
-import { downloadFile } from '../api/files'
 
 const initialForm = {
   name: '',
@@ -119,6 +120,16 @@ export default function Customers() {
   const debouncedSearch = useDebounce(search, 300)
   // 按客户状态过滤（后端列表接口已支持 status 参数）
   const [statusFilter, setStatusFilter] = useState('')
+  /** 客户类型 / 客户等级筛选（后端均已支持 customerType / level 参数） */
+  const [typeFilter, setTypeFilter] = useState('')
+  const [levelFilter, setLevelFilter] = useState('')
+  /** 客户分布卡片展开状态（记在本机，下次进来保持） */
+  const [distOpen, setDistOpen] = useState(() => {
+    try { return localStorage.getItem('aikb-customer-dist-open') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('aikb-customer-dist-open', distOpen ? '1' : '0') } catch { /* 存储不可用时不记 */ }
+  }, [distOpen])
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -173,7 +184,12 @@ export default function Customers() {
     refetch,
   } = usePagedQuery<Customer>({
     key: ['customers'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined },
+    filters: {
+      keyword: debouncedSearch || undefined,
+      status: statusFilter || undefined,
+      customerType: typeFilter || undefined,
+      level: levelFilter || undefined,
+    },
     fetcher: (params) => customerApi.list(params) as any,
     initialPageSize: 15,
   })
@@ -185,22 +201,12 @@ export default function Customers() {
   })
 
 
-  /**
-   * 编辑客户时的公司介绍附件。
-   *
-   * byEntity('customer') 返回挂在该客户名下的全部资料 —— 方案/报价等页面上传的
-   * 文件也会"同步进客户资料"（挂着 proposalId 的同时带 customerId）。
-   * 这里只留本弹窗上传口径（category=customer_background），
-   * 其余去「客户资料 / 客户360」里看全链路。
+  /*
+   * 编辑弹窗的附件区已换用 EntityFileUpload（filterCategory=customer_background），
+   * 预览/单个下载/勾选打包下载/移除与其他页面同一套交互；
+   * 弹窗口径之外的全链路资料仍去「客户资料 / 客户360」看。
+   * 新建态的附件走 pendingFiles 暂存，保存客户后统一上传（见 handleSubmit）。
    */
-  const { data: existingDocs } = useQuery({
-    queryKey: ['customer-docs', editing?.id],
-    queryFn: () =>
-      (documentApi.byEntity('customer', editing!.id) as Promise<any[]>).then(
-        (list) => (list || []).filter((d: any) => d.category === 'customer_background'),
-      ),
-    enabled: modalOpen && !!editing?.id,
-  })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => customerApi.remove(id),
@@ -291,6 +297,8 @@ export default function Customers() {
     setRemovedContactIds([])
     setPendingFiles([])
     originalContactsRef.current = []
+    // 编辑态里可能直接上传过附件（EntityFileUpload 即传即生效），关窗后刷新列表的附件徽标
+    queryClient.invalidateQueries({ queryKey: ['customers'] })
   }
 
   const openDetail = (row: Customer) => {
@@ -464,6 +472,29 @@ export default function Customers() {
           <option value="active">合作中</option>
           <option value="inactive">已停用</option>
         </select>
+        {/* 客户类型/等级筛选：客户中心自己的两个核心分类维度 */}
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="eo-input !w-32 !py-1 !text-xs"
+          aria-label="按客户类型筛选"
+        >
+          <option value="">全部类型</option>
+          {CUSTOMER_TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <select
+          value={levelFilter}
+          onChange={(e) => setLevelFilter(e.target.value)}
+          className="eo-input !w-28 !py-1 !text-xs"
+          aria-label="按客户等级筛选"
+        >
+          <option value="">全部等级</option>
+          {CUSTOMER_LEVEL_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
         {statusFilter && (
           <button onClick={() => setStatusFilter('')} className="text-caption text-muted hover:text-ink transition-colors">
             清除
@@ -494,7 +525,7 @@ export default function Customers() {
     )
     return () => setPageActions(null)
      
-  }, [statusFilter, debouncedSearch, selectedKeys])
+  }, [statusFilter, typeFilter, levelFilter, debouncedSearch, selectedKeys])
 
   /*
    * 把"用户此刻看到的"注册给悬浮 AI 助手：筛选条件 + 本页列表 + KPI。
@@ -543,6 +574,32 @@ export default function Customers() {
 
       {/* 统计卡片：与业务概览顶部同一套组件，各模块高度与配色一致 */}
       <StatCards className="mb-4" loading={statsLoading} skeletonCount={5} items={customerCards} />
+      {/* 客户分布：行业 / 区域 / 等级，点等级即按等级筛选列表 */}
+      {(stats as any)?.customers?.byIndustry && (
+        <details className="eo-card mb-4 group" open={distOpen} onToggle={(e) => setDistOpen((e.target as HTMLDetailsElement).open)}>
+          <summary className="px-4 py-2.5 cursor-pointer text-sm font-semibold text-ink select-none flex items-center gap-1.5">
+            <BarChart3 size={15} className="text-accent-600" /> 客户分布
+            <span className="text-caption font-normal text-muted">按行业、区域、等级 · 点等级可筛选</span>
+          </summary>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-4 pb-4">
+            {([
+              ['行业', 'byIndustry', 'var(--viz-1)'],
+              ['区域', 'byRegion', 'var(--viz-2)'],
+              ['等级', 'byLevel', 'var(--viz-3)'],
+            ] as const).map(([title, key, color]) => (
+              <div key={key}>
+                <div className="text-caption text-muted mb-1">{title}</div>
+                <DistributionBars
+                  color={color}
+                  items={Object.entries(((stats as any).customers[key] || {}) as Record<string, number>).map(([k, n]) => ({ key: k, label: k, count: n }))}
+                  onPick={key === 'byLevel' ? (k) => setLevelFilter(levelFilter === k || k === '未填' ? '' : k) : undefined}
+                  activeKey={key === 'byLevel' ? levelFilter : undefined}
+                />
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       {isLoading && !listData.length && <PageLoader />}
       {isError && <ErrorState message={error?.message || '加载失败'} onRetry={refetch} />}
@@ -734,70 +791,73 @@ export default function Customers() {
         </div>
         </FormSection>
 
-        {/* 公司介绍文件: 保存后进入「客户资料 → 客户背景」, 可检索、可随客户查看 */}
+        {/* 公司介绍文件: 编辑态与其他页面同一套交互（预览/单个下载/勾选打包下载/移除），
+            只看 customer_background 口径、不分输入输出；新建态先暂存、保存后上传 */}
         <FormSection
-          title={`公司介绍附件 (${(existingDocs?.length || 0) + pendingFiles.length})`}
+          title={editing ? '公司介绍附件' : `公司介绍附件 (${pendingFiles.length})`}
           icon={Paperclip}
-          action={
-            <button type="button" onClick={() => attachInputRef.current?.click()} className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-0.5">
-              <Plus size={13} /> 选择文件
-            </button>
-          }
         >
-          <input
-            ref={attachInputRef}
-            type="file"
-            multiple
-            hidden
-            accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.png,.jpg,.jpeg"
-            onChange={(e) => {
-              const picked = Array.from(e.target.files || [])
-              e.target.value = ''
-              const tooBig = picked.filter((f) => f.size > 200 * 1024 * 1024)
-              if (tooBig.length) toast.error(`文件过大（上限 200MB）：${tooBig.map((f) => f.name).join('、')}`)
-              setPendingFiles((prev) => {
-                const names = new Set(prev.map((f) => f.name + f.size))
-                return [...prev, ...picked.filter((f) => f.size <= 200 * 1024 * 1024 && !names.has(f.name + f.size))]
-              })
-            }}
-          />
-          {!existingDocs?.length && !pendingFiles.length ? (
-            <p className="text-xs text-muted py-2">
-              可上传公司简介、画册、资质、产线介绍等（PDF / Word / PPT / Excel / 图片），保存客户后进入该客户的「客户背景」资料。
-            </p>
+          {editing ? (
+            <EntityFileUpload
+              entityType="customer"
+              entityId={editing.id}
+              entityNo={(editing as any).customerCode || (editing as any).code || editing.name}
+              customerId={editing.id}
+              category="customer_background"
+              filterCategory="customer_background"
+              flat
+            />
           ) : (
-            <ul className="space-y-1.5">
-              {(existingDocs || []).map((d: any) => (
-                <li key={d.id} className="flex items-center gap-2 bg-canvas px-2 py-1.5 rounded-md text-sm">
-                  <FileText size={14} className="text-muted shrink-0" />
-                  <button
-                    type="button"
-                    className="flex-1 min-w-0 text-left truncate text-ink hover:text-accent-600"
-                    title="下载"
-                    onClick={() => downloadFile('documents', d.id, d.fileName || d.title).catch(handleError)}
-                  >
-                    {d.title || d.fileName}
-                  </button>
-                  <span className="text-xs text-muted shrink-0">已上传</span>
-                </li>
-              ))}
-              {pendingFiles.map((f, i) => (
-                <li key={f.name + f.size} className="flex items-center gap-2 bg-canvas px-2 py-1.5 rounded-md text-sm">
-                  <Paperclip size={14} className="text-muted shrink-0" />
-                  <span className="flex-1 min-w-0 truncate text-ink" title={f.name}>{f.name}</span>
-                  <span className="text-xs text-muted shrink-0">{f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(f.size / 1024))}KB`}　点确定后上传</span>
-                  <button
-                    type="button"
-                    onClick={() => setPendingFiles((prev) => prev.filter((_, k) => k !== i))}
-                    className="text-danger-fg flex items-center justify-center px-1"
-                    title="移除"
-                    aria-label={`移除 ${f.name}`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <button
+                type="button"
+                onClick={() => attachInputRef.current?.click()}
+                className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-0.5 mb-2"
+              >
+                <Plus size={13} /> 选择文件
+              </button>
+              <input
+                ref={attachInputRef}
+                type="file"
+                multiple
+                hidden
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.png,.jpg,.jpeg,.xdf"
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files || [])
+                  e.target.value = ''
+                  const tooBig = picked.filter((f) => f.size > 200 * 1024 * 1024)
+                  if (tooBig.length) toast.error(`文件过大（上限 200MB）：${tooBig.map((f) => f.name).join('、')}`)
+                  setPendingFiles((prev) => {
+                    const names = new Set(prev.map((f) => f.name + f.size))
+                    return [...prev, ...picked.filter((f) => f.size <= 200 * 1024 * 1024 && !names.has(f.name + f.size))]
+                  })
+                }}
+              />
+              {!pendingFiles.length ? (
+                <p className="text-xs text-muted py-2">
+                  可上传公司简介、画册、资质、产线介绍等（PDF / Word / PPT / Excel / 图片），保存客户后进入该客户的「客户背景」资料。
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {pendingFiles.map((f, i) => (
+                    <li key={f.name + f.size} className="flex items-center gap-2 bg-canvas px-2 py-1.5 rounded-md text-sm">
+                      <Paperclip size={14} className="text-muted shrink-0" />
+                      <span className="flex-1 min-w-0 truncate text-ink" title={f.name}>{f.name}</span>
+                      <span className="text-xs text-muted shrink-0">{f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(f.size / 1024))}KB`}　点确定后上传</span>
+                      <button
+                        type="button"
+                        onClick={() => setPendingFiles((prev) => prev.filter((_, k) => k !== i))}
+                        className="text-danger-fg flex items-center justify-center px-1"
+                        title="移除"
+                        aria-label={`移除 ${f.name}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </FormSection>
         </div>
@@ -829,8 +889,10 @@ export default function Customers() {
             <p className="text-xs text-warning-fg">⚠ 若只想暂时移除，建议改用"停用"而非删除。</p>
           </div>
         ) : (
-          <p className="text-sm text-ink-soft">该客户无关联业务数据，确定删除？删除后无法恢复。</p>
+          <p className="text-sm text-ink-soft">该客户无关联业务数据，确定删除？</p>
         )}
+        {/* 客户连同其需求、报价、合同等整套快照进回收站，30 天内可整体还原 */}
+        <DeleteImpact type="customer" id={deleteId} refs={false} />
       </Modal>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="客户详情" width="w-[760px]">

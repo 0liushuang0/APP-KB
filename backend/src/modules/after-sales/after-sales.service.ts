@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -25,20 +26,23 @@ export class AfterSalesService {
     private permissionService: PermissionService,
     private permissionQuery: PermissionQueryService,
     private readonly tx: TransactionService,
+    private readonly trash: BusinessTrashService,
   ) {}
 
   async findAll(query: QueryTicketDto, user: CurrentUser): Promise<PaginatedResult<AfterSalesTicket>> {
     const qb = this.ticketRepository.createQueryBuilder('t');
     if (query.status) qb.andWhere('t.status = :status', { status: query.status });
     if (query.type) qb.andWhere('t.type = :type', { type: query.type });
-    if (query.customerId) qb.andWhere('t.customerId = :cid', { cid: query.customerId });
+    // 'none' 是前端"未关联客户"筛选项
+    if (query.customerId === 'none') qb.andWhere('t.customerId IS NULL');
+    else if (query.customerId) qb.andWhere('t.customerId = :cid', { cid: query.customerId });
     if (query.keyword) {
       qb.andWhere('(t.ticketNo LIKE :kw OR t.title LIKE :kw OR t.productModel LIKE :kw)', {
         kw: `%${query.keyword}%`,
       });
     }
     this.permissionQuery.apply(qb, 't', user);
-    const result = await paginate(qb, 't', query, ['createdAt', 'ticketNo', 'status', 'priority']);
+    const result = await paginate(qb, 't', query, ['createdAt', 'ticketNo', 'status', 'priority'], { field: 'ticketNo', order: 'ASC' });
     return { ...result, list: await this.attachRelations(result.list) };
   }
 
@@ -144,13 +148,52 @@ export class AfterSalesService {
     return saved;
   }
 
+  async modelsForProject(projectId: string): Promise<Array<{ value: string; label: string }>> {
+    const m = this.ticketRepository.manager;
+    const p: any = await m
+      .createQueryBuilder()
+      .select(['p."quotationId" AS "quotationId"', 'p."contractId" AS "contractId"'])
+      .from('projects', 'p')
+      .where('CAST(p.id AS TEXT) = :id', { id: projectId })
+      .getRawOne();
+    if (!p) return [];
+    let quotationId = p.quotationId;
+    if (p.contractId) {
+      const c: any = await m
+        .createQueryBuilder()
+        .select('c."quotationId"', 'quotationId')
+        .from('contracts', 'c')
+        .where('CAST(c.id AS TEXT) = :id', { id: p.contractId })
+        .getRawOne();
+      quotationId = c?.quotationId || quotationId;
+    }
+    if (!quotationId) return [];
+    const items: any[] = await m
+      .createQueryBuilder()
+      .select(['i.name AS name', 'i.specification AS specification'])
+      .from('quotation_items', 'i')
+      .where('i."quotationId" = :id', { id: quotationId })
+      .orderBy('i."sortOrder"', 'ASC')
+      .getRawMany();
+    const seen = new Set<string>();
+    return items
+      .map((i) => [i.name, i.specification].filter(Boolean).join(' ').trim())
+      .filter((v) => v && !seen.has(v) && seen.add(v))
+      .map((v) => ({ value: v, label: v }));
+  }
+
   async remove(id: string, user: CurrentUser): Promise<void> {
     const ticket = await this.findOne(id, user);
     if (!this.permissionService.canManage(user, this.toSubject(ticket))) {
       throw new BadRequestException('无权删除该工单');
     }
     await this.tx.run(
-      async (manager) => manager.getRepository(AfterSalesTicket).delete(id),
+      async (manager) => {
+        await this.trash.capture(manager, 'afterSale', id, `${ticket.ticketNo || ''} ${ticket.title || ''}`.trim(), [
+          { table: 'after_sales_tickets', column: 'id', ids: [id] },
+        ], user?.userId);
+        await manager.getRepository(AfterSalesTicket).delete(id);
+      },
       async () => { await this.knowledgeSyncService.deleteObject('ticket', id); },
     );
   }

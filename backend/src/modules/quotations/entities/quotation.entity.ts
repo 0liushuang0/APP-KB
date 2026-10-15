@@ -44,6 +44,18 @@ export class Quotation {
   @Column({ type: 'text', nullable: true })
   notes: string;
 
+  /** 付款条件（如：预付 30%，发货前 60%，验收后 10%） */
+  @Column({ type: 'text', nullable: true })
+  paymentTerms: string;
+
+  /** 交货期：合同生效后多少天交货 */
+  @Column({ type: 'integer', nullable: true })
+  deliveryDays: number;
+
+  /** 质保期（月） */
+  @Column({ type: 'integer', nullable: true })
+  warrantyMonths: number;
+
   @Column({ nullable: true })
   ownerId: string;
 

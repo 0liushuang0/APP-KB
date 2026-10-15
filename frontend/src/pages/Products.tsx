@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
+import ProductGapList from '../components/ProductGapList'
+import DeleteImpact from '../components/DeleteImpact'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -938,15 +940,7 @@ export default function Products() {
       <div className="flex-1 overflow-y-auto eo-scroll">
         {!selectedProduct ? (
           /* Empty state */
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-20 h-20 rounded-2xl bg-canvas flex items-center justify-center mx-auto mb-4">
-                <Package size={36} className="text-muted" />
-              </div>
-              <h3 className="text-base font-medium text-ink mb-1">选择左侧产品查看详情</h3>
-              <p className="text-sm text-muted">或在搜索框中查找产品</p>
-            </div>
-          </div>
+          <ProductGapList onPick={setSelectedId} />
         ) : detailQuery.isLoading ? (
           <div className="p-6"><PageLoader /></div>
         ) : detailQuery.isError ? (
@@ -964,7 +958,7 @@ export default function Products() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-1">
                     <h2 className="text-lg font-serif font-semibold text-ink">{detail.name}</h2>
-                    <StatusBadge status={detail.status} />
+                    <StatusBadge kind="library" status={detail.status} />
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted mb-2">
                     {detail.code && <span className="font-mono">编码: {detail.code}</span>}
@@ -1572,7 +1566,8 @@ export default function Products() {
         loading={deleteMutation.isPending}
         confirmText="删除"
       >
-        <p className="text-sm text-ink-soft">确定要删除该产品吗？删除后无法恢复。</p>
+        <p className="text-sm text-ink-soft">确定要删除该产品吗？</p>
+        <DeleteImpact type="product" id={deleteId} />
       </Modal>
 
       {/* 产品资料：软删，进系统回收站 */}

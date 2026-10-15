@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ProjectHealthScheduler } from './project-health.scheduler';
+import { RecycleBinModule } from '../recycle-bin/recycle-bin.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Project, ProjectStage, ProjectRisk, ProjectTask } from './entities/project.entity';
 import { ProjectTimeline } from './entities/project-timeline.entity';
@@ -23,6 +25,7 @@ import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
+    RecycleBinModule,
     TypeOrmModule.forFeature([
       Project,
       ProjectStage,
@@ -41,7 +44,7 @@ import { User } from '../users/entities/user.entity';
     NotificationsModule,
   ],
   controllers: [ProjectsController],
-  providers: [PermissionQueryService, TransactionService, ProjectsService, ProjectWorkflowService, AiService, PermissionService, KnowledgeSyncService, NumberingService],
+  providers: [PermissionQueryService, TransactionService, ProjectsService, ProjectWorkflowService, ProjectHealthScheduler, AiService, PermissionService, KnowledgeSyncService, NumberingService],
   exports: [ProjectsService, ProjectWorkflowService],
 })
 export class ProjectsModule {}

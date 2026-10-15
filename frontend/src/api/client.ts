@@ -131,9 +131,12 @@ apiClient.interceptors.response.use(
       } else {
         // refresh 失败，清除本地状态并跳转登录
         redirectToLogin()
+        // 跳转本身就是提示；再弹红色「请先登录」只会吓人（单机模式登录页会自动登录）
+        return Promise.reject(error)
       }
     } else if (status === 401) {
       redirectToLogin()
+      return Promise.reject(error)
     }
 
     // 后端校验信息是英文属性名(「property status should not exist」), 翻成用户看得懂、知道改哪一栏的话;

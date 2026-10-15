@@ -1,11 +1,12 @@
 ﻿import { useEffect, useState } from 'react'
+import DeleteImpact from '../components/DeleteImpact'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Search, Sparkles, Eye, Pencil, Trash2, PlusCircle, MinusCircle,
   Printer, Scale, AlertTriangle, DollarSign, ScrollText,
-  FileEdit, Send, Trophy, CheckCircle2,
+  FileEdit, Send, Trophy, CheckCircle2, Hourglass,
 } from 'lucide-react'
 import { quotationApi, customerApi, proposalApi, productApi } from '../api/services'
 import { useDebounce } from '../hooks/useDebounce'
@@ -15,6 +16,7 @@ import { useModuleStats } from '../hooks/useModuleStats'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
 import { usePageActions } from '../contexts/PageActionsContext'
 import StatCards, { compactMoney } from '../components/StatCards'
+import FocusBar, { useFocus } from '../components/FocusBar'
 import type { Quotation, QuotationItem } from '../types'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
@@ -33,6 +35,7 @@ import PageLoader from '../components/PageLoader'
 import ErrorState from '../components/ErrorState'
 import PageHeader from '../components/PageHeader'
 import RelatedChain from '../components/RelatedChain'
+import CustomerFilterSelect from '../components/CustomerFilterSelect'
 import { FormSection, FieldGrid, DetailHeader, DetailSection, DescList } from '../components/layout-kit'
 
 /** 毛利率低于此值时在详情页告警 */
@@ -46,6 +49,10 @@ const initialForm = {
   proposalId: '',
   amount: 0,
   notes: '',
+  // 商务条款：随「生成合同」带过去（交货日期 = 签约日 + 交货期天数）
+  paymentTerms: '',
+  deliveryDays: '' as number | '',
+  warrantyMonths: '' as number | '',
   items: [{ name: '', quantity: 1, unitPrice: 0 }] as QuotationItem[],
 }
 
@@ -69,6 +76,7 @@ export default function Quotations() {
   const debouncedSearch = useDebounce(search, 300)
   // 按报价状态过滤（后端列表接口已支持 status 参数）
   const [statusFilter, setStatusFilter] = useState('')
+  const [customerFilter, setCustomerFilter] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [aiOpen, setAiOpen] = useState(false)
@@ -100,7 +108,10 @@ export default function Quotations() {
   const [adoptMode, setAdoptMode] = useState(false)
   // 来源方案（派生新建时用于只读展示项目名称/客户/关联方案）
   const [derivedProposal, setDerivedProposal] = useState<any>(null)
+  /** 方案带出的草稿说明（每行为什么带出、哪些缺价、条款来自哪份报价） */
+  const [draftInfo, setDraftInfo] = useState<any>(null)
 
+  const { focus, setFocus } = useFocus()
   const {
     list: listData,
     pagination,
@@ -113,7 +124,7 @@ export default function Quotations() {
     refetch,
   } = usePagedQuery<Quotation>({
     key: ['quotations'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined },
+    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined },
     fetcher: (params) => quotationApi.list(params) as any,
     initialPageSize: 15,
   })
@@ -193,10 +204,30 @@ export default function Quotations() {
       proposalId: fromProposalId,
       amount: 0,
       notes: '',
+      paymentTerms: '',
+      deliveryDays: '',
+      warrantyMonths: '',
       items: [{ name: '', quantity: 1, unitPrice: 0 }],
     })
     setModalOpen(true)
+    setDraftInfo(null)
     proposalApi.get(fromProposalId).then((p: any) => setDerivedProposal(p)).catch(() => {})
+    // 明细按需求产品类型从产品库带出；条款取该客户上一份报价
+    quotationApi.draftFromProposal(fromProposalId).then((d: any) => {
+      const items = (d?.items || []).map((it: any) => ({
+        name: it.name, specification: it.specification || '', quantity: it.quantity || 1,
+        unitPrice: it.unitPrice || 0, productId: it.productId || '', unit: it.unit || '',
+      }))
+      setValues((prev) => ({
+        ...prev,
+        items: items.length ? items : prev.items,
+        amount: items.length ? items.reduce((s: number, i: any) => s + (i.unitPrice || 0) * (i.quantity || 1), 0) : prev.amount,
+        paymentTerms: prev.paymentTerms || d?.paymentTerms || '',
+        deliveryDays: prev.deliveryDays !== '' ? prev.deliveryDays : d?.deliveryDays ?? '',
+        warrantyMonths: prev.warrantyMonths !== '' ? prev.warrantyMonths : d?.warrantyMonths ?? '',
+      }))
+      setDraftInfo(d)
+    }).catch(() => {})
      
   }, [fromProposalId])
 
@@ -292,6 +323,9 @@ export default function Quotations() {
       proposalId: row.proposalId || '',
       amount: row.amount || 0,
       notes: row.notes || '',
+      paymentTerms: (row as any).paymentTerms || '',
+      deliveryDays: (row as any).deliveryDays ?? '',
+      warrantyMonths: (row as any).warrantyMonths ?? '',
       items: [],
     })
     setModalOpen(true)
@@ -350,6 +384,9 @@ export default function Quotations() {
       ...form,
       // 只在用户真改过时才写回，避免用旧值覆盖别处刚改的新值
       projectName: form.projectName !== originalProjectName ? form.projectName : undefined,
+      paymentTerms: form.paymentTerms || undefined,
+      deliveryDays: form.deliveryDays === '' ? undefined : Number(form.deliveryDays),
+      warrantyMonths: form.warrantyMonths === '' ? undefined : Number(form.warrantyMonths),
       // 空行不入库
       items: form.items.filter((it) => it.name?.trim()),
     })
@@ -389,6 +426,7 @@ export default function Quotations() {
           <option value="won">已成交</option>
           <option value="lost">已失单</option>
         </select>
+        <CustomerFilterSelect value={customerFilter} onChange={setCustomerFilter} />
         {statusFilter && (
           <button onClick={() => setStatusFilter('')} className="text-caption text-muted hover:text-ink transition-colors">
             清除
@@ -417,7 +455,7 @@ export default function Quotations() {
     )
     return () => setPageActions(null)
      
-  }, [statusFilter, selectedKeys])
+  }, [statusFilter, customerFilter, selectedKeys])
 
   useRegisterPageAssistant({
     key: 'quotations',
@@ -447,11 +485,12 @@ export default function Quotations() {
   const { stats, isLoading: statsLoading } = useModuleStats()
   const q = stats?.quotations
   const quotationCards = [
-    { label: '报价总数', value: q?.total ?? 0, icon: ScrollText },
+    { label: '报价总数', value: q?.total ?? 0, icon: ScrollText, onClick: () => setFocus(''), active: !focus },
+    { label: '超 14 天未签约', value: (q as any)?.stale ?? 0, icon: Hourglass, alert: true, title: '已审核/已发送超过 14 天、还没有合同', onClick: () => setFocus('stale'), active: focus === 'stale' },
     { label: '草稿', value: q?.draft ?? 0, icon: FileEdit },
-    { label: '已批准', value: q?.approved ?? 0, icon: CheckCircle2 },
+    { label: '已审核', value: q?.approved ?? 0, icon: CheckCircle2 },
     { label: '已发送', value: q?.sent ?? 0, icon: Send },
-    { label: '已成交', value: q?.won ?? 0, icon: Trophy },
+    { label: '已签约', value: q?.won ?? 0, icon: Trophy, title: '已有合同挂着的报价' },
     { label: '本月报价额', value: compactMoney(q?.monthAmount ?? 0), suffix: '元', icon: DollarSign },
   ]
 
@@ -460,7 +499,8 @@ export default function Quotations() {
       <PageHeader title="报价" titleEm="管理" />
 
       {/* 统计卡片：与业务概览顶部同一套组件，各模块高度与配色一致 */}
-      <StatCards className="mb-4" loading={statsLoading} skeletonCount={6} items={quotationCards} />
+      <StatCards className="mb-4" loading={statsLoading} skeletonCount={7} items={quotationCards} />
+      <FocusBar focus={focus} labels={{ stale: '已审核/已发送超过 14 天、还没有签约的报价 —— 该催一催客户了' }} onClear={() => setFocus('')} count={pagination?.total} />
 
       {isLoading && !listData.length && <PageLoader />}
       {isError && <ErrorState message={error?.message || '加载失败'} onRetry={refetch} />}
@@ -483,9 +523,18 @@ export default function Quotations() {
               render: (row: any) =>
                 row.projectName || <span className="text-warning-fg text-xs">未关联方案</span>,
             },
+            {
+              key: 'requirementDate',
+              title: '需求时间',
+              // 客户需求时间：从链路需求实时同步（与客户中心一致）
+              render: (row: any) =>
+                row.requirementDate
+                  ? String(row.requirementDate).slice(0, 10)
+                  : <span className="text-muted">—</span>,
+            },
             { key: 'amount', title: '金额', sortable: true, render: (row) => `¥${row.amount?.toLocaleString?.() || row.amount}` },
             { key: 'status', title: '状态', sortable: true, render: (row) => <StatusBadge status={row.status} /> },
-            { key: 'createdAt', title: '创建时间', sortable: true, render: (row) => new Date(row.createdAt).toLocaleString() },
+            { key: 'createdAt', title: '创建时间', sortable: true, render: (row) => new Date(row.createdAt).toLocaleDateString() },
           ]}
           rowKey={(row) => row.id}
           onRowDoubleClick={(row) => openDetail(row)}
@@ -588,6 +637,20 @@ export default function Quotations() {
             </FieldGrid>
           </FormSection>
 
+          {draftInfo && !editing && (draftInfo.items?.length > 0 || draftInfo.termsFrom) && (
+            <div className="rounded-lg border border-accent-300 bg-accent-50 p-2.5 text-xs space-y-1">
+              <div className="font-medium text-ink">已从方案自动带入（可修改）</div>
+              {(draftInfo.items || []).map((it: any, i: number) => (
+                <div key={i} className="text-ink-soft">
+                  · {it.name}：{it.reason}
+                  {it.candidates?.length ? `（候选：${it.candidates.join(' / ')}）` : ''}
+                  {it.priceMissing ? <span className="text-warning-fg"> · 缺价，需人工填单价</span> : ''}
+                </div>
+              ))}
+              {draftInfo.termsFrom && <div className="text-ink-soft">· 付款/交货/质保条款沿用该客户上一份报价 {draftInfo.termsFrom}</div>}
+            </div>
+          )}
+
           <FormSection
             title="报价明细"
             icon={PlusCircle}
@@ -668,6 +731,14 @@ export default function Quotations() {
               ))}
             </div>
           </div>
+          </FormSection>
+
+          <FormSection title="商务条款" icon={ScrollText} hint="生成合同时自动带过去：交货日期 = 签约日 + 交货期">
+            <FieldGrid>
+              <FormInput label="付款条件" value={form.paymentTerms} onChange={(e) => setValue('paymentTerms', e.target.value)} placeholder="如：预付 30%，发货前 60%，验收后 10%" />
+              <FormInput label="交货期（天）" type="number" value={form.deliveryDays as any} onChange={(e) => setValue('deliveryDays', e.target.value === '' ? '' : Number(e.target.value))} placeholder="合同生效后多少天交货" />
+              <FormInput label="质保期（月）" type="number" value={form.warrantyMonths as any} onChange={(e) => setValue('warrantyMonths', e.target.value === '' ? '' : Number(e.target.value))} placeholder="如 12" />
+            </FieldGrid>
           </FormSection>
 
           <FormSection title="备注" icon={Printer}>
@@ -765,7 +836,8 @@ export default function Quotations() {
         loading={deleteMutation.isPending}
         confirmText="删除"
       >
-        <p className="text-sm text-ink-soft">确定要删除该报价吗？删除后无法恢复。</p>
+        <p className="text-sm text-ink-soft">确定要删除该报价吗？</p>
+        <DeleteImpact type="quotation" id={deleteId} />
       </Modal>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="报价详情" width="w-[560px]">

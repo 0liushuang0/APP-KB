@@ -8,6 +8,7 @@ import EmptyState from '../../components/EmptyState'
 import PageLoader from '../../components/PageLoader'
 import ErrorState from '../../components/ErrorState'
 import { documentApi, type RecycledDocument } from '../../api/services'
+import BusinessRecycleBin from '../../components/BusinessRecycleBin'
 
 function formatSize(bytes?: number): string {
   if (!bytes) return '—'
@@ -31,8 +32,8 @@ function daysLeft(expiresAt?: string): number | null {
  * 用户根本想不到要去业务资料页找。放进系统设置，就有了一个和「删除」无关、
  * 按位置就能找到的固定去处。
  *
- * 注意：目前只有资料（业务资料 / 客户资料 / 知识资料）走回收站，
- * 客户、项目、报价这类主数据仍是直接删除，所以这里不会有它们的记录。
+ * 2026-10-16 起客户、需求、方案、报价、合同、项目、售后、产品也走回收站（上方「业务记录」），
+ * 删除前整条快照、30 天内可还原，还原后下游关联随之恢复。
  */
 export default function RecycleBin() {
   const queryClient = useQueryClient()
@@ -83,6 +84,7 @@ export default function RecycleBin() {
 
   return (
     <div className="space-y-4">
+      <BusinessRecycleBin />
       <div className="bg-surface rounded-lg border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex items-center gap-2 min-w-0">
@@ -107,7 +109,7 @@ export default function RecycleBin() {
             删除的资料在这里保留 <strong className="text-ink-soft">30 天</strong>，到期自动清除。
             还原会把文件放回原位、恢复原有关联并重建 AI 索引。
             <span className="block mt-0.5">
-              客户、项目、报价等主数据的删除不经过回收站，删除前请看清确认提示。
+              客户、需求、报价、合同、项目等业务记录见上方「业务记录」，同样保留 30 天。
             </span>
           </p>
         </div>

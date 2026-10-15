@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
+import DeleteImpact from '../components/DeleteImpact'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -29,6 +30,7 @@ import PageLoader from '../components/PageLoader'
 import ErrorState from '../components/ErrorState'
 import PageHeader from '../components/PageHeader'
 import RelatedChain from '../components/RelatedChain'
+import CustomerFilterSelect from '../components/CustomerFilterSelect'
 import { FormSection, FieldGrid, DetailHeader, DetailSection, DescList } from '../components/layout-kit'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
 
@@ -102,6 +104,7 @@ export default function Proposals() {
   const debouncedSearch = useDebounce(search, 300)
   // 按方案状态过滤（后端列表接口已支持 status 参数）
   const [statusFilter, setStatusFilter] = useState('')
+  const [customerFilter, setCustomerFilter] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [aiOpen, setAiOpen] = useState(false)
@@ -157,6 +160,7 @@ export default function Proposals() {
       keyword: debouncedSearch || undefined,
       requirementId: fromRequirementId || undefined,
       status: statusFilter || undefined,
+      customerId: customerFilter || undefined,
     },
     fetcher: (p) => proposalApi.list(p) as any,
     initialPageSize: 15,
@@ -471,6 +475,7 @@ export default function Proposals() {
               <option value="approved">已审核</option>
               <option value="rejected">已驳回</option>
             </select>
+            <CustomerFilterSelect value={customerFilter} onChange={setCustomerFilter} />
             {statusFilter && (
               <button onClick={() => setStatusFilter('')} className="text-caption text-muted hover:text-ink transition-colors">
                 清除
@@ -517,7 +522,7 @@ export default function Proposals() {
     )
     return () => setPageActions(null)
      
-  }, [tab, statusFilter, selectedKeys])
+  }, [tab, statusFilter, customerFilter, selectedKeys])
 
   const { stats, isLoading: statsLoading } = useModuleStats()
   const p = stats?.proposals
@@ -558,6 +563,15 @@ export default function Proposals() {
                   // 项目名称由关联需求提供，方案不再自己存标题
                   render: (row: any) =>
                     row.projectName || <span className="text-warning-fg text-xs">未关联需求</span>,
+                },
+                {
+                  key: 'requirementDate',
+                  title: '需求时间',
+                  // 客户需求时间：从关联需求实时同步（与客户中心一致），提醒方案别拖过客户预期
+                  render: (row: any) =>
+                    row.requirementDate
+                      ? String(row.requirementDate).slice(0, 10)
+                      : <span className="text-muted">—</span>,
                 },
                 {
                   key: 'proposalType',
@@ -938,7 +952,8 @@ export default function Proposals() {
         loading={deleteMutation.isPending}
         confirmText="删除"
       >
-        <p className="text-sm text-ink-soft">确定要删除该方案吗？删除后无法恢复。</p>
+        <p className="text-sm text-ink-soft">确定要删除该方案吗？</p>
+        <DeleteImpact type="proposal" id={deleteId} />
       </Modal>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="方案详情" width="w-[600px]">

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
+import DeleteImpact from '../components/DeleteImpact'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Eye, Pencil, Trash2, ScrollText, DollarSign, FolderKanban, FileSignature, Activity, CheckCircle2, ShieldAlert } from 'lucide-react'
+import { Truck, Eye, Pencil, Trash2, ScrollText, DollarSign, FolderKanban, FileSignature, Activity, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { contractApi, quotationApi, systemApi } from '../api/services'
 import { usePageActions } from '../contexts/PageActionsContext'
 import { usePagedQuery } from '../hooks/usePagedQuery'
@@ -10,6 +11,7 @@ import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation, required } from '../hooks/useFormValidation'
 import { useModuleStats } from '../hooks/useModuleStats'
 import StatCards, { compactMoney } from '../components/StatCards'
+import FocusBar, { useFocus } from '../components/FocusBar'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import AttachmentBadge from '../components/AttachmentBadge'
@@ -24,6 +26,7 @@ import EntityFileUpload from '../components/EntityFileUpload'
 import FormInput from '../components/FormInput'
 import FormTextarea from '../components/FormTextarea'
 import EntityPicker from '../components/EntityPicker'
+import CustomerFilterSelect from '../components/CustomerFilterSelect'
 import { toList } from '../utils/apiList'
 import type { Contract } from '../types'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
@@ -37,12 +40,15 @@ export default function Contracts() {
   // 从客户 360 等入口带 ?highlight= 跳来：直接打开对应合同详情
   const highlightId = searchParams.get('highlight') || ''
   const seedQuotation = (location.state as any)?.quotation
+  /** 来源报价的交货期天数：填签订日期时自动推出交货日期 */
+  const [quoteDeliveryDays, setQuoteDeliveryDays] = useState<number | null>(null)
   const queryClient = useQueryClient()
   const setPageActions = usePageActions()
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   // 按合同状态过滤（后端列表接口已支持 status 参数）
   const [statusFilter, setStatusFilter] = useState('')
+  const [customerFilter, setCustomerFilter] = useState('')
 
   // 合同语境的状态文案：pending/approved 是审批态，与通用徽标（待整理/可用）含义不同
   const CONTRACT_STATUS_LABELS: Record<string, string> = {
@@ -62,9 +68,10 @@ export default function Contracts() {
   const [selected, setSelected] = useState<Contract | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
+  const { focus, setFocus } = useFocus()
   const { list, isLoading, isError, error, refetch, onSort, sortBy, sortOrder, pagination } = usePagedQuery<Contract>({
     key: ['contracts'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined },
+    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined },
     fetcher: (params) => contractApi.list(params) as any,
   })
 
@@ -126,6 +133,7 @@ export default function Contracts() {
           <option value="completed">已完成</option>
           <option value="terminated">已终止</option>
         </select>
+        <CustomerFilterSelect value={customerFilter} onChange={setCustomerFilter} />
         {statusFilter && (
           <button onClick={() => setStatusFilter('')} className="text-caption text-muted hover:text-ink transition-colors">
             清除
@@ -159,7 +167,7 @@ export default function Contracts() {
       </>
     )
     return () => setPageActions(null)
-  }, [statusFilter, selectedKeys])
+  }, [statusFilter, customerFilter, selectedKeys])
 
   const { values: form, errors, isValid, setValue, setValues, validateAll } = useFormValidation({
     initialValues: {
@@ -172,6 +180,8 @@ export default function Contracts() {
       expiryDate: '',
       paymentTerms: '',
       deliveryTerms: '',
+      deliveryDate: '',
+      warrantyMonths: '' as number | '',
     },
     rules: { title: required('请输入合同标题') },
   })
@@ -190,17 +200,23 @@ export default function Contracts() {
       expiryDate: '',
       paymentTerms: '',
       deliveryTerms: '',
+      deliveryDate: '',
+      warrantyMonths: '',
     })
     setModalOpen(true)
-    if (!seedQuotation) {
-      quotationApi.get(fromQuotationId).then((q: any) => {
-        setValues((prev) => ({
-          ...prev,
-          customerId: q.customerId || prev.customerId,
-          amount: q.amount != null ? String(q.amount) : prev.amount,
-        }))
-      }).catch(() => {})
-    }
+    // 报价里谈定的付款/交货/质保条款一并带过来（报价阶段新增的三项）
+    quotationApi.get(fromQuotationId).then((q: any) => {
+      const days = Number(q.deliveryDays) || 0
+      setQuoteDeliveryDays(days || null)
+      setValues((prev) => ({
+        ...prev,
+        customerId: q.customerId || prev.customerId,
+        amount: q.amount != null ? String(q.amount) : prev.amount,
+        paymentTerms: prev.paymentTerms || q.paymentTerms || '',
+        deliveryTerms: prev.deliveryTerms || (days ? `合同签订后 ${days} 天内交货` : ''),
+        warrantyMonths: prev.warrantyMonths !== '' ? prev.warrantyMonths : q.warrantyMonths ?? '',
+      }))
+    }).catch(() => {})
      
   }, [fromQuotationId])
 
@@ -225,6 +241,8 @@ export default function Contracts() {
       expiryDate: row.expiryDate ? row.expiryDate.slice(0, 10) : '',
       paymentTerms: row.paymentTerms || '',
       deliveryTerms: row.deliveryTerms || '',
+      deliveryDate: row.deliveryDate ? row.deliveryDate.slice(0, 10) : '',
+      warrantyMonths: (row as any).warrantyMonths ?? '',
     })
     setModalOpen(true)
   }
@@ -246,6 +264,9 @@ export default function Contracts() {
         expiryDate: form.expiryDate || undefined,
         paymentTerms: form.paymentTerms || undefined,
         deliveryTerms: form.deliveryTerms || undefined,
+        // 日期空串转 null（清空），PG date 列不收 ''
+        deliveryDate: form.deliveryDate || null,
+        warrantyMonths: form.warrantyMonths === '' ? undefined : Number(form.warrantyMonths),
       }
       return editing ? contractApi.update(editing.id, dto) : contractApi.create(dto)
     },
@@ -282,12 +303,13 @@ export default function Contracts() {
   const { stats, isLoading: statsLoading } = useModuleStats()
   const ct = stats?.contracts
   const contractCards = [
-    { label: '合同总数', value: ct?.total ?? 0, icon: ScrollText },
+    { label: '合同总数', value: ct?.total ?? 0, icon: ScrollText, onClick: () => setFocus(''), active: !focus },
+    { label: '7 天内交货', value: (ct as any)?.deliverySoon ?? 0, icon: Truck, alert: true, onClick: () => setFocus('delivery'), active: focus === 'delivery' },
     { label: '已签订', value: ct?.signed ?? 0, icon: FileSignature },
     { label: '执行中', value: ct?.executing ?? 0, icon: Activity },
     { label: '已完成', value: ct?.completed ?? 0, icon: CheckCircle2 },
     { label: '合同总额', value: compactMoney(ct?.totalAmount ?? 0), suffix: '元', icon: DollarSign },
-    { label: '质保将到期', value: ct?.warrantyExpiring ?? 0, icon: ShieldAlert, title: '30 天内质保到期的合同' },
+    { label: '质保将到期', value: ct?.warrantyExpiring ?? 0, icon: ShieldAlert, title: '30 天内质保到期的合同', onClick: () => setFocus('warranty'), active: focus === 'warranty' },
   ]
 
   if (isLoading) {
@@ -314,7 +336,8 @@ export default function Contracts() {
   return (
     <>
       {/* 统计卡片：与业务概览顶部同一套组件，各模块高度与配色一致 */}
-      <StatCards className="mb-4" loading={statsLoading} skeletonCount={6} items={contractCards} />
+      <StatCards className="mb-4" loading={statsLoading} skeletonCount={7} items={contractCards} />
+      <FocusBar focus={focus} labels={{ delivery: '7 天内到交货期的合同', warranty: '30 天内质保到期的合同 —— 到期前主动回访' }} onClear={() => setFocus('')} count={pagination?.total} />
 
       <DataTable
         data={list}
@@ -323,9 +346,33 @@ export default function Contracts() {
           { key: 'contractNo', title: '合同编号', sortable: true },
           { key: 'title', title: '合同标题' },
           { key: 'customerShortName', title: '客户', render: (row: any) => row.customerShortName || '—' },
+          {
+            key: 'requirementDate',
+            title: '需求时间',
+            // 客户需求时间：从链路需求实时同步（与客户中心一致）
+            render: (row: any) =>
+              row.requirementDate
+                ? String(row.requirementDate).slice(0, 10)
+                : <span className="text-muted">—</span>,
+          },
           { key: 'amount', title: '合同金额', sortable: true, render: (row: any) => `¥${Number(row.amount || 0).toLocaleString()}` },
           { key: 'status', title: '状态', sortable: true, render: (row: any) => <StatusBadge status={row.status} label={CONTRACT_STATUS_LABELS[row.status]} /> },
           { key: 'signedDate', title: '签订日期', sortable: true, render: (row: any) => row.signedDate ? new Date(row.signedDate).toLocaleDateString('zh-CN') : '—' },
+          {
+            key: 'deliveryDate',
+            title: '交货期',
+            sortable: true,
+            // 临期/过期提醒：交货期 30 天内琥珀、已过红色（未完成状态才提示）
+            render: (row: any) => {
+              if (!row.deliveryDate) return <span className="text-muted">—</span>
+              const d = String(row.deliveryDate).slice(0, 10)
+              const today = new Date().toISOString().slice(0, 10)
+              const in30 = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10)
+              const open = !['completed', 'terminated'].includes(row.status)
+              const cls = open && d < today ? 'text-danger-fg font-medium' : open && d <= in30 ? 'text-warning-fg' : ''
+              return <span className={cls} title={open && d < today ? '交货期已过' : open && d <= in30 ? '交货期 30 天内' : ''}>{d}</span>
+            },
+          },
         ]}
         rowKey={(row) => row.id}
         onRowDoubleClick={(row) => openDetail(row as Contract)}
@@ -417,9 +464,25 @@ export default function Contracts() {
 
         <FormSection title="日期与条款" icon={DollarSign}>
           <FieldGrid cols={3}>
-            <FormInput label="签订日期" type="date" value={form.signedDate} onChange={(e) => setValue('signedDate', e.target.value)} />
+            <FormInput
+              label="签订日期"
+              type="date"
+              value={form.signedDate}
+              onChange={(e) => {
+                const v = e.target.value
+                setValue('signedDate', v)
+                // 交货日期 = 签订日 + 报价的交货期天数（只在还没填时自动算，填过的不覆盖）
+                if (v && quoteDeliveryDays && !form.deliveryDate) {
+                  setValue('deliveryDate', new Date(new Date(v).getTime() + quoteDeliveryDays * 86400000).toISOString().slice(0, 10))
+                }
+              }}
+              helper={quoteDeliveryDays ? `填写后自动推出交货期（报价约定 ${quoteDeliveryDays} 天）` : undefined}
+            />
             <FormInput label="生效日期" type="date" value={form.effectiveDate} onChange={(e) => setValue('effectiveDate', e.target.value)} />
             <FormInput label="到期日期" type="date" value={form.expiryDate} onChange={(e) => setValue('expiryDate', e.target.value)} />
+            {/* 交货期：项目跟踪列表沿链路同步显示并临期提醒 */}
+            <FormInput label="交货期" type="date" value={form.deliveryDate} onChange={(e) => setValue('deliveryDate', e.target.value)} helper="项目跟踪同步显示，临期自动提醒" />
+            <FormInput label="质保期（月）" type="number" value={form.warrantyMonths as any} onChange={(e) => setValue('warrantyMonths', e.target.value === '' ? '' : Number(e.target.value))} helper="生效后据此自动算质保到期，到期前 30 天提醒" />
           </FieldGrid>
           <FormTextarea label="付款条款" rows={2} value={form.paymentTerms} onChange={(e) => setValue('paymentTerms', e.target.value)} placeholder="如：预付30%，发货前付60%，验收后付10%" />
           <FormTextarea label="交付条款" rows={2} value={form.deliveryTerms} onChange={(e) => setValue('deliveryTerms', e.target.value)} placeholder="如：合同签订后90天内交付" />
@@ -497,7 +560,8 @@ export default function Contracts() {
         confirmText="删除"
         loading={deleteMutation.isPending}
       >
-        <p className="text-sm text-ink-soft">确定删除该合同吗？此操作不可撤销。</p>
+        <p className="text-sm text-ink-soft">确定删除该合同吗？</p>
+        <DeleteImpact type="contract" id={deleteId} />
       </Modal>
     </>
   )

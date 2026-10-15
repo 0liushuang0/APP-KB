@@ -1,8 +1,11 @@
 ﻿import { useEffect, useState } from 'react'
+import DeleteImpact from '../components/DeleteImpact'
 import { Link, useSearchParams, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Search, Eye, Pencil, Trash2, PlusCircle, MinusCircle, FolderKanban, Headset, Compass, Activity, CheckCircle2, PauseCircle, AlertTriangle } from 'lucide-react'
+import { Search, Eye, Pencil, Trash2, PlusCircle, MinusCircle, FolderKanban, Headset, Compass, Activity, CheckCircle2, PauseCircle, AlertTriangle, List, GanttChart } from 'lucide-react'
+import FocusBar, { useFocus } from '../components/FocusBar'
+import ProjectGantt from '../components/charts/ProjectGantt'
 import { projectApi, userApi } from '../api/services'
 import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation, required } from '../hooks/useFormValidation'
@@ -31,6 +34,7 @@ import SharedFieldNotice from '../components/SharedFieldNotice'
 import { FormSection, FieldGrid, DetailHeader, DetailSection, DescList } from '../components/layout-kit'
 import EntityFileUpload from '../components/EntityFileUpload'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
+import CustomerFilterSelect from '../components/CustomerFilterSelect'
 
 const initialForm = {
   projectNo: '',
@@ -82,11 +86,19 @@ export default function Projects() {
   const highlightId = searchParams.get('highlight') || ''
   // 从合同列表「转项目」跳来：预填来源合同，客户/项目名称/编号由合同自动带出，阶段落在已签约
   const fromContractId = searchParams.get('fromContractId') || ''
+  /** 立项草稿里各日期的来源说明（合同签约日 / 合同交货期 …） */
+  const [draftSources, setDraftSources] = useState<{ startDate?: string; endDate?: string } | null>(null)
+  /** 列表 / 甘特图 */
+  const [view, setView] = useState<'list' | 'gantt'>('list')
+  const { focus, setFocus } = useFocus()
   const seedContract = (location.state as any)?.contract
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   // 按项目状态过滤（后端列表接口已支持 status 参数）
   const [statusFilter, setStatusFilter] = useState('')
+  const [customerFilter, setCustomerFilter] = useState('')
+  /** 商机阶段筛选：需求登记 → … → 已成交/已结束 */
+  const [dealFilter, setDealFilter] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -127,7 +139,7 @@ export default function Projects() {
     refetch,
   } = usePagedQuery<Project>({
     key: ['projects'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined },
+    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, dealStage: dealFilter || undefined, focus: focus || undefined },
     fetcher: (params) => projectApi.list(params) as any,
     initialPageSize: 15,
   })
@@ -198,6 +210,19 @@ export default function Projects() {
     })
     setModalOpen(true)
      
+    // 开工=签约日、完工=交货期、类型按需求类型、阶段按系统设置里的标准模板切好
+    projectApi.draftFromContract(fromContractId).then((d: any) => {
+      setValues((prev) => ({
+        ...prev,
+        name: prev.name || d.name || '',
+        customerId: prev.customerId || d.customerId || '',
+        projectType: prev.projectType || d.projectType || '',
+        startDate: prev.startDate || d.startDate || '',
+        endDate: prev.endDate || d.endDate || '',
+        stages: d.stages?.length ? d.stages : prev.stages,
+      }))
+      setDraftSources(d.sources || null)
+    }).catch(() => {})
   }, [fromContractId])
 
 
@@ -377,6 +402,19 @@ export default function Projects() {
           <option value="completed">已完成</option>
           <option value="paused">已暂停</option>
         </select>
+        {/* 商机阶段：项目跟踪页特色维度，看单子卡在哪一步 */}
+        <select
+          value={dealFilter}
+          onChange={(e) => setDealFilter(e.target.value)}
+          className="eo-input !w-32 !py-1 !text-xs"
+          aria-label="按商机阶段筛选"
+        >
+          <option value="">全部商机阶段</option>
+          {dealStageOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <CustomerFilterSelect value={customerFilter} onChange={setCustomerFilter} />
         {statusFilter && (
           <button onClick={() => setStatusFilter('')} className="text-caption text-muted hover:text-ink transition-colors">
             清除
@@ -412,18 +450,33 @@ export default function Projects() {
     )
     return () => setPageActions(null)
      
-  }, [statusFilter, selectedKeys])
+  }, [statusFilter, customerFilter, dealFilter, selectedKeys])
 
   const { stats, isLoading: statsLoading } = useModuleStats()
   const pj = stats?.projects
   const projectCards = [
-    { label: '项目总数', value: pj?.total ?? 0, icon: FolderKanban },
+    { label: '项目总数', value: pj?.total ?? 0, icon: FolderKanban, onClick: () => setFocus(''), active: !focus },
+    { label: '预警/关注', value: (pj as any)?.atRisk ?? pj?.highRisk ?? 0, icon: AlertTriangle, alert: true, title: '逾期、阶段逾期、高风险或临近完工进度不足（每日自动重算）', onClick: () => setFocus('risk'), active: focus === 'risk' },
     { label: '规划中', value: pj?.planning ?? 0, icon: Compass },
     { label: '进行中', value: pj?.ongoing ?? 0, icon: Activity },
     { label: '已完成', value: pj?.completed ?? 0, icon: CheckCircle2 },
     { label: '已暂停', value: pj?.paused ?? 0, icon: PauseCircle },
-    { label: '高风险', value: pj?.highRisk ?? 0, icon: AlertTriangle },
   ]
+  // 甘特图要看全部项目（不受分页限制），按当前筛选取最多 200 个
+  const ganttQuery = useQuery({
+    queryKey: ['projects-gantt', statusFilter, customerFilter, dealFilter, focus],
+    queryFn: () => projectApi.list({ pageSize: 200, status: statusFilter || undefined, customerId: customerFilter || undefined, dealStage: dealFilter || undefined, focus: focus || undefined }),
+    enabled: view === 'gantt',
+  })
+  const ganttRows = ((ganttQuery.data as any)?.list ?? (Array.isArray(ganttQuery.data) ? ganttQuery.data : [])).map((p: any) => ({
+    id: p.id,
+    label: p.projectName || p.name,
+    sub: p.customerShortName,
+    start: p.startDate ? String(p.startDate).slice(0, 10) : null,
+    end: (p.endDate || p.deliveryDate) ? String(p.endDate || p.deliveryDate).slice(0, 10) : null,
+    progress: p.progress,
+    health: p.health,
+  }))
 
   return (
     <div>
@@ -431,6 +484,22 @@ export default function Projects() {
 
       {/* 统计卡片：与业务概览顶部同一套组件，各模块高度与配色一致 */}
       <StatCards className="mb-4" loading={statsLoading} skeletonCount={6} items={projectCards} />
+      <FocusBar focus={focus} labels={{ risk: '预警/关注的项目（每天自动按计划完工日、阶段、风险重算）' }} onClear={() => setFocus('')} count={pagination?.total} />
+      <div className="flex justify-end mb-2">
+        <div className="inline-flex rounded-md border border-border overflow-hidden text-xs">
+          <button type="button" onClick={() => setView('list')} className={`px-2.5 py-1 flex items-center gap-1 ${view === 'list' ? 'bg-accent-50 text-accent-700' : 'text-muted hover:text-ink'}`}>
+            <List size={13} /> 列表
+          </button>
+          <button type="button" onClick={() => setView('gantt')} className={`px-2.5 py-1 flex items-center gap-1 border-l border-border ${view === 'gantt' ? 'bg-accent-50 text-accent-700' : 'text-muted hover:text-ink'}`}>
+            <GanttChart size={13} /> 交期甘特
+          </button>
+        </div>
+      </div>
+      {view === 'gantt' && (
+        <div className="eo-card p-4 mb-4">
+          {ganttQuery.isLoading ? <PageLoader /> : <ProjectGantt rows={ganttRows} onPick={(id) => navigate(`/projects?highlight=${id}`)} />}
+        </div>
+      )}
 
       {isLoading && !listData.length && <PageLoader />}
       {isError && <ErrorState message={error?.message || '加载失败'} onRetry={refetch} />}
@@ -471,13 +540,39 @@ export default function Projects() {
               key: 'health',
               title: '健康度',
               render: (row: any) => {
-                const h = row.health || 'green'
-                const colors: Record<string, string> = { green: 'bg-success-bg text-success-fg', yellow: 'bg-warning-bg text-warning-fg', red: 'bg-danger-bg text-danger-fg' }
-                const labels: Record<string, string> = { green: '健康', yellow: '关注', red: '预警' }
-                return <span className={`text-xs px-1.5 py-0.5 rounded ${colors[h]}`}>{labels[h]}</span>
+                // 空值不再当「健康」显示：每日重算前的新项目显示「待评估」
+                const h = row.health || ''
+                const colors: Record<string, string> = { green: 'bg-success-bg text-success-fg', yellow: 'bg-warning-bg text-warning-fg', red: 'bg-danger-bg text-danger-fg', '': 'bg-neutral-bg text-neutral-fg' }
+                const labels: Record<string, string> = { green: '健康', yellow: '关注', red: '预警', '': '待评估' }
+                const end = row.endDate ? String(row.endDate).slice(0, 10) : ''
+                const overdue = end && end < new Date().toISOString().slice(0, 10) && Number(row.progress || 0) < 100
+                return (
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${colors[h] || colors['']}`} title={overdue ? `计划完工 ${end} 已过` : undefined}>
+                    {labels[h] ?? '待评估'}{overdue ? ' · 逾期' : ''}
+                  </span>
+                )
               },
             },
-            { key: 'status', title: '状态', sortable: true, render: (row) => <StatusBadge status={row.status} /> },
+            { key: 'status', title: '状态', sortable: true, render: (row) => <StatusBadge kind="project" status={row.status} /> },
+            {
+              key: 'deliveryDate',
+              title: '交货期',
+              // 从来源合同实时同步（合同→报价→项目），单一数据源不漂移；
+              // 临期 30 天琥珀、已过红色（未完成项目才提醒）
+              render: (row: any) => {
+                if (!row.deliveryDate) return <span className="text-muted">—</span>
+                const d = String(row.deliveryDate).slice(0, 10)
+                const today = new Date().toISOString().slice(0, 10)
+                const in30 = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10)
+                const open = row.status !== 'completed'
+                const cls = open && d < today ? 'text-danger-fg font-medium' : open && d <= in30 ? 'text-warning-fg' : ''
+                return (
+                  <span className={cls} title={open && d < today ? '交货期已过' : open && d <= in30 ? '交货期 30 天内' : ''} >
+                    {d}
+                  </span>
+                )
+              },
+            },
             {
               key: 'startDate',
               title: '周期',
@@ -588,8 +683,8 @@ export default function Projects() {
 
           <FormSection title="计划与说明">
             <FieldGrid>
-              <FormInput label="开始日期" type="date" value={form.startDate} onChange={(e) => setValue('startDate', e.target.value)} />
-              <FormInput label="结束日期" type="date" value={form.endDate} onChange={(e) => setValue('endDate', e.target.value)} />
+              <FormInput label="开始日期" type="date" value={form.startDate} onChange={(e) => setValue('startDate', e.target.value)} helper={!editing && draftSources?.startDate ? `取自${draftSources.startDate}` : undefined} />
+              <FormInput label="结束日期" type="date" value={form.endDate} onChange={(e) => setValue('endDate', e.target.value)} helper={!editing && draftSources?.endDate ? `取自${draftSources.endDate}` : undefined} />
               <div className="md:col-span-2">
                 <FormTextarea label="描述" value={form.description} onChange={(e) => setValue('description', e.target.value)} rows={3} />
               </div>
@@ -720,7 +815,8 @@ export default function Projects() {
         confirmText="删除"
         size="sm"
       >
-        <p className="text-sm text-ink-soft">确定要删除该项目吗？删除后无法恢复。</p>
+        <p className="text-sm text-ink-soft">确定要删除该项目吗？</p>
+        <DeleteImpact type="project" id={deleteId} />
       </Modal>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="项目详情" width="w-[560px]">
@@ -737,7 +833,7 @@ export default function Projects() {
             <DetailHeader
               title={(selected as any)?.projectName || detailQuery.data?.name}
               code={detailQuery.data?.projectNo}
-              badge={<StatusBadge status={detailQuery.data?.status} />}
+              badge={<StatusBadge kind="project" status={detailQuery.data?.status} />}
               stats={[
                 { label: '客户', value: (selected as any)?.customerShortName },
                 {

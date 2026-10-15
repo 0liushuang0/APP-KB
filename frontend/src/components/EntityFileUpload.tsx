@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Upload, FileText, Trash2, Download, ArrowDownToLine, ArrowUpFromLine, Scan } from 'lucide-react'
+import { Camera, Upload, FileText, Trash2, Download, ArrowDownToLine, ArrowUpFromLine, Scan } from 'lucide-react'
 import { documentApi } from '../api/services'
 import { downloadFile, batchDownloadFiles } from '../api/files'
 import Modal from './Modal'
@@ -17,6 +17,17 @@ interface Props {
   category?: string
   /** 文档阶段：项目编辑时按当前 dealStage 自动归类（如 requirement/solution/quotation/contract） */
   stage?: string
+  /**
+   * 列表只显示该 category 的文档（不传=全部）。
+   * 客户编辑弹窗用：只看 customer_background 口径，
+   * 其他页面上传的方案/报价资料不混进来。
+   */
+  filterCategory?: string
+  /**
+   * 平铺模式：不区分输入/输出（客户档案资料是单口径，linkRole 统一 reference），
+   * 上传也不弹"客户给你的/提交给客户的"选择窗，选完即传。
+   */
+  flat?: boolean
 }
 
 /**
@@ -25,8 +36,9 @@ interface Props {
  * 流程：选择文件 → 弹窗确认"客户给你的 / 提交给客户的" → 按选择自动归类上传。
  * 上传的文件进入资料中心 + 关联到业务对象 + 同步进客户资料。
  * 已上传文件按"客户给你的"/"提交给客户的"分组展示。
+ * flat 模式（客户档案）：单口径平铺，选完即传。
  */
-export default function EntityFileUpload({ entityType, entityId, entityNo, customerId, category = '业务资料', stage }: Props) {
+export default function EntityFileUpload({ entityType, entityId, entityNo, customerId, category = '业务资料', stage, filterCategory, flat }: Props) {
   const queryClient = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -70,7 +82,11 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
   })
 
   // 依赖 files 的派生量：必须放在 files 声明之后（之前放在前面导致 TDZ，编辑弹窗一开就白屏）
-  const allDocIds = (files as any[]).map((item: any) => (item.document || item).id).filter(Boolean)
+  // filterCategory：客户弹窗只看 customer_background 口径，其余模块挂的资料不混入
+  const visibleFiles = filterCategory
+    ? (files as any[]).filter((item: any) => (item.document || item).category === filterCategory)
+    : (files as any[])
+  const allDocIds = visibleFiles.map((item: any) => (item.document || item).id).filter(Boolean)
   const allSelected = allDocIds.length > 0 && allDocIds.every((id: string) => selected.has(id))
   const toggleSelectAll = () => {
     setSelected(allSelected ? new Set() : new Set(allDocIds))
@@ -79,7 +95,7 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
   const errMsg = (err: any) => err?.response?.data?.message || err?.message || '未知错误'
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ file, role }: { file: File; role: 'source' | 'deliverable' }) => {
+    mutationFn: async ({ file, role }: { file: File; role: 'source' | 'deliverable' | 'reference' }) => {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('title', `${entityNo || entityType} - ${file.name}`)
@@ -99,7 +115,12 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
           linkRole: role,
           customerId: customerId || undefined,
           stage: stage || undefined,
-          description: role === 'source' ? '客户提交的输入资料' : '我方提交的输出资料',
+          description:
+            role === 'source'
+              ? '客户提交的输入资料'
+              : role === 'deliverable'
+                ? '我方提交的输出资料'
+                : '客户档案资料',
         })
       } catch (e) {
         throw { name: file.name, stage: 'link', msg: errMsg(e) }
@@ -129,12 +150,12 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
     onError: (e: any) => toast.error(errMsg(e) || '移除失败'),
   })
 
-  // 选好文件后，先弹窗让用户确认角色（含同名检查）
+  // 选好文件后，先弹窗让用户确认角色（含同名检查）；flat 模式选完即传
   const onFilesSelected = (fileList: FileList | null) => {
     if (!fileList || !fileList.length) return
     const arr = Array.from(fileList)
     // 同名检查：已有文件列表中是否已有同名
-    const existingNames = new Set((files as any[]).map((item: any) => {
+    const existingNames = new Set(visibleFiles.map((item: any) => {
       const doc = item.document || item
       return doc.fileName || doc.title || ''
     }))
@@ -144,7 +165,12 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
       toast.warning(`已跳过 ${rejected.length} 个同名文件：${rejected.map(f => f.name).join('、')}（如需更新请先删除旧文件）`)
     }
     if (!accepted.length) return
-    setPendingFiles(accepted)
+    if (flat) {
+      // 平铺模式（客户档案）：单口径，不问输入/输出
+      accepted.forEach((f) => uploadMutation.mutate({ file: f, role: 'reference' }))
+    } else {
+      setPendingFiles(accepted)
+    }
     if (fileRef.current) fileRef.current.value = ''
   }
 
@@ -164,11 +190,11 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
     )
   }
 
-  const incomingFiles = (files as any[]).filter((item: any) => {
+  const incomingFiles = visibleFiles.filter((item: any) => {
     const link = item.link || item
     return link.linkRole !== 'deliverable'
   })
-  const outgoingFiles = (files as any[]).filter((item: any) => {
+  const outgoingFiles = visibleFiles.filter((item: any) => {
     const link = item.link || item
     return link.linkRole === 'deliverable'
   })
@@ -261,6 +287,11 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
         <p className="text-caption text-muted mt-0.5">上传后将归入客户资料 · {category}</p>
         <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => onFilesSelected(e.target.files)} />
       </div>
+      {/* 手机现场：直接调相机拍铭牌、图纸、现场照片上传（桌面端不显示） */}
+      <label className="sm:hidden flex items-center justify-center gap-1.5 rounded-lg border border-border py-2.5 text-sm text-accent-700 active:bg-accent-50">
+        <Camera size={16} /> 拍照上传
+        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => onFilesSelected(e.target.files)} />
+      </label>
 
       {uploadMutation.isPending && (
         <p className="text-caption text-muted">上传中…</p>
@@ -323,28 +354,39 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
         </div>
       </Modal>
 
-      {/* 客户给你的文件（输入资料） */}
-      {incomingFiles.length > 0 && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-info-fg">
-            <ArrowDownToLine size={12} /> 客户给你的 · 输入资料 ({incomingFiles.length})
-          </div>
+      {/* 文件列表：flat=单口径平铺（客户档案），否则按输入/输出分组 */}
+      {flat ? (
+        visibleFiles.length > 0 && (
           <div className="space-y-1.5">
-            {incomingFiles.map(renderFileItem)}
+            {visibleFiles.map(renderFileItem)}
           </div>
-        </div>
-      )}
+        )
+      ) : (
+        <>
+          {/* 客户给你的文件（输入资料） */}
+          {incomingFiles.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-info-fg">
+                <ArrowDownToLine size={12} /> 客户给你的 · 输入资料 ({incomingFiles.length})
+              </div>
+              <div className="space-y-1.5">
+                {incomingFiles.map(renderFileItem)}
+              </div>
+            </div>
+          )}
 
-      {/* 提交给客户的文件（输出资料） */}
-      {outgoingFiles.length > 0 && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-success-fg">
-            <ArrowUpFromLine size={12} /> 提交给客户的 · 输出资料 ({outgoingFiles.length})
-          </div>
-          <div className="space-y-1.5">
-            {outgoingFiles.map(renderFileItem)}
-          </div>
-        </div>
+          {/* 提交给客户的文件（输出资料） */}
+          {outgoingFiles.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5 text-xs font-medium text-success-fg">
+                <ArrowUpFromLine size={12} /> 提交给客户的 · 输出资料 ({outgoingFiles.length})
+              </div>
+              <div className="space-y-1.5">
+                {outgoingFiles.map(renderFileItem)}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {uploadMutation.isPending && (
@@ -376,8 +418,8 @@ export default function EntityFileUpload({ entityType, entityId, entityNo, custo
         fileName={previewDoc?.fileName || ''}
         mimeType={previewDoc?.mimeType}
         fileSize={previewDoc?.fileSize}
-        // 这条记录下挂的全部附件都能连着翻
-        siblings={files as any}
+        // 这条记录下挂的全部附件都能连着翻（filterCategory 模式下只在可见范围内翻）
+        siblings={visibleFiles as any}
         // 文件名的兜底要与上面点击预览时一致，否则翻过去标题会是空的
         onNavigate={(item: any) =>
           setPreviewDoc({

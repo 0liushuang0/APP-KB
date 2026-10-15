@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import { AuditLogsService } from '../../modules/audit-logs/audit-logs.service';
+import { domainEvents } from '../services/domain-events';
 
 const ACTION_MAP: Record<string, string> = {
   POST: 'create',
@@ -40,6 +41,7 @@ export class AuditLogInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         next: (result) => {
+          domainEvents.emitEvent('data.changed', { objectType: path.replace(/^\/api\//, '').split('/')[0] || '' });
           this.writeLog(request, result).catch((err) =>
             this.logger.warn(`Audit log write failed: ${err?.message}`),
           );

@@ -73,6 +73,12 @@ export class SystemConfigService implements OnModuleInit {
       description: '系统语言',
     },
     {
+      key: 'project_stage_template',
+      value: '设计:15, 采购:20, 制造:25, 装配:10, 出厂验收:5, 发运:5, 安装调试:15, 终验收:5',
+      category: 'project',
+      description: '项目标准阶段（名称:工期占比，逗号分隔）。从合同立项时按此模板把开工→完工切成阶段',
+    },
+    {
       key: 'timezone',
       value: 'Asia/Shanghai',
       category: 'system',

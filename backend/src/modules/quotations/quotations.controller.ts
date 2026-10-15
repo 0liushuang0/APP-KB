@@ -24,6 +24,12 @@ export class QuotationsController {
    * 可打印的报价单。返回 HTML 由浏览器「打印为 PDF」——
    * 见 QuotationPrintService 注释：不为一张表引入无头浏览器。
    */
+  /** 方案 → 报价：项目名称、按需求产品类型带出的明细（含匹配理由）、商务条款默认值 */
+  @Get('draft-from-proposal/:proposalId')
+  draftFromProposal(@Param('proposalId') proposalId: string) {
+    return this.quotationsService.draftFromProposal(proposalId);
+  }
+
   @Get(':id/print')
   async print(@Param('id') id: string, @Res() res: Response) {
     const html = await this.quotationPrintService.renderHtml(id);

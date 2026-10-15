@@ -112,6 +112,11 @@ export class UpdateRequirementDto extends PartialType(CreateRequirementDto) {
 }
 
 export class QueryRequirementDto extends PaginationQueryDto {
+  /** 工作台「我的今天」直达筛选（见各 service 的 focus 分支） */
+  @IsOptional()
+  @IsString()
+  focus?: string;
+
   @IsOptional()
   @IsString()
   keyword?: string;
@@ -127,6 +132,11 @@ export class QueryRequirementDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   customerId?: string;
+
+  /** 落地阶段筛选：registered/proposal/quotation/contract/won/lost（由派生链路推导，分档互斥） */
+  @IsOptional()
+  @IsString()
+  landStage?: string;
 
   /** 传 true 时把历史版本一并返回；默认只返回当前版本 */
   @IsOptional()

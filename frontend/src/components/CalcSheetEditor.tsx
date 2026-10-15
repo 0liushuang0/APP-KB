@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { loadLuckysheet } from '../lib/loadLuckysheet'
 import { toast } from 'sonner'
 import { Upload, Download, Save, FileSpreadsheet } from 'lucide-react'
 import { calcSheetApi } from '../api/services'
@@ -51,11 +52,6 @@ export default function CalcSheetEditor({
 
     // 检查Luckysheet是否已加载
     const win = window as unknown as { luckysheet?: { create: (o: unknown) => void; destroy: () => void; getAllSheets: () => unknown } }
-    if (!win.luckysheet) {
-      console.error('Luckysheet未加载，请检查index.html中的引入')
-      toast.error('Luckysheet加载失败，请刷新页面重试')
-      return
-    }
 
     const initLuckysheet = () => {
       // 准备数据
@@ -113,11 +109,18 @@ export default function CalcSheetEditor({
       isInitializedRef.current = true
     }
 
-    // 延迟初始化，确保DOM已渲染
-    const timer = setTimeout(initLuckysheet, 200)
+    // 表格引擎按需加载（不再随每个页面下载 3.8MB），加载完再初始化
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    loadLuckysheet()
+      .then(() => {
+        if (!cancelled) timer = setTimeout(initLuckysheet, 50)
+      })
+      .catch(() => toast.error('表格组件加载失败，请检查网络后重试'))
 
     return () => {
-      clearTimeout(timer)
+      cancelled = true
+      if (timer) clearTimeout(timer)
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current)
       }

@@ -10,7 +10,7 @@ describe('contract commercial gate', () => {
     const permissions = { canAccess: () => true, canManage: () => true };
     const tx = { run: jest.fn() };
     const service = new ContractsService(repository as any, {} as any, {} as any,
-      {} as any, permissions as any, {} as any, {} as any, tx as any);
+      {} as any, permissions as any, {} as any, {} as any, tx as any, { capture: jest.fn() } as any);
     return { service, tx };
   };
 

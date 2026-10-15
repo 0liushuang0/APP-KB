@@ -1491,13 +1491,14 @@ export default function Documents({ fixedScope }: { fixedScope?: string }) {
                   key: 'customerId',
                   title: '关联客户',
                   render: (row: Document) => {
-                    const c = customers.find((x: any) => x.id === row.customerId)
-                    return c ? (
+                    // 客户名由后端随列表带回（资料挂到单据上会自动归属客户）；旧数据再按已加载的客户兜底
+                    const name = (row as any).customerName || customers.find((x: any) => x.id === row.customerId)?.name
+                    return row.customerId && name ? (
                       <button
-                        onClick={(e) => { e.stopPropagation(); navigate(`/customers/${c.id}`) }}
+                        onClick={(e) => { e.stopPropagation(); navigate(`/customers/${row.customerId}`) }}
                         className="text-accent-600 hover:underline"
                       >
-                        {c.name}
+                        {name}
                       </button>
                     ) : (
                       <span className="text-muted">-</span>
@@ -1505,7 +1506,7 @@ export default function Documents({ fixedScope }: { fixedScope?: string }) {
                   },
                 },
                 { key: 'fileSize', title: '大小', render: (row: Document) => <span className="eo-num text-label">{formatSize(row.fileSize)}</span> },
-                { key: 'status', title: '状态', render: (row: Document) => <StatusBadge status={row.status} /> },
+                { key: 'status', title: '状态', render: (row: Document) => <StatusBadge kind="library" status={row.status} /> },
                 {
                   key: 'createdAt',
                   title: '上传时间',
@@ -1858,7 +1859,7 @@ export default function Documents({ fixedScope }: { fixedScope?: string }) {
             <DetailHeader
               title={detailQuery.data?.title}
               code={detailQuery.data?.fileName}
-              badge={<StatusBadge status={detailQuery.data?.status} />}
+              badge={<StatusBadge kind="library" status={detailQuery.data?.status} />}
               stats={[
                 {
                   label: '资料类型',

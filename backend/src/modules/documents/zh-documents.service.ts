@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnApplicationBootstrap, ServiceUnavailableException } from '@nestjs/common';
+import { recordAutomation } from '../../common/utils/automation-log';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
@@ -137,6 +138,7 @@ export class ZhDocumentsService implements OnApplicationBootstrap {
         this.logger.warn(`关闭旧版本失败 ${doc.id}: ${error instanceof Error ? error.message : error}`);
       }
     }
+    await recordAutomation(this.documentRows.manager, 'approvals_collapsed', closed);
     return closed;
   }
 

@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { recordAutomation } from '../../common/utils/automation-log';
+import { domainEvents } from '../../common/services/domain-events';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsOptional, IsString } from 'class-validator';
 import { In, Repository } from 'typeorm';
@@ -25,7 +27,8 @@ export type LinkEntityType =
   | 'quotation'
   | 'contract'
   | 'project'
-  | 'afterSale';
+  | 'afterSale'
+  | 'workTask';
 
 /** 业务对象 → document_links 上的列名 */
 const ENTITY_COLUMN: Record<LinkEntityType, keyof DocumentLink> = {
@@ -37,6 +40,7 @@ const ENTITY_COLUMN: Record<LinkEntityType, keyof DocumentLink> = {
   contract: 'contractId',
   project: 'projectId',
   afterSale: 'afterSaleId',
+  workTask: 'workTaskId',
 };
 
 /** 按业务对象推断默认阶段，减少人工选择 */
@@ -49,6 +53,7 @@ const DEFAULT_STAGE: Record<LinkEntityType, DocStage> = {
   contract: 'contract',
   project: 'raw',
   afterSale: 'raw',
+  workTask: 'raw',
 };
 
 /**
@@ -197,6 +202,7 @@ export class DocumentLinksService {
       case 'contract': linkData.contractId = dto.entityId; break;
       case 'project': linkData.projectId = dto.entityId; break;
       case 'afterSale': linkData.afterSaleId = dto.entityId; break;
+      case 'workTask': linkData.workTaskId = dto.entityId; break;
     }
 
     /*
@@ -218,7 +224,38 @@ export class DocumentLinksService {
     }
 
     const link: DocumentLink = this.links.create(linkData as DocumentLink);
-    return this.links.save(link);
+    const saved = await this.links.save(link);
+
+    // 资料随单据归属客户（只补空）：单据的客户是确定的，用户不必再手选一遍
+    try {
+      const cid = saved.customerId || (await this.customerOfEntity(dto.entityType, dto.entityId));
+      if (cid && !doc.customerId) {
+        await this.documents.update(doc.id, { customerId: cid } as any);
+        await recordAutomation(this.documents.manager, 'doc_customer_linked', 1, doc.id);
+      }
+    } catch {
+      /* 归属失败不影响关联本身 */
+    }
+    domainEvents.emitEvent('document.linked', { documentId: doc.id, requirementId: saved.requirementId || null });
+    return saved;
+  }
+
+  /** 单据的客户（表名来自固定映射，非用户输入） */
+  private async customerOfEntity(entityType: string, entityId: string): Promise<string | null> {
+    const table: Record<string, string> = {
+      requirement: 'requirements', proposal: 'proposals', quotation: 'quotations',
+      contract: 'contracts', project: 'projects', afterSale: 'after_sales_tickets', customer: 'customers',
+    };
+    const t = table[entityType];
+    if (!t) return null;
+    if (entityType === 'customer') return entityId;
+    const row = await this.links.manager
+      .createQueryBuilder()
+      .select('x."customerId"', 'cid')
+      .from(t, 'x')
+      .where('CAST(x.id AS TEXT) = :id', { id: entityId })
+      .getRawOne<{ cid: string }>();
+    return row?.cid || null;
   }
 
   async remove(id: string): Promise<{ success: boolean }> {
