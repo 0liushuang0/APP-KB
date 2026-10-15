@@ -66,7 +66,8 @@ export class IndexSelfHealService implements OnModuleInit, OnModuleDestroy {
         `索引落后，自动补建：${lagging.map((r) => `${r.label} ${r.indexed}/${r.expected}`).join('、')}`,
       );
       await this.reindex.reindex(types);
-      if (this.dataSource) await recordAutomation(this.dataSource.manager, 'index_healed', types.length);
+      // 按类型各记一笔（objectId=类型）：同一类型多次补建在「本周系统替你做了什么」里只算一类
+      if (this.dataSource) for (const t of types) await recordAutomation(this.dataSource.manager, 'index_healed', 1, t);
 
       // 补建后重新读一次，记下每个类型的最终状态；仍补不齐的下次不再重复清空重写
       const after = await this.reindex.getHealth();
