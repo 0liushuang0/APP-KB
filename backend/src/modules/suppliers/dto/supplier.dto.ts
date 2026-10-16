@@ -3,6 +3,7 @@ import {
   IsString,
   IsOptional,
   IsEnum,
+  IsIn,
   IsArray,
   IsNumber,
   IsBoolean,
@@ -78,6 +79,17 @@ export class CreateSupplierDto {
   @IsOptional()
   @IsArray()
   qualification?: string[];
+
+  /** 供应商性质：finished=成品件 / process=工序外协 / both=两者 */
+  @IsOptional()
+  @IsIn(['finished', 'process', 'both', ''])
+  nature?: 'finished' | 'process' | 'both' | '' | null;
+
+  /** 工序外协能力标签（热处理、发黑…）；nature=process/both 时有意义 */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  processTags?: string[];
 
   @IsOptional()
   @IsEnum(['strategic', 'qualified', 'candidate', 'blacklist'] as const)

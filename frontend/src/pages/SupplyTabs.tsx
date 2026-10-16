@@ -1,9 +1,10 @@
 import { useSearchParams } from 'react-router-dom'
-import { Truck, Boxes, Wrench, Package } from 'lucide-react'
+import { Truck, Boxes, Wrench, Package, Factory } from 'lucide-react'
 import Suppliers from './Suppliers'
 import Materials from './Materials'
 import EquipmentConfig from './EquipmentConfig'
 import SpareParts from './SpareParts'
+import OutsourcingBoard from './OutsourcingBoard'
 
 /**
  * 供应管理 统一入口（4 个 Tab）。
@@ -16,9 +17,9 @@ import SpareParts from './SpareParts'
 export default function SupplyTabs() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const tab = tabParam === 'materials' ? 'materials' : tabParam === 'equipment' ? 'equipment' : tabParam === 'spares' ? 'spares' : 'suppliers'
+  const tab = tabParam === 'materials' ? 'materials' : tabParam === 'equipment' ? 'equipment' : tabParam === 'spares' ? 'spares' : tabParam === 'outsourcing' ? 'outsourcing' : 'suppliers'
 
-  const switchTab = (t: 'suppliers' | 'materials' | 'equipment' | 'spares') => {
+  const switchTab = (t: 'suppliers' | 'materials' | 'equipment' | 'spares' | 'outsourcing') => {
     setSearchParams(t === 'suppliers' ? {} : { tab: t }, { replace: true })
   }
 
@@ -27,6 +28,7 @@ export default function SupplyTabs() {
     { key: 'materials' as const, label: '物料管理', icon: Boxes, desc: '物料规格与厂家报价' },
     { key: 'equipment' as const, label: '设备配套', icon: Wrench, desc: '设备配件供应商选型' },
     { key: 'spares' as const, label: '备件管理', icon: Package, desc: '调试/2年期备件清单' },
+    { key: 'outsourcing' as const, label: '外协加工', icon: Factory, desc: '供应方式与工序外协' },
   ]
 
   return (
@@ -55,7 +57,7 @@ export default function SupplyTabs() {
 
       {/* Tab 内容 */}
       <div>
-        {tab === 'suppliers' ? <Suppliers /> : tab === 'materials' ? <Materials /> : tab === 'equipment' ? <EquipmentConfig /> : <SpareParts />}
+        {tab === 'suppliers' ? <Suppliers /> : tab === 'materials' ? <Materials /> : tab === 'equipment' ? <EquipmentConfig /> : tab === 'spares' ? <SpareParts /> : <OutsourcingBoard />}
       </div>
     </div>
   )

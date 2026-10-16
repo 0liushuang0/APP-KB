@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil, GripVertical, Copy, FileSpreadsheet, FileText, Tags, AlertTriangle } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
-import { groupByProfession, resolveProfession, professionOfPart, moveItem } from '../utils/profession'
+import { groupByProfession, resolveProfession, moveItem } from '../utils/profession'
 import { useProfessions } from '../hooks/useProfessions'
 import {
   DEFAULT_EQUIPMENT_BOM,
@@ -702,17 +702,19 @@ export default function EquipmentConfig() {
                           className="eo-input !py-1 !text-sm !border-transparent hover:!border-border focus:!border-accent-400 !w-44"
                           placeholder="配件名称"
                         />
+                        {rows.filter((x) => x.part.trim() && x.part.trim() === r.part.trim()).length > 1 && (
+                          <span className="text-caption text-warning-fg block leading-3" title="同名配件出现多次，请确认是否重复录入">⚠ 重名</span>
+                        )}
                       </td>
                       <td className="py-1.5 pr-2">
-                        {/* 专业分类：默认按名称自动判定，可手动指定（如接近开关从仪表调到电气） */}
+                        {/* 专业分类：全手动指定（不自动归类），默认机械 */}
                         <select
-                          value={r.profession || ''}
+                          value={r.profession && professions.some((d: any) => d.key === r.profession) ? r.profession : professions[0]?.key || '机械'}
                           onChange={(e) => setCell(r.key, { profession: e.target.value })}
                           className="eo-input !py-1 !text-caption w-full"
                           aria-label={`专业分类 ${r.part}`}
-                          title="手动指定专业分组"
+                          title="手动指定专业分组（不自动归类）"
                         >
-                          <option value="">自动·{displayName(professionOfPart(r.part, professions))}</option>
                           {professions.map((p) => (
                             <option key={p.key} value={p.key}>{p.name}</option>
                           ))}

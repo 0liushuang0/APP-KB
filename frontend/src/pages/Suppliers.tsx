@@ -78,6 +78,8 @@ const initialForm = {
   tier: '',
   productCategories: [] as string[],
   qualification: '',
+  nature: '',
+  processTags: '',
   cooperationLevel: 'candidate',
   paymentTerms: '',
   rating: 'b',
@@ -517,6 +519,8 @@ export default function Suppliers() {
       tier: row.tier || '',
       productCategories: row.productCategories || [],
       qualification: (row.qualification || []).join('、'),
+      nature: (row as any).nature || '',
+      processTags: ((row as any).processTags || []).join('、'),
       cooperationLevel: row.cooperationLevel || 'candidate',
       paymentTerms: row.paymentTerms || '',
       rating: row.rating || 'b',
@@ -537,6 +541,10 @@ export default function Suppliers() {
       qualification: form.qualification
         ? form.qualification.split(/[、,，]/).map((s) => s.trim()).filter(Boolean)
         : [],
+      nature: (form as any).nature || undefined,
+      processTags: (form as any).processTags
+        ? (form as any).processTags.split(/[、,，]/).map((x: string) => x.trim()).filter(Boolean)
+        : undefined,
       capabilities: form.capabilities.filter((it) => it.capability?.trim()),
     })
   }
@@ -840,6 +848,25 @@ export default function Suppliers() {
             <FormSelect label="评级" options={SUPPLIER_RATING_OPTIONS} value={form.rating} onChange={(e) => setValue('rating', e.target.value)} />
             <FormInput label="付款方式" value={form.paymentTerms} onChange={(e) => setValue('paymentTerms', e.target.value)} placeholder="如：月结 30 天 / 预付 30%" />
             <FormInput label="资质" value={form.qualification} onChange={(e) => setValue('qualification', e.target.value)} placeholder="ISO9001、CE，用顿号分隔" />
+            <FormSelect
+              label="供应商性质"
+              options={[
+                { value: '', label: '未分类（两种场景可选）' },
+                { value: 'finished', label: '成品件供应商' },
+                { value: 'process', label: '工序外协供应商' },
+                { value: 'both', label: '两者都是' },
+              ]}
+              value={(form as any).nature || ''}
+              onChange={(e) => setValue('nature', e.target.value)}
+              helper="成品件厂直接供货；工序外协厂承接热处理/发黑等工序"
+            />
+            <FormInput
+              label="工序能力"
+              value={(form as any).processTags || ''}
+              onChange={(e) => setValue('processTags', e.target.value)}
+              placeholder="热处理、发黑、焊接，用顿号分隔"
+              helper="性质为工序外协时，外协加工页按此过滤候选厂"
+            />
             {/*
               平均交期是**算出来的**，不是供应商的字段 ——
               它取自「产品目录」里各条配套件交期的平均值。

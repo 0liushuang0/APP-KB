@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Download, Package, GripVertical, Pencil, Copy, FileSpreadsheet, FileText, Tags, AlertTriangle, Wrench } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
-import { groupByProfession, resolveProfession, professionOfPart, moveItem, type ProfessionDef } from '../utils/profession'
+import { groupByProfession, resolveProfession, moveItem, type ProfessionDef } from '../utils/profession'
 import { useProfessions } from '../hooks/useProfessions'
 import {
   cleanupAutoCreatedSupplier,
@@ -627,15 +627,14 @@ function GroupFragment({
               />
             </td>
             <td className="py-1.5 pr-2">
-              {/* 专业分类：默认自动判定，可手动改组（与设备配套同口径） */}
+              {/* 专业分类：全手动指定（不自动归类），默认第一组 */}
               <select
-                value={r.profession || ''}
+                value={r.profession && professions.some((d: any) => d.key === r.profession) ? r.profession : professions[0]?.key || '机械'}
                 onChange={(e: any) => setCell(r.key, { profession: e.target.value })}
                 className="eo-input !py-1 !text-caption w-full"
                 aria-label={`专业分类 ${r.part}`}
-                title="手动指定专业分组"
+                title="手动指定专业分组（不自动归类）"
               >
-                <option value="">自动·{groupNaming.displayName(professionOfPart(r.part, professions))}</option>
                 {professions.map((p) => (
                   <option key={p.key} value={p.key}>{p.name}</option>
                 ))}

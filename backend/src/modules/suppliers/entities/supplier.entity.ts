@@ -99,6 +99,14 @@ export class Supplier {
   @Column('simple-array', { nullable: true })
   qualification: string[];
 
+  /** 供应商性质：finished=成品件 / process=工序外协 / both=两者；空=未分类（两种场景都可选） */
+  @Column({ type: 'varchar', nullable: true })
+  nature: 'finished' | 'process' | 'both' | null;
+
+  /** 工序外协能力标签（热处理、发黑、焊接…），外协加工页按工序过滤候选厂 */
+  @Column('simple-array', { nullable: true })
+  processTags: string[];
+
   @Column({ type: 'varchar', default: 'candidate', nullable: true })
   cooperationLevel: CooperationLevel;
 
