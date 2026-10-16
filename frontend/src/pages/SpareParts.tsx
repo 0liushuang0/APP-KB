@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Download, Package } from 'lucide-react'
+import { Plus, Trash2, Download, Package, GripVertical, Pencil } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
 import { toList } from '../utils/apiList'
-import { groupByProfession, professionOfPart } from '../utils/profession'
+import { groupByProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
+import { useProfessionNames } from '../hooks/useProfessionNames'
 import Button from '../components/Button'
 import PageLoader from '../components/PageLoader'
 
@@ -26,6 +27,8 @@ type SpareType = (typeof SPARE_TYPES)[number]
 interface SpareRow {
   key: string
   part: string
+  /** 专业：空=按名称自动判定；可手动指定（与设备配套同口径） */
+  profession: '' | '机械' | '液压' | '电气' | '仪表' | '其他'
   spareType: SpareType
   suppliers: string[]
   note: string
@@ -38,6 +41,7 @@ let rowSeq = 0
 const newSpare = (part = '', spareType: SpareType = '调试备件'): SpareRow => ({
   key: `s${++rowSeq}`,
   part,
+  profession: '',
   spareType,
   suppliers: [],
   note: '',
@@ -78,6 +82,23 @@ export default function SpareParts() {
   const [typeFilter, setTypeFilter] = useState<'' | SpareType>('')
   const [customEquip, setCustomEquip] = useState('')
   const [exportSelected, setExportSelected] = useState<Set<string>>(new Set())
+  /** 专业组显示名（与设备配套共享改名）与组名编辑态 */
+  const { displayName, rename: renameProfession } = useProfessionNames()
+  const [editingGroup, setEditingGroup] = useState<string | null>(null)
+  /** 拖拽排序（同设备配套：拖动手柄，目标行接收 drop） */
+  const dragKeyRef = useRef<string | null>(null)
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  const onDropRow = (targetKey: string) => {
+    const src = dragKeyRef.current
+    dragKeyRef.current = null
+    setDragOverKey(null)
+    if (!src || src === targetKey) return
+    setRows((prev) => {
+      const from = prev.findIndex((r) => r.key === src)
+      const to = prev.findIndex((r) => r.key === targetKey)
+      return moveItem(prev, from, to)
+    })
+  }
 
   // 备件配置
   const { data: spareBom } = useQuery({
@@ -381,9 +402,11 @@ export default function SpareParts() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-caption text-muted border-b border-border">
+                  <th className="py-2 w-6 font-normal" title="拖动调整顺序" />
                   <th className="py-2 pr-2 w-8 font-normal">☑</th>
                   <th className="py-2 pr-2 w-10 font-normal">序号</th>
                   <th className="py-2 pr-2 font-normal">备件名称</th>
+                  <th className="py-2 pr-2 w-28 font-normal">专业分类</th>
                   <th className="py-2 pr-2 w-32 font-normal">备件类型</th>
                   <th className="py-2 pr-2 font-normal">供应商（输入提示该品类厂家）</th>
                   <th className="py-2 pr-2 w-40 font-normal">备注</th>
@@ -404,11 +427,13 @@ export default function SpareParts() {
                     candidatesOf={candidatesOf}
                     addSupplier={addSupplier}
                     removeSupplier={removeSupplier}
+                    dragState={{ dragOverKey, setDragOver: setDragOverKey, drop: onDropRow, dragRef: dragKeyRef }}
+                    groupNaming={{ displayName, editingGroup, setEditingGroup, rename: renameProfession }}
                   />
                 ))}
                 {!visibleRows.length && (
                   <tr>
-                    <td colSpan={7} className="py-6 text-center text-sm text-muted">
+                    <td colSpan={9} className="py-6 text-center text-sm text-muted">
                       {rows.length ? '当前类型筛选下没有备件' : '该设备还没有备件行，点「添加备件行」逐行录入，内容会自动保存'}
                     </td>
                   </tr>
@@ -418,7 +443,7 @@ export default function SpareParts() {
           </div>
         )}
         <p className="text-caption text-muted mt-3">
-          备件按名称自动归入 机械/液压/电气/仪表 专业组（如"液压缸"→液压、"接近开关"→仪表）；备件类型区分调试备件与 2 年期备件可筛选；供应商支持多选。清单自动保存，设备与「设备配套」共享。
+          备件按名称自动归入 机械/液压/电气/仪表 专业组（可在行内手动改组，组名可改名）；备件类型区分调试备件与 2 年期备件可筛选；供应商支持多选，手柄可拖动排序。清单自动保存，设备与「设备配套」共享。
         </p>
       </div>
     </div>
@@ -427,19 +452,66 @@ export default function SpareParts() {
 
 /** 专业分组渲染（拆出主组件避免单函数过长） */
 function GroupFragment({
-  profession, items, exportSelected, setExportSelected, setCell, setRows, candidatesOf, addSupplier, removeSupplier,
+  profession, items, exportSelected, setExportSelected, setCell, setRows, candidatesOf, addSupplier, removeSupplier, dragState, groupNaming,
 }: any) {
   return (
     <>
       <tr className="bg-subtle">
-        <td colSpan={7} className="py-1.5 px-2">
-          <span className="text-xs font-semibold text-accent-700">{profession}类备件 ({items.length})</span>
+        <td colSpan={9} className="py-1.5 px-2">
+          <span className="text-xs font-semibold text-accent-700">
+            {groupNaming.displayName(profession)}类备件 ({items.length})
+          </span>
+          <button
+            onClick={() => groupNaming.setEditingGroup(profession)}
+            className="ml-1.5 text-muted hover:text-accent-600 align-middle p-0.5"
+            title="修改本组显示名称"
+            aria-label={`改名 ${profession}组`}
+          >
+            <Pencil size={11} />
+          </button>
+          {groupNaming.editingGroup === profession && (
+            <span className="inline-flex items-center gap-1 ml-2">
+              <input
+                autoFocus
+                defaultValue={groupNaming.displayName(profession)}
+                className="eo-input !py-0.5 !text-xs !w-24"
+                aria-label="组的新名称"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { groupNaming.rename(profession, (e.target as HTMLInputElement).value); groupNaming.setEditingGroup(null) }
+                  if (e.key === 'Escape') groupNaming.setEditingGroup(null)
+                }}
+                onBlur={(e) => { groupNaming.rename(profession, e.target.value); groupNaming.setEditingGroup(null) }}
+              />
+              <span className="text-caption text-muted">回车保存 / Esc 取消</span>
+            </span>
+          )}
         </td>
       </tr>
       {items.map((r: SpareRow, i: number) => {
         const { cat, list } = candidatesOf(r.part)
         return (
-          <tr key={r.key} className="border-b border-divider hover:bg-canvas/60">
+          <tr
+            key={r.key}
+            className={`border-b border-divider hover:bg-canvas/60 ${dragState.dragOverKey === r.key ? 'outline outline-2 outline-accent-400' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); dragState.setDragOver(r.key) }}
+            onDragLeave={() => dragState.setDragOver((k: string | null) => (k === r.key ? null : k))}
+            onDrop={(e) => { e.preventDefault(); dragState.drop(r.key) }}
+          >
+            <td className="py-1.5 pr-0 w-6" title="拖动调整上下顺序">
+              <span
+                draggable
+                onDragStart={(e) => {
+                  dragState.dragRef.current = r.key
+                  const tr = (e.currentTarget as HTMLElement).closest('tr')
+                  if (tr && e.dataTransfer) e.dataTransfer.setDragImage(tr, 24, 12)
+                }}
+                onDragEnd={() => dragState.setDragOver(null)}
+                className="text-muted/70 hover:text-ink inline-flex cursor-grab active:cursor-grabbing"
+                aria-label={`拖动 ${r.part || '该行'}`}
+              >
+                <GripVertical size={14} />
+              </span>
+            </td>
             <td className="py-1.5 pr-2 w-8">
               <input
                 type="checkbox"
@@ -465,6 +537,21 @@ function GroupFragment({
                 className="eo-input !py-1 !text-sm !border-transparent hover:!border-border focus:!border-accent-400 !w-44"
                 placeholder="备件名称"
               />
+            </td>
+            <td className="py-1.5 pr-2">
+              {/* 专业分类：默认自动判定，可手动改组（与设备配套同口径） */}
+              <select
+                value={r.profession || ''}
+                onChange={(e: any) => setCell(r.key, { profession: e.target.value })}
+                className="eo-input !py-1 !text-xs w-full"
+                aria-label={`专业分类 ${r.part}`}
+                title="手动指定专业分组"
+              >
+                <option value="">自动·{professionOfPart(r.part)}</option>
+                {PROFESSIONS.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
             </td>
             <td className="py-1.5 pr-2">
               <select

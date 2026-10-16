@@ -15,7 +15,7 @@ import { recordAutomation } from '../../common/utils/automation-log';
 import { domainEvents } from '../../common/services/domain-events';
 import * as fs from 'fs';
 import * as path from 'path';
-import { safeUploadTarget } from '../../common/utils/safe-path.util';
+import { safeUploadTarget, resolveInsideDir } from '../../common/utils/safe-path.util';
 import { Requirement, RequirementAttachment, RequirementLog } from './entities/requirement.entity';
 import { Proposal } from '../proposals/entities/proposal.entity';
 import { Solution } from '../solutions/entities/solution.entity';
@@ -1109,7 +1109,8 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
 
   private deleteAttachmentFile(fileKey: string): void {
     try {
-      const filePath = path.join(this.uploadDir, fileKey.replace(/^requirements\//, ''));
+      // resolveInsideDir 防穿越：被污染的 fileKey（导入/历史数据）不能删到目录外
+      const filePath = resolveInsideDir(this.uploadDir, fileKey.replace(/^requirements\//, ''));
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }

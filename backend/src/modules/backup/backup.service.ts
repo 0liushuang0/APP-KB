@@ -245,6 +245,12 @@ export class BackupService {
    * 传入，不落在命令行参数里。PG_DUMP_PATH 可覆盖可执行文件位置。
    */
   private async dumpPostgres(): Promise<string> {
+    // bin 来自环境变量（管理员受控），再做一次字符白名单校验做纵深防御：
+    // spawn 无 shell 本无注入面，这里挡住误配/被篡改的怪值
+    const binRaw = process.env.PG_DUMP_PATH || 'pg_dump';
+    if (!/^[A-Za-z0-9 _\-./\:]+$/.test(binRaw)) {
+      throw new BadRequestException(`PG_DUMP_PATH 含非法字符，请检查 .env 配置`);
+    }
     const dumpPath = path.join(os.tmpdir(), `aikb-pgdump-${Date.now()}.dump`);
     const bin = process.env.PG_DUMP_PATH || 'pg_dump';
     const args = [

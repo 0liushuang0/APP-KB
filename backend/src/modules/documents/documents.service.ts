@@ -1402,7 +1402,12 @@ export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
     const version = await this.versionRepository.findOne({ where: { id: versionId, documentId } });
     if (!version) throw new NotFoundException('版本不存在');
 
-    const versionFilePath = path.resolve(process.cwd(), 'data', 'uploads', version.fileKey);
+    // fileKey 可能来自历史/导入数据，解析后必须仍在 uploads 内（防穿越）
+    const uploadsRoot = path.resolve(process.cwd(), 'data', 'uploads');
+    const versionFilePath = path.resolve(uploadsRoot, version.fileKey);
+    if (versionFilePath !== uploadsRoot && !versionFilePath.startsWith(uploadsRoot + path.sep)) {
+      throw new BadRequestException('非法的版本文件标识');
+    }
     if (!fs.existsSync(versionFilePath)) throw new NotFoundException('版本文件不存在');
 
     const currentFileKey = doc.fileKey.startsWith('documents/') ? doc.fileKey : `documents/${doc.fileName}`;

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil } from 'lucide-react'
+import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil, GripVertical } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
 import { toList } from '../utils/apiList'
-import { groupByProfession } from '../utils/profession'
+import { groupByProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
+import { useProfessionNames } from '../hooks/useProfessionNames'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -63,6 +64,8 @@ const categoryOfPart = (part: string): string | undefined => {
 interface ConfigRow {
   key: string
   part: string
+  /** 专业：空=按名称自动判定；手动指定可把"接近开关"从仪表调到电气 */
+  profession: '' | '机械' | '液压' | '电气' | '仪表' | '其他'
   /** 供应商支持多个（如液压缸：力士乐、派克），datalist 选中/回车追加 */
   suppliers: string[]
   tier: string
@@ -79,6 +82,7 @@ let rowSeq = 0
 const newRow = (part = ''): ConfigRow => ({
   key: `r${++rowSeq}`,
   part,
+  profession: '',
   suppliers: [],
   tier: '',
   contact: '',
@@ -106,6 +110,23 @@ export default function EquipmentConfig() {
   const [manageOpen, setManageOpen] = useState(false)
   const [deleteEquip, setDeleteEquip] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null)
+  /** 专业组显示名（共享配置，设备配套/备件管理一致）与组名编辑态 */
+  const { displayName, rename: renameProfession } = useProfessionNames()
+  const [editingGroup, setEditingGroup] = useState<string | null>(null)
+  /** 拖拽排序：拖动手柄把行插到目标行前（rows 数组序即持久化顺序） */
+  const dragKeyRef = useRef<string | null>(null)
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  const onDropRow = (targetKey: string) => {
+    const src = dragKeyRef.current
+    dragKeyRef.current = null
+    setDragOverKey(null)
+    if (!src || src === targetKey) return
+    setRows((prev) => {
+      const from = prev.findIndex((r) => r.key === src)
+      const to = prev.findIndex((r) => r.key === targetKey)
+      return moveItem(prev, from, to)
+    })
+  }
   /** 管理弹窗里各设备名输入框（改名按钮读当前值用） */
   const nameInputRefs = useRef<Array<HTMLInputElement | null>>([])
 
@@ -318,21 +339,22 @@ export default function EquipmentConfig() {
     const groups = groupByProfession(filled)
     const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     groups.forEach((g, gi) => {
-      // 多文件依次下载，间隔给浏览器留出处理时间
+      // 多文件依次下载，间隔给浏览器留出处理时间（文件名用自定义组名）
       setTimeout(() => {
+        const pname = displayName(g.profession)
         const header = ['序号', '配件名称', '供应商', '备注']
-        const title = `${equipment} ${g.profession}供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`
+        const title = `${equipment} ${pname}供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`
         const lines = g.items.map((r, i) => [i + 1, r.part, r.suppliers.join('、'), r.note].map(esc).join(','))
         const csv = '\uFEFF' + [title, '', header.join(','), ...lines].join('\r\n')
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
         const a = document.createElement('a')
         a.href = URL.createObjectURL(blob)
-        a.download = `${equipment}_${g.profession}供应商表_${stamp}.csv`
+        a.download = `${equipment}_${pname}供应商表_${stamp}.csv`
         a.click()
         URL.revokeObjectURL(a.href)
       }, gi * 450)
     })
-    toast.success(`按专业导出 ${groups.length} 个表：${groups.map((g) => `${g.profession}(${g.items.length})`).join('、')}`)
+    toast.success(`按专业导出 ${groups.length} 个表：${groups.map((g) => `${displayName(g.profession)}(${g.items.length})`).join('、')}`)
   }
 
   // ── 设备管理：改名 / 删除 ──
@@ -476,6 +498,7 @@ export default function EquipmentConfig() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-caption text-muted border-b border-border">
+                  <th className="py-2 w-6 font-normal" title="拖动调整顺序" />
                   <th className="py-2 pr-2 w-8 font-normal">
                     {/* 全选 = 导出范围（默认全选，取消个别行即只导其余） */}
                     <input
@@ -491,6 +514,7 @@ export default function EquipmentConfig() {
                   </th>
                   <th className="py-2 pr-2 w-10 font-normal">序号</th>
                   <th className="py-2 pr-2 font-normal">配件/部件名称</th>
+                  <th className="py-2 pr-2 w-28 font-normal">专业分类</th>
                   <th className="py-2 pr-2 font-normal">供应商（输入时提示该品类厂家）</th>
                   <th className="py-2 pr-2 w-20 font-normal">品牌层级</th>
                   <th className="py-2 pr-2 w-24 font-normal">联系人</th>
@@ -504,14 +528,63 @@ export default function EquipmentConfig() {
                 {groupByProfession(rows).map((g) => (
                   <Fragment key={g.profession}>
                     <tr className="bg-subtle">
-                      <td colSpan={9} className="py-1.5 px-2">
-                        <span className="text-xs font-semibold text-accent-700">{g.profession}类配件 ({g.items.length})</span>
+                      <td colSpan={11} className="py-1.5 px-2">
+                        <span className="text-xs font-semibold text-accent-700">
+                          {displayName(g.profession)}类配件 ({g.items.length})
+                        </span>
+                        {/* 组名改名：如"其他类配件"→"附件类配件"（键不变，仅显示名，两页共享） */}
+                        <button
+                          onClick={() => setEditingGroup(g.profession)}
+                          className="ml-1.5 text-muted hover:text-accent-600 align-middle p-0.5"
+                          title="修改本组显示名称"
+                          aria-label={`改名 ${g.profession}组`}
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        {editingGroup === g.profession && (
+                          <span className="inline-flex items-center gap-1 ml-2">
+                            <input
+                              autoFocus
+                              defaultValue={displayName(g.profession)}
+                              className="eo-input !py-0.5 !text-xs !w-24"
+                              aria-label="组的新名称"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') { renameProfession(g.profession, (e.target as HTMLInputElement).value); setEditingGroup(null) }
+                                if (e.key === 'Escape') setEditingGroup(null)
+                              }}
+                              onBlur={(e) => { renameProfession(g.profession, e.target.value); setEditingGroup(null) }}
+                            />
+                            <span className="text-caption text-muted">回车保存 / Esc 取消</span>
+                          </span>
+                        )}
                       </td>
                     </tr>
                     {g.items.map((r, i) => {
                   const { cat, list } = candidatesOf(r.part)
                   return (
-                    <tr key={r.key} className="border-b border-divider hover:bg-canvas/60">
+                    <tr
+                      key={r.key}
+                      className={`border-b border-divider hover:bg-canvas/60 ${dragOverKey === r.key ? 'outline outline-2 outline-accent-400' : ''}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverKey(r.key) }}
+                      onDragLeave={() => setDragOverKey((k) => (k === r.key ? null : k))}
+                      onDrop={(e) => { e.preventDefault(); onDropRow(r.key) }}
+                    >
+                      {/* 拖拽手柄：手柄自身 draggable（mousedown 动态开 tr 的 draggable 来不及生效），拖影用整行影像 */}
+                      <td className="py-1.5 pr-0 w-6" title="拖动调整上下顺序">
+                        <span
+                          draggable
+                          onDragStart={(e) => {
+                            dragKeyRef.current = r.key
+                            const tr = (e.currentTarget as HTMLElement).closest('tr')
+                            if (tr && e.dataTransfer) e.dataTransfer.setDragImage(tr, 24, 12)
+                          }}
+                          onDragEnd={() => { setDragOverKey(null) }}
+                          className="text-muted/70 hover:text-ink inline-flex cursor-grab active:cursor-grabbing"
+                          aria-label={`拖动 ${r.part || '该行'}`}
+                        >
+                          <GripVertical size={14} />
+                        </span>
+                      </td>
                       <td className="py-1.5 pr-2 w-8">
                         <input
                           type="checkbox"
@@ -537,6 +610,21 @@ export default function EquipmentConfig() {
                           className="eo-input !py-1 !text-sm !border-transparent hover:!border-border focus:!border-accent-400 !w-44"
                           placeholder="配件名称"
                         />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {/* 专业分类：默认按名称自动判定，可手动指定（如接近开关从仪表调到电气） */}
+                        <select
+                          value={r.profession || ''}
+                          onChange={(e) => setCell(r.key, { profession: e.target.value as ConfigRow['profession'] })}
+                          className="eo-input !py-1 !text-xs w-full"
+                          aria-label={`专业分类 ${r.part}`}
+                          title="手动指定专业分组"
+                        >
+                          <option value="">自动·{professionOfPart(r.part)}</option>
+                          {PROFESSIONS.map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="py-1.5 pr-2">
                         {/* 供应商多选：已选厂家以标签展示（点 × 移除），输入提示该品类厂家、选中/回车追加 */}
@@ -608,7 +696,7 @@ export default function EquipmentConfig() {
                 ))}
                 {!rows.length && (
                   <tr>
-                    <td colSpan={9} className="py-6 text-center text-sm text-muted">
+                    <td colSpan={11} className="py-6 text-center text-sm text-muted">
                       该设备还没有配件行，点「添加配件行」逐行录入，内容会自动保存（切换设备后不丢）
                     </td>
                   </tr>

@@ -346,7 +346,9 @@ export class AfterSalesService {
     // 写入知识库目录
     const knowledgeDir = path.resolve(process.cwd(), 'data', 'uploads', 'knowledge', '故障排除');
     if (!fs.existsSync(knowledgeDir)) fs.mkdirSync(knowledgeDir, { recursive: true });
-    const fileName = `${ticket.ticketNo}_${ticket.title.slice(0, 20).replace(/[\\/:*?"<>|]/g, '_')}.md`;
+    // 标题可能带 ..，过滤非法字符后再拦 ..，防止拼出穿越路径
+    const safeTitle = ticket.title.slice(0, 20).replace(/[\/:*?"<>|]/g, '_').replace(/\.\./g, '__');
+    const fileName = `${ticket.ticketNo}_${safeTitle}.md`;
     const filePath = path.join(knowledgeDir, fileName);
     fs.writeFileSync(filePath, md, 'utf-8');
 

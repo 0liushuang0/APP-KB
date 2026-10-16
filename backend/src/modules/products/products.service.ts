@@ -7,7 +7,7 @@ import { Repository, Like } from 'typeorm';
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
 import * as path from 'path';
-import { safeUploadTarget } from '../../common/utils/safe-path.util';
+import { safeUploadTarget, resolveInsideDir } from '../../common/utils/safe-path.util';
 import { Product, ProductBom, ProductAttachment, ProductPriceItem } from './entities/product.entity';
 import { CreateProductDto, UpdateProductDto, QueryProductDto } from './dto/product.dto';
 import { TransactionService } from '../../common/services/transaction.service';
@@ -517,7 +517,8 @@ export class ProductsService {
     const attachment = await this.attachmentRepository.findOne({ where: { id: aid, productId: id } });
     if (!attachment) throw new NotFoundException('附件不存在');
     try {
-      const filePath = path.join(this.uploadDir, attachment.fileKey.replace(/^products\//, ''));
+      // resolveInsideDir 防穿越：异常 fileKey 只会抛错记日志，不会删到目录外
+      const filePath = resolveInsideDir(this.uploadDir, attachment.fileKey.replace(/^products\//, ''));
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch (err) {
       this.logger.error('Delete attachment file failed', err?.message);
