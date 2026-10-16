@@ -100,6 +100,10 @@ export class DocumentLink {
   @Column({ nullable: true })
   afterSaleId: string;
 
+  /** 工作任务：日常工作记录自己的附件（source=输入 / deliverable=输出），不参与业务链 */
+  @Column({ nullable: true })
+  workTaskId: string;
+
   @Column({ type: 'varchar', default: 'raw' })
   stage: DocStage;
 

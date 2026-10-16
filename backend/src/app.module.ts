@@ -22,6 +22,7 @@ import { ProposalsModule } from './modules/proposals/proposals.module';
 import { QuotationsModule } from './modules/quotations/quotations.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { AfterSalesModule } from './modules/after-sales/after-sales.module';
+import { WorkTasksModule } from './modules/work-tasks/work-tasks.module';
 import { ProductsModule } from './modules/products/products.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { MaterialsModule } from './modules/materials/materials.module';
@@ -93,6 +94,7 @@ import { NumberingModule } from './modules/numbering/numbering.module';
     QuotationsModule,
     ContractsModule,
     AfterSalesModule,
+    WorkTasksModule,
     ProductsModule,
     SuppliersModule,
     MaterialsModule,

@@ -21,6 +21,7 @@ import {
   ListTree,
   CheckSquare,
   PencilLine,
+  Download,
   X,
 } from 'lucide-react'
 import { supplierApi, supplierProductApi, materialApi } from '../api/services'
@@ -131,6 +132,60 @@ export default function Suppliers() {
       category: cats.length ? cats.join(',') : undefined,
     }
   }, [debouncedSearch, filters])
+
+  /**
+   * 按当前筛选导出供应商分类表（CSV，带 UTF-8 BOM，Excel 双击直开）。
+   * 用途：筛"拉弯矫直机"等设备类别后一键导一张表，直接作为附件挂到
+   * 项目/需求/工作任务或线下归档。
+   */
+  const exportCategorySheet = async () => {
+    try {
+      const PAGE = 200
+      const first: any = await supplierApi.list({ ...params, pageSize: PAGE })
+      const total = Number(first?.total ?? 0)
+      let rows: any[] = Array.isArray(first) ? first : first?.list ?? []
+      for (let p = 2; p <= Math.min(Math.ceil(total / PAGE) || 1, 10); p++) {
+        const next: any = await supplierApi.list({ ...params, pageSize: PAGE, page: p })
+        rows = rows.concat(Array.isArray(next) ? next : next?.list ?? [])
+      }
+      if (!rows.length) {
+        toast.warning('当前筛选没有供应商可导出')
+        return
+      }
+      const ORIGIN = { domestic: '国内', overseas: '国外' } as Record<string, string>
+      const esc = (v: unknown) => {
+        const s = v == null ? '' : String(v)
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      }
+      const header = ['供应商名称', '编码', '主营品类', '联系人', '电话', '邮箱', '来源', '品牌层级', '合作等级', '评级', '地址']
+      const lines = rows.map((s: any) =>
+        [
+          s.name,
+          s.code,
+          (Array.isArray(s.productCategories) ? s.productCategories : String(s.productCategories || '').split(',').filter(Boolean)).join('、'),
+          s.contactName,
+          s.phone,
+          s.email,
+          ORIGIN[s.origin] || s.origin || '',
+          s.tier || '',
+          s.cooperationLevel || '',
+          s.rating ? String(s.rating).toUpperCase() : '',
+          s.address,
+        ].map(esc).join(','),
+      )
+      const csv = '\uFEFF' + [header.join(','), ...lines].join('\r\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      const cats = (filters.category as string[]) || []
+      a.download = `供应商分类表${cats.length ? '_' + cats.join('-') : ''}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`
+      a.click()
+      URL.revokeObjectURL(a.href)
+      toast.success(`已导出 ${rows.length} 家供应商${cats.length ? `（${cats.join('、')}）` : ''}`)
+    } catch (e: any) {
+      toast.error(e?.message || '导出失败')
+    }
+  }
 
   const {
     list: listData,
@@ -258,6 +313,10 @@ export default function Suppliers() {
         <Button variant="secondary" size="sm" className="!py-1 !text-sm" onClick={() => navigate('/suppliers?tab=materials')}>
           <Scale size={13} className="mr-0.5" /> 比价
         </Button>
+        {/* 按当前筛选导出分类表：筛好设备类别后一键成表，可直接作为附件上传归档 */}
+        <Button variant="secondary" size="sm" className="!py-1 !text-sm" onClick={exportCategorySheet} title="按当前筛选导出供应商分类表（CSV，Excel 可直接打开）">
+          <Download size={13} className="mr-0.5" /> 导出分类表
+        </Button>
         <Button size="sm" className="!py-1 !text-sm" onClick={() => { setEditing(null); reset(); setModalOpen(true) }}>
           <Plus size={13} className="mr-0.5" /> 新增
         </Button>
@@ -290,7 +349,8 @@ export default function Suppliers() {
       </>
     )
     return () => setPageActions(null)
-  }, [selectedIds])
+    // params 必须进依赖：导出按钮按"当前筛选"成表，闭包捕获旧筛选会导出错误结果
+  }, [selectedIds, params])
 
   const bulkMutation = useMutation({
     mutationFn: async () => {

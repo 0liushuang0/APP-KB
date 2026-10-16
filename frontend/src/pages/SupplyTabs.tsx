@@ -1,25 +1,32 @@
 import { useSearchParams } from 'react-router-dom'
-import { Truck, Boxes } from 'lucide-react'
+import { Truck, Boxes, Wrench, Package } from 'lucide-react'
 import Suppliers from './Suppliers'
 import Materials from './Materials'
+import EquipmentConfig from './EquipmentConfig'
+import SpareParts from './SpareParts'
 
 /**
- * 供应管理 + 物料管理 统一入口（2 个 Tab）。
+ * 供应管理 统一入口（4 个 Tab）。
  *
  * Tab1 供应管理：厂家名册（含经营品类），不录价格。
  * Tab2 物料管理：物料主档 + 各厂家报价（厂家来自 Tab1），报价表即比价。
+ * Tab3 设备配套：选设备 → 配件清单 → 每个配件选供应商 → 导出对照表（技术附件用）。
+ * Tab4 备件管理：按设备维护备件清单（专业分组 + 调试/2年期备件类型）。
  */
 export default function SupplyTabs() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') === 'materials' ? 'materials' : 'suppliers'
+  const tabParam = searchParams.get('tab')
+  const tab = tabParam === 'materials' ? 'materials' : tabParam === 'equipment' ? 'equipment' : tabParam === 'spares' ? 'spares' : 'suppliers'
 
-  const switchTab = (t: 'suppliers' | 'materials') => {
-    setSearchParams(t === 'suppliers' ? {} : { tab: 'materials' }, { replace: true })
+  const switchTab = (t: 'suppliers' | 'materials' | 'equipment' | 'spares') => {
+    setSearchParams(t === 'suppliers' ? {} : { tab: t }, { replace: true })
   }
 
   const tabs = [
     { key: 'suppliers' as const, label: '供应管理', icon: Truck, desc: '厂家名册与经营品类' },
     { key: 'materials' as const, label: '物料管理', icon: Boxes, desc: '物料规格与厂家报价' },
+    { key: 'equipment' as const, label: '设备配套', icon: Wrench, desc: '设备配件供应商选型' },
+    { key: 'spares' as const, label: '备件管理', icon: Package, desc: '调试/2年期备件清单' },
   ]
 
   return (
@@ -48,7 +55,7 @@ export default function SupplyTabs() {
 
       {/* Tab 内容 */}
       <div>
-        {tab === 'suppliers' ? <Suppliers /> : <Materials />}
+        {tab === 'suppliers' ? <Suppliers /> : tab === 'materials' ? <Materials /> : tab === 'equipment' ? <EquipmentConfig /> : <SpareParts />}
       </div>
     </div>
   )

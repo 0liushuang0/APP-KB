@@ -110,12 +110,12 @@ export const ALLOWED_EXTENSIONS = {
    */
   document: [
     '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.csv',
-    '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.zip', '.rar', '.7z',
+    '.dwg', '.dxf', '.xdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.zip', '.rar', '.7z',
   ],
-  /** 需求附件：客户来料，额外允许图纸与图片 */
+  /** 需求附件：客户来料，额外允许图纸与图片（xdf=稻壳阅读器格式） */
   requirement: [
     '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.csv',
-    '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.zip', '.rar', '.7z',
+    '.dwg', '.dxf', '.xdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.zip', '.rar', '.7z',
   ],
   /** 产品附件：同需求 */
   product: [

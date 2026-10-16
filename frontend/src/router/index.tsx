@@ -13,6 +13,7 @@ const TermsOfService = lazy(() => import('../pages/TermsOfService'))
 const WorkflowWorkbench = lazy(() => import('../pages/WorkflowWorkbench'))
 const AIAssistant = lazy(() => import('../pages/AIAssistant'))
 const Approvals = lazy(() => import('../pages/Approvals'))
+const WorkTasks = lazy(() => import('../pages/WorkTasks'))
 const Settings = lazy(() => import('../pages/Settings'))
 const SecuritySettings = lazy(() => import('../pages/settings/Security'))
 const SystemInfo = lazy(() => import('../pages/settings/SystemInfo'))
@@ -107,6 +108,7 @@ export default function AppRouter() {
           {/* 工作台 */}
           <Route index element={<WorkflowWorkbench />} />
           <Route path="workbench" element={<WorkflowWorkbench />} />
+          <Route path="work-tasks" element={<WorkTasks />} />
 
           {/* 业务管理 */}
           <Route path="customers" element={<Customers />} />

@@ -60,6 +60,10 @@ export class Contract {
   @Column({ type: 'text', nullable: true })
   paymentTerms: string;
 
+  /** 交货期（合同约定的交货日期，项目跟踪列表同步显示提醒） */
+  @Column({ type: 'date', nullable: true })
+  deliveryDate: Date;
+
   @Column({ type: 'text', nullable: true })
   deliveryTerms: string;
 

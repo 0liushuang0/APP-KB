@@ -13,7 +13,8 @@ export type NumberedEntity =
   | 'project'
   | 'supplier'
   | 'solution'
-  | 'material';
+  | 'material'
+  | 'workTask';
 
 export interface NumberRule {
   prefix: string;
@@ -42,6 +43,7 @@ export const DEFAULT_RULES: Record<NumberedEntity, NumberRule> = {
   supplier: { prefix: 'SUP', yearFormat: 'YYYY', digits: 3, separator: '-' },
   solution: { prefix: 'SOL', yearFormat: 'YYYY', digits: 3, separator: '-' },
   material: { prefix: 'MAT', yearFormat: 'YYYY', digits: 4, separator: '-' },
+  workTask: { prefix: 'WT', yearFormat: 'YY', digits: 3, separator: '-' },
 };
 
 export const CONFIG_KEY = 'numbering.rules';
@@ -78,6 +80,7 @@ const SOURCE: Record<NumberedEntity, { table: string; column: string }> = {
   supplier: { table: 'suppliers', column: 'code' },
   solution: { table: 'solutions', column: 'solutionNo' },
   material: { table: 'materials', column: 'materialCode' },
+  workTask: { table: 'work_tasks', column: 'taskNo' },
 };
 
 /**

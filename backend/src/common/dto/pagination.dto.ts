@@ -49,19 +49,31 @@ const MAX_PAGE_SIZE = 200;
  * @param query        分页入参
  * @param sortWhitelist 允许排序的列名白名单 —— sortBy 直接来自 URL，
  *                      不做白名单就是 SQL 注入面
+ * @param defaultSort  默认排序（用户没点表头时生效）：业务单据列表
+ *                     传编号升序（REQ-26-001 → REQ-26-010），
+ *                     对账/找单按编号走比按创建时间直观；不传则沿用白名单首列 DESC
  */
 export async function paginate<T extends object>(
   qb: SelectQueryBuilder<T>,
   alias: string,
   query: PaginationQueryDto,
   sortWhitelist: string[] = ['createdAt'],
+  defaultSort?: { field: string; order: 'ASC' | 'DESC' },
 ): Promise<PaginatedResult<T>> {
   const page = Math.max(1, query.page || 1);
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, query.pageSize || DEFAULT_PAGE_SIZE));
 
   const sortBy =
-    query.sortBy && sortWhitelist.includes(query.sortBy) ? query.sortBy : sortWhitelist[0];
-  const sortOrder = (query.sortOrder || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    query.sortBy && sortWhitelist.includes(query.sortBy)
+      ? query.sortBy
+      : defaultSort && sortWhitelist.includes(defaultSort.field)
+        ? defaultSort.field
+        : sortWhitelist[0];
+  const sortOrder =
+    (query.sortOrder || (defaultSort && sortBy === defaultSort.field ? defaultSort.order : 'DESC') || 'DESC')
+      .toUpperCase() === 'ASC'
+      ? 'ASC'
+      : 'DESC';
 
   qb.orderBy(`${alias}.${sortBy}`, sortOrder as 'ASC' | 'DESC')
     .skip((page - 1) * pageSize)

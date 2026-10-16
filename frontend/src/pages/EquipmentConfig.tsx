@@ -1,0 +1,713 @@
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil } from 'lucide-react'
+import { supplierApi, systemConfigApi } from '../api/services'
+import { toList } from '../utils/apiList'
+import { groupByProfession } from '../utils/profession'
+import Button from '../components/Button'
+import Modal from '../components/Modal'
+import ConfirmDialog from '../components/ConfirmDialog'
+import PageLoader from '../components/PageLoader'
+
+/**
+ * 设备配套选型表：设备 → 配件清单 → 每个配件选供应商 → 导出对照表。
+ *
+ * 用途：做技术方案/投标附件时，选"拉弯矫直机"自动带出它的常用配件，
+ * 每行从供应管理里挑供应商（带出品牌层级/联系人/电话），一键导出
+ * 可直接复制进技术附件文档的表格。
+ *
+ * 持久化（全部自动，无需手动保存）：
+ * - 自定义设备（如"酸洗线"）添加即写入配置，切换/返回不丢
+ * - 配件行与供应商选择防抖自动保存为该设备的"最近选型"，
+ *   下次选同一设备直接带出（含上次的供应商），微调后导出
+ * - 设备清单可改名/删除（「管理设备」弹窗）
+ */
+
+/** 出厂设备清单与各设备的默认配件模板（贴合博亚产品线，可界面维护） */
+const DEFAULT_EQUIPMENT_BOM: Record<string, string[]> = {
+  拉弯矫直机: ['机架（焊接件）', '工作辊/矫直辊', '轴承', '液压缸', '减速机', '电机', '联轴器', '液压系统', '电气控制系统', '测张装置'],
+  圆盘剪: ['机架（焊接件）', '刀片', '传动减速机', '电机', '轴承', '联轴器'],
+  碎边剪: ['机架（焊接件）', '刀片', '减速机', '电机', '轴承'],
+  开卷机: ['卷筒', '机架（焊接件）', '电机', '减速机', '液压缸', '轴承'],
+  卷取机: ['卷筒', '电机', '减速机', '液压缸', '轴承'],
+  升降机: ['液压缸', '电机', '减速机', '导轨', '轴承'],
+  联轴器: ['联轴器本体', '膜片/弹性件', '螺栓紧固件'],
+}
+const DEFAULT_NAMES = Object.keys(DEFAULT_EQUIPMENT_BOM)
+
+/**
+ * 配件名 → 供应商品类：给每行的供应商候选做过滤。
+ * 未命中关键词的配件（如"导轨"）退回全量供应商候选。
+ */
+const PART_CATEGORY_RULES: Array<[RegExp, string]> = [
+  [/辊|卷筒/, '辊类件'],
+  [/轴承/, '轴承'],
+  [/液压缸|油缸/, '液压缸'],
+  [/液压/, '液压'],
+  [/减速/, '减速机'],
+  [/电机|马达/, '电机'],
+  [/刀/, '刀片'],
+  [/联轴/, '联轴器'],
+  [/密封/, '密封'],
+  [/电气|控制|仪表|测/, '电气'],
+  [/机架|铸|锻|焊接/, '铸锻件'],
+  [/紧固|螺栓|标准件/, '标准件'],
+]
+
+const categoryOfPart = (part: string): string | undefined => {
+  const hit = PART_CATEGORY_RULES.find(([re]) => re.test(part))
+  return hit ? hit[1] : undefined
+}
+
+interface ConfigRow {
+  key: string
+  part: string
+  /** 供应商支持多个（如液压缸：力士乐、派克），datalist 选中/回车追加 */
+  suppliers: string[]
+  tier: string
+  contact: string
+  phone: string
+  note: string
+}
+
+/** 持久化形态：只存业务字段；兼容旧格式（supplierName 单值字符串、纯配件名字符串） */
+type StoredRow = Partial<Omit<ConfigRow, 'key'> & { supplierName?: string }>
+type StoredBom = Record<string, Array<string | StoredRow>>
+
+let rowSeq = 0
+const newRow = (part = ''): ConfigRow => ({
+  key: `r${++rowSeq}`,
+  part,
+  suppliers: [],
+  tier: '',
+  contact: '',
+  phone: '',
+  note: '',
+})
+
+const toConfigRow = (v: string | StoredRow): ConfigRow =>
+  typeof v === 'string'
+    ? newRow(v)
+    : {
+        ...newRow(),
+        ...v,
+        // 兼容旧的单值 supplierName 字符串
+        suppliers: v.suppliers ?? (v.supplierName ? [v.supplierName] : []),
+      }
+
+export default function EquipmentConfig() {
+  const queryClient = useQueryClient()
+  const [equipment, setEquipment] = useState(DEFAULT_NAMES[0])
+  const [rows, setRows] = useState<ConfigRow[]>([])
+  const [customEquip, setCustomEquip] = useState('')
+  /** 导出行勾选（默认全选；载入/增删行时自动补齐新行） */
+  const [exportSelected, setExportSelected] = useState<Set<string>>(new Set())
+  const [manageOpen, setManageOpen] = useState(false)
+  const [deleteEquip, setDeleteEquip] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null)
+  /** 管理弹窗里各设备名输入框（改名按钮读当前值用） */
+  const nameInputRefs = useRef<Array<HTMLInputElement | null>>([])
+
+  // 设备-配件配置：内置默认 + system_configs 覆盖（自定义设备与最近选型都在这里）
+  const { data: bomConfig } = useQuery({
+    queryKey: ['equipment-bom'],
+    queryFn: async () => {
+      try {
+        const res: any = await systemConfigApi.get('equipment_bom')
+        const raw = typeof res === 'string' ? res : res?.value || res?.data?.value
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          // 设备清单完全以库为准（含"删除内置设备"的语义）；
+          // DEFAULT 只在从未配置过时兜底，不与库合并 —— 否则删掉的内置设备永远回得来
+          if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) return parsed as StoredBom
+        }
+      } catch {
+        /* 没配过就用默认 */
+      }
+      return DEFAULT_EQUIPMENT_BOM as StoredBom
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  // 设备清单 = 库配置的键。当前选中若已被删（不在清单），自动跳回第一项
+  const equipmentNames = useMemo(
+    () => [...new Set(Object.keys(bomConfig || {}))],
+    [bomConfig],
+  )
+  useEffect(() => {
+    if (bomConfig && equipmentNames.length && !equipmentNames.includes(equipment)) {
+      setEquipment(equipmentNames[0])
+    }
+  }, [equipmentNames, bomConfig])
+
+  // 供应商池：一次拉全（200+ 翻页），每行的候选按配件品类过滤
+  const { data: supplierPool } = useQuery({
+    queryKey: ['equipment-config-suppliers'],
+    queryFn: async () => {
+      const PAGE = 200
+      const first: any = await supplierApi.list({ pageSize: PAGE })
+      const total = Number(first?.total ?? 0)
+      let all = toList<any>(first)
+      for (let p = 2; p <= Math.min(Math.ceil(total / PAGE) || 1, 10); p++) {
+        const next: any = await supplierApi.list({ pageSize: PAGE, page: p })
+        all = all.concat(toList<any>(next))
+      }
+      return all
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  // 切设备 → 载入该设备的持久化选型（默认模板 / 最近保存）。
+  // 守卫：配置未加载完成（undefined）时不置空行 —— 否则空行会触发自动保存，
+  // 把该设备的配件清空写库（刷新页面后"配件全部丢失"的根因）。
+  // 置 skipNextSave：载入重放的行不算用户编辑，不回写。
+  const skipNextSaveRef = useRef(false)
+  useEffect(() => {
+    if (bomConfig === undefined) return
+    const stored = (bomConfig as StoredBom)?.[equipment]
+    const next = (stored || []).map(toConfigRow)
+    skipNextSaveRef.current = true
+    setRows(next)
+    // 载入默认全选：导出整表最常用；只导个别配件时取消勾选即可
+    setExportSelected(new Set(next.map((r) => r.key)))
+  }, [equipment, bomConfig])
+
+  /** 全量写回配置（合并内置默认之外的设备）。写后同步 bomRef，
+   *  让随后的自动保存/flush 拿到最新值 —— 否则删除设备后残留的
+   *  旧快照会把刚删掉的设备又写回来（"删除后重新出现"的根因）。 */
+  const persistBom = async (next: StoredBom, quiet = false) => {
+    try {
+      bomRef.current = next
+      await systemConfigApi.set({
+        key: 'equipment_bom',
+        value: JSON.stringify(next),
+        category: 'supplier',
+        description: '设备配套选型（配件与供应商，按设备持久化）',
+      })
+      queryClient.invalidateQueries({ queryKey: ['equipment-bom'] })
+      if (!quiet) toast.success('已保存')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || '保存失败')
+    }
+  }
+
+  // ── 自动保存：行变化后防抖 600ms 持久化 ──
+  // 三个防丢要点：
+  // · bomRef 实时同步最新配置：保存合并时不能依赖 effect 闭包里的旧 bomConfig
+  //   （旧值可能是 undefined → 展开成 {} → 整份配置被覆盖成只剩当前设备，历史设备全丢）
+  // · 配置未就绪（bomRef.current === undefined）禁止写库
+  // · 切设备/卸载时立即落盘（flush），防抖窗口内的编辑不因切换而丢
+  const bomRef = useRef<StoredBom | undefined>(undefined)
+  useEffect(() => { bomRef.current = bomConfig }, [bomConfig])
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [autoSaved, setAutoSaved] = useState(false)
+  const persistCurrent = async (rs: ConfigRow[], equip: string) => {
+    // 配置未就绪不写；设备不在当前配置（刚被删除）不写 —— 写回即删除被撤销
+    if (!bomRef.current || !Object.prototype.hasOwnProperty.call(bomRef.current, equip)) return
+    const stripped: StoredRow[] = rs.map(({ key: _key, ...rest }) => rest)
+    await persistBom({ ...bomRef.current, [equip]: stripped }, true)
+  }
+  useEffect(() => {
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false
+      return
+    }
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      // 双保险：定时器到期时若已被标记"即将载入"（跳过保存），不再写库
+      if (skipNextSaveRef.current) return
+      await persistCurrent(rows, equipment)
+      setAutoSaved(true)
+      setTimeout(() => setAutoSaved(false), 1500)
+    }, 600)
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        // 防抖未到点就切走/卸载：立即保存，编辑不丢。
+        // 但 skipNextSave 置位说明本次重跑是"载入新行"引发的 ——
+        // 旧 rows 是待替换的空壳，flush 它会把该设备清空写库。
+        if (!skipNextSaveRef.current) persistCurrent(rows, equipment)
+      }
+    }
+    // bomConfig 不进依赖：保存回写会刷新 query，再触发 effect 成环（写时经 bomRef 取最新）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, equipment])
+
+  const setCell = (key: string, patch: Partial<ConfigRow>) => {
+    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
+  }
+
+  /** 追加一个供应商（去重）；首个供应商与供应管理精确匹配 → 带出品牌层级/联系人/电话 */
+  const addSupplier = (row: ConfigRow, name: string) => {
+    const v = name.trim()
+    if (!v || row.suppliers.includes(v)) return
+    const hit = (supplierPool || []).find((s) => s.name === v)
+    setCell(row.key, {
+      suppliers: [...row.suppliers, v],
+      // 联系信息只在还没填时带出（取首个命中的供应商），多选后不覆盖
+      tier: row.tier || (hit ? (({ tier1: '一线', tier2: '二线', tier3: '三线' } as Record<string, string>)[hit.tier] || hit.tier || '') : ''),
+      contact: row.contact || hit?.contactName || '',
+      phone: row.phone || hit?.phone || '',
+    })
+  }
+
+  const removeSupplier = (row: ConfigRow, name: string) => {
+    setCell(row.key, { suppliers: row.suppliers.filter((s) => s !== name) })
+  }
+
+  /** 某行配件对应的供应商候选（按品类过滤，未匹配返回全量） */
+  const candidatesOf = (part: string) => {
+    const cat = categoryOfPart(part)
+    const pool = supplierPool || []
+    const filtered = cat ? pool.filter((s) => (s.productCategories || []).includes(cat)) : []
+    return { cat, list: filtered.length ? filtered : pool }
+  }
+
+  /** 新增自定义设备：立即持久化空清单，切换/返回不丢 */
+  const addCustomEquipment = async () => {
+    const name = customEquip.trim()
+    if (!name) return
+    if (equipmentNames.includes(name)) {
+      setEquipment(name)
+      setCustomEquip('')
+      return
+    }
+    await persistBom({ ...(bomConfig as StoredBom), [name]: [] }, true)
+    setRows([newRow(), newRow(), newRow()])
+    setEquipment(name)
+    setCustomEquip('')
+    toast.info(`新设备「${name}」已加入清单：请添加配件行，内容会自动保存`)
+  }
+
+  /** 导出对照表：只导勾选的行，4 列（序号/配件名称/供应商/备注），复制进技术附件文档 */
+  const exportSheet = () => {
+    const filled = rows.filter((r) => exportSelected.has(r.key) && (r.part.trim() || r.suppliers.length))
+    if (!filled.length) {
+      toast.warning('请先勾选要导出的配件行')
+      return
+    }
+    const esc = (v: unknown) => {
+      const s = v == null ? '' : String(v)
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const header = ['序号', '配件名称', '供应商', '备注']
+    const title = `${equipment} 配套件供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`
+    const lines = filled.map((r, i) => [i + 1, r.part, r.suppliers.join('、'), r.note].map(esc).join(','))
+    const csv = '\uFEFF' + [title, '', header.join(','), ...lines].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${equipment}_配套供应商表_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+    toast.success(`已导出勾选的 ${filled.length} 行，可直接复制进技术附件`)
+  }
+
+  /** 分专业导出：勾选行按 机械/液压/电气/仪表 分组，每个专业一个 CSV（如"拉矫机_机械供应商表"） */
+  const exportByProfession = () => {
+    const filled = rows.filter((r) => exportSelected.has(r.key) && (r.part.trim() || r.suppliers.length))
+    if (!filled.length) {
+      toast.warning('请先勾选要导出的配件行')
+      return
+    }
+    const esc = (v: unknown) => {
+      const s = v == null ? '' : String(v)
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const groups = groupByProfession(filled)
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    groups.forEach((g, gi) => {
+      // 多文件依次下载，间隔给浏览器留出处理时间
+      setTimeout(() => {
+        const header = ['序号', '配件名称', '供应商', '备注']
+        const title = `${equipment} ${g.profession}供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`
+        const lines = g.items.map((r, i) => [i + 1, r.part, r.suppliers.join('、'), r.note].map(esc).join(','))
+        const csv = '\uFEFF' + [title, '', header.join(','), ...lines].join('\r\n')
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = `${equipment}_${g.profession}供应商表_${stamp}.csv`
+        a.click()
+        URL.revokeObjectURL(a.href)
+      }, gi * 450)
+    })
+    toast.success(`按专业导出 ${groups.length} 个表：${groups.map((g) => `${g.profession}(${g.items.length})`).join('、')}`)
+  }
+
+  // ── 设备管理：改名 / 删除 ──
+  // 列表直接用实时 equipmentNames（改名/删除后弹窗内同步刷新，不做打开时快照）
+  const openManage = () => setManageOpen(true)
+
+  const renameEquipment = async (from: string, to: string) => {
+    const name = to.trim()
+    if (!name || name === from) { setRenaming(null); return }
+    if (equipmentNames.includes(name) && name !== from) {
+      toast.error(`已有同名设备「${name}」`)
+      return
+    }
+    const bom = { ...(bomConfig as StoredBom) }
+    bom[name] = bom[from] ?? DEFAULT_EQUIPMENT_BOM[from] ?? []
+    delete bom[from]
+    await persistBom(bom)
+    if (equipment === from) setEquipment(name)
+    setRenaming(null)
+    toast.success(`已改名：${from} → ${name}`)
+  }
+
+  const removeEquipment = async () => {
+    if (!deleteEquip) return
+    const bom = { ...(bomConfig as StoredBom) }
+    delete bom[deleteEquip]
+    await persistBom(bom)
+    setDeleteEquip(null)
+    if (equipment === deleteEquip) setEquipment(equipmentNames.find((n) => n !== deleteEquip) || '')
+    toast.success(`已删除设备「${deleteEquip}」`)
+  }
+
+  /**
+   * 管理弹窗「保存修改」：按输入框当前值批量改名（一次写库）。
+   * 名称未变的原样保留；改名会把该设备的配件与选型带到新名下。
+   */
+  const saveManageEdits = async () => {
+    const names = equipmentNames
+    const edits: Array<{ from: string; to: string }> = []
+    names.forEach((name, i) => {
+      const v = nameInputRefs.current[i]?.value?.trim()
+      if (v && v !== name) edits.push({ from: name, to: v })
+    })
+    if (!edits.length) {
+      toast.info('没有修改需要保存')
+      return
+    }
+    const toNames = edits.map((e) => e.to)
+    if (new Set([...toNames, ...names.filter((n) => !edits.some((e) => e.from === n))]).size !== names.length) {
+      toast.error('改名后出现重名，请调整')
+      return
+    }
+    const bom: StoredBom = {}
+    names.forEach((name, i) => {
+      const v = nameInputRefs.current[i]?.value?.trim() || name
+      bom[v] = (bomConfig as StoredBom)?.[name] ?? DEFAULT_EQUIPMENT_BOM[name] ?? []
+    })
+    await persistBom(bom)
+    const cur = edits.find((e) => e.from === equipment)
+    if (cur) setEquipment(cur.to)
+    toast.success(`已保存 ${edits.length} 项改名：${edits.map((e) => `${e.from}→${e.to}`).join('、')}`)
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 设备选择 + 操作 */}
+      <div className="eo-card p-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block eo-label mb-1.5">选择设备</label>
+          <select
+            value={equipment}
+            onChange={(e) => setEquipment(e.target.value)}
+            className="eo-input !w-48 !py-1.5 !text-sm"
+            aria-label="选择设备"
+          >
+            {equipmentNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-end gap-1.5">
+          <div>
+            <label className="block eo-label mb-1.5">或输入自定义设备</label>
+            <input
+              value={customEquip}
+              onChange={(e) => setCustomEquip(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addCustomEquipment()}
+              placeholder="例：酸洗线"
+              className="eo-input !w-40 !py-1.5 !text-sm"
+            />
+          </div>
+          <Button variant="secondary" size="sm" className="!py-1.5" onClick={addCustomEquipment}>使用</Button>
+        </div>
+        <div className="flex-1" />
+        <span className="text-caption text-muted self-center h-5 flex items-center" aria-live="polite">
+          {autoSaved ? '✓ 已自动保存' : ''}
+        </span>
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={openManage} title="设备清单改名 / 删除 / 新增">
+          <Settings2 size={13} className="mr-0.5" /> 管理设备
+        </Button>
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={async () => {
+          const stripped: StoredRow[] = rows.map(({ key: _key, ...rest }) => rest)
+          await persistBom({ ...(bomConfig as StoredBom), [equipment]: stripped })
+        }} title="内容已自动保存，此按钮为立即保存兜底">
+          <Save size={13} className="mr-0.5" /> 立即保存
+        </Button>
+        <Button size="sm" className="!py-1.5" onClick={exportSheet} title="导出勾选行为 4 列 CSV（序号/配件名称/供应商/备注），Excel 打开后复制进技术附件">
+          <Download size={13} className="mr-0.5" /> 导出配套表{rows.length > 0 ? ` (${[...exportSelected].filter((k) => rows.some((r) => r.key === k)).length}/${rows.length})` : ''}
+        </Button>
+        {/* 分专业导出：机械表/液压表/电气表/仪表表 各一个文件 */}
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={exportByProfession} title="按机械/液压/电气/仪表分组，每个专业各导一个 CSV">
+          <Download size={13} className="mr-0.5" /> 分专业导出
+        </Button>
+      </div>
+
+      {/* 配件-供应商对照表 */}
+      <div className="eo-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-ink flex items-center gap-1.5">
+            <Wrench size={15} className="text-accent-600" />
+            {equipment} · 配套件供应商选型
+          </h2>
+          <button
+            onClick={() =>
+              setRows((prev) => {
+                const r = newRow()
+                // 新行默认选中（要导出的）
+                setExportSelected((s) => new Set(s).add(r.key))
+                return [...prev, r]
+              })
+            }
+            className="text-xs text-accent-600 hover:text-accent-700 flex items-center gap-0.5"
+          >
+            <Plus size={13} /> 添加配件行
+          </button>
+        </div>
+        {!supplierPool ? (
+          <PageLoader />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-caption text-muted border-b border-border">
+                  <th className="py-2 pr-2 w-8 font-normal">
+                    {/* 全选 = 导出范围（默认全选，取消个别行即只导其余） */}
+                    <input
+                      type="checkbox"
+                      checked={rows.length > 0 && rows.every((r) => exportSelected.has(r.key))}
+                      onChange={(e) =>
+                        setExportSelected(e.target.checked ? new Set(rows.map((r) => r.key)) : new Set())
+                      }
+                      className="accent-emerald-600"
+                      aria-label="全选（导出范围）"
+                      title="全选/清空导出范围"
+                    />
+                  </th>
+                  <th className="py-2 pr-2 w-10 font-normal">序号</th>
+                  <th className="py-2 pr-2 font-normal">配件/部件名称</th>
+                  <th className="py-2 pr-2 font-normal">供应商（输入时提示该品类厂家）</th>
+                  <th className="py-2 pr-2 w-20 font-normal">品牌层级</th>
+                  <th className="py-2 pr-2 w-24 font-normal">联系人</th>
+                  <th className="py-2 pr-2 w-32 font-normal">电话</th>
+                  <th className="py-2 pr-2 w-36 font-normal">备注</th>
+                  <th className="py-2 w-8 font-normal" />
+                </tr>
+              </thead>
+              <tbody>
+                {/* 按 机械/液压/电气/仪表 专业分组显示（组内序号从 1 起，与分专业导出一致） */}
+                {groupByProfession(rows).map((g) => (
+                  <Fragment key={g.profession}>
+                    <tr className="bg-subtle">
+                      <td colSpan={9} className="py-1.5 px-2">
+                        <span className="text-xs font-semibold text-accent-700">{g.profession}类配件 ({g.items.length})</span>
+                      </td>
+                    </tr>
+                    {g.items.map((r, i) => {
+                  const { cat, list } = candidatesOf(r.part)
+                  return (
+                    <tr key={r.key} className="border-b border-divider hover:bg-canvas/60">
+                      <td className="py-1.5 pr-2 w-8">
+                        <input
+                          type="checkbox"
+                          checked={exportSelected.has(r.key)}
+                          onChange={() =>
+                            setExportSelected((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(r.key)) next.delete(r.key)
+                              else next.add(r.key)
+                              return next
+                            })
+                          }
+                          className="accent-emerald-600"
+                          aria-label={`导出行 ${r.part || i + 1}`}
+                          title="勾选/取消导出该行"
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2 text-muted tabular-nums">{i + 1}</td>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          value={r.part}
+                          onChange={(e) => setCell(r.key, { part: e.target.value })}
+                          className="eo-input !py-1 !text-sm !border-transparent hover:!border-border focus:!border-accent-400 !w-44"
+                          placeholder="配件名称"
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {/* 供应商多选：已选厂家以标签展示（点 × 移除），输入提示该品类厂家、选中/回车追加 */}
+                        <div className="flex flex-wrap items-center gap-1 min-w-48">
+                          {r.suppliers.map((sup) => (
+                            <span key={sup} className="inline-flex items-center gap-1 text-xs pl-1.5 pr-0.5 py-0.5 rounded bg-accent-50 text-accent-700 border border-accent-200">
+                              {sup}
+                              <button
+                                onClick={() => removeSupplier(r, sup)}
+                                className="text-accent-600 hover:text-danger-fg p-0.5 leading-none"
+                                title={`移除 ${sup}`}
+                                aria-label={`移除供应商 ${sup}`}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                          <input
+                            list={`equip-sup-${r.key}`}
+                            className="eo-input !py-0.5 !text-xs !border-transparent hover:!border-border focus:!border-accent-400 flex-1 min-w-28"
+                            placeholder={r.suppliers.length ? '继续添加…' : cat ? `按「${cat}」提示厂家` : '输入提示厂家'}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                const v = (e.target as HTMLInputElement).value.trim()
+                                if (v) { addSupplier(r, v); (e.target as HTMLInputElement).value = '' }
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim()
+                              if (v) { addSupplier(r, v); e.target.value = '' }
+                            }}
+                          />
+                          <datalist id={`equip-sup-${r.key}`}>
+                            {list.slice(0, 100).map((s) => (
+                              <option key={s.id} value={s.name}>
+                                {[s.contactName, s.phone].filter(Boolean).join(' · ')}
+                              </option>
+                            ))}
+                          </datalist>
+                        </div>
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input value={r.tier} onChange={(e) => setCell(r.key, { tier: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input value={r.contact} onChange={(e) => setCell(r.key, { contact: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input value={r.phone} onChange={(e) => setCell(r.key, { phone: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input value={r.note} onChange={(e) => setCell(r.key, { note: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" placeholder="型号/品牌等" />
+                      </td>
+                      <td className="py-1.5">
+                        <button
+                          onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
+                          className="text-muted hover:text-danger-fg p-1"
+                          title="删除该行"
+                          aria-label="删除行"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                    })}
+                  </Fragment>
+                ))}
+                {!rows.length && (
+                  <tr>
+                    <td colSpan={9} className="py-6 text-center text-sm text-muted">
+                      该设备还没有配件行，点「添加配件行」逐行录入，内容会自动保存（切换设备后不丢）
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-caption text-muted mt-3">
+          配件与供应商选择自动保存（切换设备/刷新前也会立即落盘）；供应商输入按配件品类过滤供应管理里的厂家，选中后自动带出品牌层级/联系人/电话。勾选行后点「导出配套表」导出 4 列表格（序号/配件名称/供应商/备注），Excel 打开后直接复制进技术附件文档。
+        </p>
+      </div>
+
+      {/* 设备管理弹窗：改名 / 删除 / 新增 */}
+      <Modal
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        title={`管理设备清单（${equipmentNames.length}）`}
+        size="sm"
+        cancelText="关闭"
+        onConfirm={saveManageEdits}
+        confirmText="保存修改"
+        confirmVariant="primary"
+      >
+        <div className="space-y-1.5 max-h-80 overflow-y-auto">
+          {equipmentNames.map((m, i) => (
+            <div key={m + i} className="flex items-center gap-2">
+              <span className="text-muted text-xs w-6 text-right tabular-nums">{i + 1}</span>
+              <input
+                ref={(el) => { nameInputRefs.current[i] = el }}
+                defaultValue={m}
+                className="eo-input !py-1 !text-sm flex-1"
+                aria-label={`设备名 ${m}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const v = nameInputRefs.current[i]?.value?.trim()
+                    if (v && v !== m) setRenaming({ from: m, to: v })
+                  }
+                }}
+              />
+              <button
+                onClick={() => {
+                  const v = nameInputRefs.current[i]?.value?.trim()
+                  if (!v) { toast.warning("设备名不能为空"); return }
+                  if (v === m) { toast.info("名称未变化"); return }
+                  setRenaming({ from: m, to: v })
+                }}
+                className="text-muted hover:text-accent-600 p-1 shrink-0"
+                title={`把「${m}」改名为输入框中的新名称`}
+                aria-label={`改名 ${m}`}
+              >
+                <Pencil size={15} />
+              </button>
+              <button
+                onClick={() => setDeleteEquip(m)}
+                className="text-muted hover:text-danger-fg p-1 shrink-0"
+                title={`删除「${m}」`}
+                aria-label={`删除 ${m}`}
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-divider">
+          <input
+            value={customEquip}
+            onChange={(e) => setCustomEquip(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addCustomEquipment()}
+            placeholder="新增设备名，回车添加"
+            className="eo-input !py-1 !text-sm flex-1"
+          />
+          <Button size="sm" className="!py-1" onClick={addCustomEquipment}>
+            <Plus size={13} className="mr-0.5" /> 添加
+          </Button>
+        </div>
+        <p className="text-caption text-muted mt-2">在输入框修改名称后点「保存修改」生效（单个改名也可点行尾铅笔或回车）；删除只清掉该设备的选型记录，不影响供应管理数据。内置 7 类设备删错后可通过自定义设备名重建。</p>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteEquip}
+        onClose={() => setDeleteEquip(null)}
+        onConfirm={removeEquipment}
+        title="删除设备"
+        message={<>确定删除设备「{deleteEquip}」吗？</>}
+        detail="其配件与供应商选型记录将一并清除，此操作不可恢复。"
+        loading={false}
+      />
+
+      <ConfirmDialog
+        open={!!renaming}
+        onClose={() => setRenaming(null)}
+        onConfirm={() => renaming && renameEquipment(renaming.from, renaming.to)}
+        title="确认改名"
+        confirmText="改名"
+        danger={false}
+        message={<>把设备「{renaming?.from}」改名为「{renaming?.to}」？</>}
+        detail="其配件与选型记录保留，仅名称变化。"
+      />
+    </div>
+  )
+}
