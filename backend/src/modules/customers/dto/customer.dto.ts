@@ -38,9 +38,13 @@ export class CreateCustomerDto {
   @IsOptional() @IsString()
   customerType?: string;
 
-  /** 所属区域 */
+  /** 所属区域（保存时按区域字典归并成标准写法） */
   @IsOptional() @IsString()
   region?: string;
+
+  /** 国家/地区（海外客户） */
+  @IsOptional() @IsString()
+  country?: string;
 
   @IsOptional() @IsString()
   address?: string;

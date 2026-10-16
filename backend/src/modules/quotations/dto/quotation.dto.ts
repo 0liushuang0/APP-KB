@@ -17,6 +17,26 @@ export class CreateQuotationDto {
   @IsNumber()
   amount?: number;
 
+  /** 币种 CNY / USD / EUR */
+  @IsOptional()
+  @IsEnum(['CNY', 'USD', 'EUR'] as const)
+  currency?: 'CNY' | 'USD' | 'EUR';
+
+  /** 1 单据币种 = x 人民币（外币报价必填，人民币忽略） */
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
+
+  /** 报价单语言 zh / en */
+  @IsOptional()
+  @IsEnum(['zh', 'en'] as const)
+  language?: 'zh' | 'en';
+
+  /** 报价日期 YYYY-MM-DD（业务发生日，不填按创建日） */
+  @IsOptional()
+  @IsString()
+  quotedAt?: string;
+
   @IsOptional()
   @IsString()
   costBreakdown?: string;
@@ -104,6 +124,14 @@ export class CreateQuotationItemDto {
   specification?: string;
 
   @IsOptional()
+  @IsString()
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  specificationEn?: string;
+
+  @IsOptional()
   @IsNumber()
   quantity?: number;
 
@@ -139,6 +167,10 @@ export class CreateQuotationItemDto {
   @IsOptional()
   @IsNumber()
   cost?: number;
+
+  @IsOptional()
+  @IsString()
+  costSource?: string;
 
   @IsOptional()
   @IsNumber()

@@ -9,6 +9,7 @@ import { AfterSalesTicket } from './entities/ticket.entity';
 import { CreateTicketDto, UpdateTicketDto, QueryTicketDto } from './dto/ticket.dto';
 import { TransactionService } from '../../common/services/transaction.service';
 import { NumberingService } from '../../common/services/numbering.service';
+import { resolveInsideDir } from '../../common/utils/safe-path.util';
 import { KnowledgeSyncService } from '../../common/services/knowledge-sync.service';
 import { PermissionService, CurrentUser } from '../../common/services/permission.service';
 import { PermissionQueryService } from '../../common/services/permission-query.service';
@@ -349,7 +350,8 @@ export class AfterSalesService {
     // 标题可能带 ..，过滤非法字符后再拦 ..，防止拼出穿越路径
     const safeTitle = ticket.title.slice(0, 20).replace(/[\/:*?"<>|]/g, '_').replace(/\.\./g, '__');
     const fileName = `${ticket.ticketNo}_${safeTitle}.md`;
-    const filePath = path.join(knowledgeDir, fileName);
+    // resolveInsideDir 断言最终路径仍在知识库目录内（title 已滤 ..，此为双保险）
+    const filePath = resolveInsideDir(knowledgeDir, fileName);
     fs.writeFileSync(filePath, md, 'utf-8');
 
     // 插入 documents 表（id/时间 JS 侧生成，$n 占位符 —— 同 convertToRequirement 的说明）

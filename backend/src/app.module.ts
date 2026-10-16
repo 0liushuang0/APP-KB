@@ -52,10 +52,12 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { NumberingModule } from './modules/numbering/numbering.module';
+import { JobLockModule } from './common/services/job-lock.module';
 
 @Module({
   imports: [
     NumberingModule,
+    JobLockModule,
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, databaseConfig],

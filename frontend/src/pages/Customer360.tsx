@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   ArrowLeft,
   Building2,
@@ -16,12 +17,17 @@ import {
   Calendar,
   ScrollText,
   Headset,
+  Plus,
+  Trash2,
 } from 'lucide-react'
 import { customerApi } from '../api/services'
 import Skeleton from '../components/Skeleton'
 import ErrorState from '../components/ErrorState'
 import StatusBadge from '../components/StatusBadge'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
+import CustomerTimeline from '../components/CustomerTimeline'
+import FollowUpModal from '../components/FollowUpModal'
+import Button from '../components/Button'
 
 const stageLabels: Record<string, string> = {
   raw: '原始资料',
@@ -42,7 +48,7 @@ const categoryLabels: Record<string, string> = {
   contract: '合同',
 }
 
-const TAB_KEYS = ['overview', 'requirements', 'proposals', 'quotations', 'contracts', 'documents', 'projects', 'afterSales', 'followUps', 'aiInsights'] as const
+const TAB_KEYS = ['overview', 'timeline', 'requirements', 'proposals', 'quotations', 'contracts', 'documents', 'projects', 'afterSales', 'followUps', 'aiInsights'] as const
 type CustomerTab = typeof TAB_KEYS[number]
 
 export default function Customer360() {
@@ -54,6 +60,19 @@ export default function Customer360() {
   const tabParam = searchParams.get('tab')
   const initialTab: CustomerTab = TAB_KEYS.includes(tabParam as CustomerTab) ? (tabParam as CustomerTab) : 'overview'
   const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab)
+  const [followUpOpen, setFollowUpOpen] = useState(false)
+  const queryClient = useQueryClient()
+  const removeFollowUp = async (fid: string) => {
+    if (!window.confirm('删除这条沟通记录？')) return
+    try {
+      await customerApi.removeFollowUp(fid)
+      queryClient.invalidateQueries({ queryKey: ['customer-360', id] })
+      queryClient.invalidateQueries({ queryKey: ['customer-timeline', id] })
+      toast.success('已删除')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || '删除失败')
+    }
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['customer-360', id],
@@ -294,6 +313,7 @@ export default function Customer360() {
         {([
           /* 顺序按业务推进：需求 → 方案 → 报价 → 文档 → 项目 */
           { key: 'overview', label: '概览' },
+          { key: 'timeline', label: '时间线' },
           { key: 'requirements', label: `需求 (${requirements.length})` },
           { key: 'proposals', label: `方案 (${proposals.length})` },
           { key: 'quotations', label: `报价 (${quotations.length})` },
@@ -683,9 +703,17 @@ export default function Customer360() {
         </div>
       )}
 
+      {/* 统一时间线：沟通、需求记录、任务、单据、资料、修改 */}
+      {activeTab === 'timeline' && id && <CustomerTimeline customerId={id} requirements={requirements} />}
+
       {/* 沟通记录 */}
       {activeTab === 'followUps' && (
         <div className="space-y-3">
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setFollowUpOpen(true)}>
+              <Plus size={14} className="mr-1" /> 记一笔沟通
+            </Button>
+          </div>
           {(followUps || []).length === 0 ? (
             <div className="bg-surface rounded-xl border border-border py-12 text-center text-muted">暂无沟通记录</div>
           ) : (
@@ -698,11 +726,16 @@ export default function Customer360() {
                       {f.followUpAt ? new Date(f.followUpAt).toLocaleString('zh-CN') : ''}
                     </span>
                   </div>
-                  {f.deadline && (
-                    <span className="text-xs text-warning-fg flex items-center gap-1">
-                      <Calendar size={11} /> 跟进截止 {new Date(f.deadline).toLocaleDateString('zh-CN')}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {f.deadline && (
+                      <span className="text-xs text-warning-fg flex items-center gap-1">
+                        <Calendar size={11} /> 跟进截止 {new Date(f.deadline).toLocaleDateString('zh-CN')}
+                      </span>
+                    )}
+                    <button onClick={() => removeFollowUp(f.id)} className="text-muted hover:text-danger-fg" title="删除" aria-label="删除沟通记录">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
                 <p className="text-sm text-ink whitespace-pre-wrap">{f.content}</p>
                 {(f.participants || f.customerParticipants) && (
@@ -718,6 +751,10 @@ export default function Customer360() {
           )}
         </div>
       )}
+      {id && (
+        <FollowUpModal open={followUpOpen} onClose={() => setFollowUpOpen(false)} customerId={id} requirements={requirements} />
+      )}
+
       {/* AI 洞察：相似客户匹配 + 交叉销售机会（AI 服务 /customers/similar、/cross-sell） */}
       {activeTab === 'aiInsights' && (
         aiLoading ? (

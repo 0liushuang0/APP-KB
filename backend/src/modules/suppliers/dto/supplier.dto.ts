@@ -183,6 +183,11 @@ export class CreateSupplierProductDto {
   @IsString()
   materialId?: string;
 
+  /** 对应的我方产品 id；传空串表示取消映射 */
+  @IsOptional()
+  @IsString()
+  productId?: string;
+
   @IsOptional()
   @IsString()
   specs?: string;
@@ -251,6 +256,11 @@ export class QuerySupplierProductDto {
   @IsOptional()
   @IsString()
   keyword?: string;
+
+  /** 只看映射到该我方产品的供应产品 */
+  @IsOptional()
+  @IsString()
+  productId?: string;
 
   @IsOptional()
   @IsString()

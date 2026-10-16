@@ -24,8 +24,28 @@ export class Quotation {
   @Column({ nullable: true })
   proposalId: string;
 
+  /** 报价金额（单据币种）。汇总到工作台/周报时按 exchangeRate 折人民币 */
   @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
   amount: number;
+
+  /** 币种：CNY / USD / EUR（海外客户直接出美元、欧元报价） */
+  @Column({ type: 'varchar', default: 'CNY' })
+  currency: string;
+
+  /** 出单时锁定的汇率：1 单据币种 = x 人民币；人民币单据为空 */
+  @Column({ type: 'decimal', precision: 14, scale: 6, nullable: true })
+  exchangeRate: number;
+
+  /** 报价单语言：zh 中文 / en 英文（打印模板随之切换） */
+  @Column({ type: 'varchar', default: 'zh' })
+  language: string;
+
+  /**
+   * 报价日期（业务发生日）。
+   * 历史单据多为集中补录，创建时间不代表报价时间 ——「需求→报价」周期指标按它算，空时才退回创建时间。
+   */
+  @Column({ type: 'date', nullable: true })
+  quotedAt: string;
 
   @Column({ default: 'pending' })
   status: string;
@@ -93,6 +113,13 @@ export class QuotationItem {
   @Column({ nullable: true })
   specification: string;
 
+  /** 英文品名 / 英文规格：英文报价单用，空时打印中文 */
+  @Column({ nullable: true })
+  nameEn: string;
+
+  @Column({ type: 'text', nullable: true })
+  specificationEn: string;
+
   @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
   quantity: number;
 
@@ -125,8 +152,13 @@ export class QuotationItem {
   @Column({ nullable: true })
   supplierName: string;
 
+  /** 单位成本（人民币）。只对有成本查看权限的人返回 */
   @Column({ type: 'decimal', precision: 14, scale: 2, nullable: true })
   cost: number;
+
+  /** 成本从哪来：型号价格表 / 供应商采购价 / BOM 汇总 / 手填（给人核对） */
+  @Column({ nullable: true })
+  costSource: string;
 
   @Column({ nullable: true })
   deliveryDays: number;

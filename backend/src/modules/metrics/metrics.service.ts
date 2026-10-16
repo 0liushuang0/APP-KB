@@ -108,6 +108,18 @@ export class MetricsService implements OnModuleInit {
     if (Date.now() - this.lastAiCheck < 30_000 && this.aiUp !== null) return this.aiUp;
     this.lastAiCheck = Date.now();
     const base = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8100';
+    // URL 解析校验：仅 http/https 且不带凭据（base 来自管理员 env，此处纵深防御）
+    let parsedBase: URL;
+    try {
+      parsedBase = new URL(base);
+    } catch {
+      this.aiUp = false;
+      return this.aiUp;
+    }
+    if (!/^https?:$/.test(parsedBase.protocol) || parsedBase.username || parsedBase.password) {
+      this.aiUp = false;
+      return this.aiUp;
+    }
     try {
       // /health 有 API Key 保护且尾斜杠会 307，带 Key 请求真实探活
       const ctrl = new AbortController();

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import ProductGapList from '../components/ProductGapList'
+import ProductSupplySources from '../components/ProductSupplySources'
 import DeleteImpact from '../components/DeleteImpact'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -1325,6 +1326,9 @@ export default function Products() {
                 <p className="text-caption text-warning-fg mt-2">有未保存的修改，点右上「保存」生效</p>
               )}
             </div>
+
+            {/* === 采购来源：供应产品 → 本产品，报价自动带成本 === */}
+            <ProductSupplySources productId={detail.id} />
 
             {/* === BOM Table === */}
             {detail.boms && detail.boms.length > 0 && (

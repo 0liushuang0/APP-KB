@@ -68,7 +68,7 @@ export class AuthService {
   async setupTotp(userId: string, account: string): Promise<{ secret: string; otpauthUrl: string }> {
     const secret = generateTotpSecret();
     await this.usersService.update(userId, { totpSecret: secret, totpEnabled: false } as any);
-    const issuer = process.env.TOTP_ISSUER || '智能知识中心';
+    const issuer = process.env.TOTP_ISSUER || '智能运营中心';
     return { secret, otpauthUrl: otpauthUrl(secret, account, issuer) };
   }
 

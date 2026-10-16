@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Optional,
   NotFoundException,
   BadRequestException,
   Logger,
@@ -33,6 +34,8 @@ import { NumberingService } from '../../common/services/numbering.service';
 import { paginate, PaginatedResult } from '../../common/dto/pagination.dto';
 import { KnowledgeSyncService } from '../../common/services/knowledge-sync.service';
 import { TransactionService } from '../../common/services/transaction.service';
+import { JobLockService } from '../../common/services/job-lock.service';
+import { toCny } from '../../common/utils/currency.util';
 import { AiService } from '../../common/services/ai.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { Customer, ContactPerson } from '../customers/entities/customer.entity';
@@ -75,8 +78,13 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
    */
   onApplicationBootstrap(): void {
     if (process.env.REQ_AUTO_ANALYZE === 'false' || process.env.NODE_ENV === 'test') return;
+    // 多台服务器同时启动时只让一台补识别（否则同一条需求被两台各调一次大模型）
     const t = setTimeout(() => {
-      this.backfillAutoAnalyze().catch((e) => this.logger.warn(`历史需求补识别中止：${e?.message}`));
+      const run = () => this.backfillAutoAnalyze();
+      (this.jobLock
+        ? this.jobLock.runExclusive('requirement-backfill', run, { ttlMs: 2 * 3_600_000, minIntervalMs: 30 * 60_000 })
+        : run()
+      ).catch((e) => this.logger.warn(`历史需求补识别中止：${e?.message}`));
     }, 120_000);
     t.unref?.();
     this.autoTimers.set('__backfill__', t);
@@ -211,6 +219,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
     private approvalsService: ApprovalsService,
     private documentsService: DocumentsService,
     private readonly trash: BusinessTrashService,
+    @Optional() private readonly jobLock?: JobLockService,
   ) {
     this.uploadDir = path.resolve(process.cwd(), 'data', 'uploads', 'requirements');
     if (!fs.existsSync(this.uploadDir)) {
@@ -952,7 +961,8 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
     requirement.specStatus = 'analyzing';
     await this.requirementRepository.save(requirement);
 
-    const result = await this.aiService.structureRequirement(requirement.title, requirement.description || '', sources);
+    const templates = await this.templatesForStructuring(requirement.templateCategory);
+    const result = await this.aiService.structureRequirement(requirement.title, requirement.description || '', sources, templates);
     const card = result?.card;
     const ok = !result?.error && card && Array.isArray(card.fields) && (card.fields.length > 0 || (card.missing || []).length > 0);
     if (!ok) {
@@ -960,6 +970,31 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
       requirement.specStatus = prevStatus === 'done' ? 'done' : 'pending';
       await this.requirementRepository.save(requirement);
       throw new BadRequestException(result?.error || 'AI 识别服务暂时不可用，请稍后重试');
+    }
+
+    /*
+     * 没选产品类型、引擎在需求模板里判定出了类型 → 自动填上（置信度够才填），并记一笔需求记录。
+     * 之后报价草稿按产品类型带明细、历史报价参考、补问都靠这个字段；人可以随时改。
+     */
+    let autoCategory: string | null = null;
+    if (
+      !requirement.templateCategory &&
+      card.template_source === 'inferred' &&
+      card.template_category &&
+      Number(card.category_confidence) >= 0.6
+    ) {
+      autoCategory = card.template_category;
+      requirement.templateCategory = autoCategory as string;
+      await this.requirementLogRepository.save(
+        this.requirementLogRepository.create({
+          requirementId: id,
+          type: 'change',
+          content: `系统按资料判定产品类型为「${autoCategory}」${card.category_reason ? `（${card.category_reason}）` : ''}，如不对请在需求上修改`,
+          actorId: user?.userId || 'system',
+          actorName: user?.username || '系统',
+          metadata: JSON.stringify([{ field: 'templateCategory', label: '产品类型', from: '', to: autoCategory }]),
+        }),
+      );
     }
 
     requirement.structuredSpec = JSON.stringify(
@@ -971,6 +1006,10 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
         review: !!opts.auto,
         sources: sources.map((x) => x.file_name),
         analyzedAt: new Date().toISOString(),
+        // 按哪个需求模板识别的（页面显示「识别依据」）；autoCategory = 本次由系统判定并填上
+        templateCategory: card.template_category || requirement.templateCategory || null,
+        templateSource: card.template_source || null,
+        autoCategory,
       },
       null,
       2,
@@ -990,21 +1029,54 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
   }
 
   /**
+   * 识别要用的需求模板。
+   *
+   * 需求选了产品类型 → 只传该类型的模板（按它的字段抽、按它的必填项列缺失）；
+   * 没选，或选的类型还没维护字段 → 传全部有字段的模板，由 AI 服务按资料内容判定。
+   * 原来一个都不传，引擎只认代码里写死的 6 个大类 ——「需求模板」页维护的 58 个模板对识别毫无作用。
+   */
+  async templatesForStructuring(category?: string | null): Promise<{
+    template: { category: string; fields: any[] } | null;
+    candidates: Array<{ category: string; fields: any[] }>;
+  }> {
+    const rows: Array<{ category: string; fields: string }> = await this.requirementRepository.manager
+      .createQueryBuilder()
+      .select(['t.category AS category', 't.fields AS fields'])
+      .from('param_templates', 't')
+      .where('t."deletedAt" IS NULL')
+      .getRawMany();
+    const parsed = rows
+      .map((r) => {
+        try {
+          const fields = JSON.parse(r.fields || '[]');
+          return Array.isArray(fields) && fields.length ? { category: r.category, fields } : null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as Array<{ category: string; fields: any[] }>;
+    const chosen = category ? parsed.find((t) => t.category === category.trim()) : undefined;
+    if (chosen) return { template: chosen, candidates: [] };
+    return { template: null, candidates: parsed };
+  }
+
+  /**
    * 同类产品的历史报价区间：新建需求填「预计金额」时给个参考。
    * 只按已有报价统计（报价 → 方案 → 需求的产品类型），样本少于 1 条就不给。
    */
   async amountReference(category?: string): Promise<{ count: number; median?: number; min?: number; max?: number }> {
     if (!category?.trim()) return { count: 0 };
-    const rows: Array<{ amount: any }> = await this.requirementRepository.manager
+    const rows: Array<{ amount: any; currency?: string; exchangeRate?: any }> = await this.requirementRepository.manager
       .createQueryBuilder()
-      .select('q.amount', 'amount')
+      .select(['q.amount AS amount', 'q.currency AS currency', 'q."exchangeRate" AS "exchangeRate"'])
       .from('quotations', 'q')
       .innerJoin('proposals', 'p', 'CAST(p.id AS TEXT) = q."proposalId"')
       .innerJoin('requirements', 'r', 'CAST(r.id AS TEXT) = p."requirementId"')
       .where('r."templateCategory" = :c', { c: category.trim() })
       .andWhere('q.amount > 0')
       .getRawMany();
-    const vals = rows.map((r) => Number(r.amount)).filter((n) => n > 0).sort((a, b) => a - b);
+    // 外币报价折人民币后再比（参考区间统一按人民币给）
+    const vals = rows.map((r: any) => toCny(r.amount, r.currency, r.exchangeRate)).filter((n) => n > 0).sort((a, b) => a - b);
     if (!vals.length) return { count: 0 };
     const mid = Math.floor(vals.length / 2);
     const median = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;

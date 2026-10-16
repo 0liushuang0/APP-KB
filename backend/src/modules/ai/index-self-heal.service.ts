@@ -1,8 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { recordAutomation } from '../../common/utils/automation-log';
 import { ReindexService, REINDEXABLE_TYPES } from './reindex.service';
+import { JobLockService } from '../../common/services/job-lock.service';
 
 /**
  * 向量索引自愈。
@@ -27,13 +28,14 @@ export class IndexSelfHealService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly reindex: ReindexService,
     @InjectDataSource() private readonly dataSource?: DataSource,
+    @Optional() private readonly jobLock?: JobLockService,
   ) {}
 
   onModuleInit(): void {
     if ((process.env.INDEX_SELF_HEAL ?? 'true') === 'false') return;
     const first = setTimeout(() => {
-      void this.checkOnce();
-      const every = setInterval(() => void this.checkOnce(), 6 * 3_600_000);
+      void this.tick();
+      const every = setInterval(() => void this.tick(), 6 * 3_600_000);
       every.unref?.();
       this.timers.push(every as any);
     }, 10 * 60_000);
@@ -44,6 +46,17 @@ export class IndexSelfHealService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     this.timers.forEach((t) => clearTimeout(t as any));
     this.timers = [];
+  }
+
+  /** 多台服务器共用一个向量库：只让一台去补建，别的跳过 */
+  private async tick(): Promise<void> {
+    if (!this.jobLock) {
+      await this.checkOnce();
+      return;
+    }
+    await this.jobLock
+      .runExclusive('index-self-heal', () => this.checkOnce(), { ttlMs: 2 * 3_600_000, minIntervalMs: 5 * 3_600_000 })
+      .catch((err) => this.logger.warn(`索引自愈失败：${err?.message}`));
   }
 
   /** 做一轮检查；返回本轮重建了哪些类型（供测试与日志） */

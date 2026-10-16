@@ -23,6 +23,7 @@ const BackupRestore = lazy(() => import('../pages/settings/BackupRestore'))
 const RecycleBin = lazy(() => import('../pages/settings/RecycleBin'))
 const NumberingRules = lazy(() => import('../pages/settings/NumberingRules'))
 const PerformanceMetrics = lazy(() => import('../pages/settings/PerformanceMetrics'))
+const RegionDictionary = lazy(() => import('../pages/settings/RegionDictionary'))
 const Customers = lazy(() => import('../pages/Customers'))
 const Customer360 = lazy(() => import('../pages/Customer360'))
 const Requirements = lazy(() => import('../pages/Requirements'))
@@ -156,6 +157,7 @@ export default function AppRouter() {
             <Route path="recycle-bin" element={<RecycleBin />} />
             <Route path="backup" element={<RequireAdmin><BackupRestore /></RequireAdmin>} />
             <Route path="numbering" element={<RequireAdmin><NumberingRules /></RequireAdmin>} />
+            <Route path="regions" element={<RequireAdmin><RegionDictionary /></RequireAdmin>} />
             <Route path="audit" element={<RequireAdmin><AuditLogs /></RequireAdmin>} />
             <Route path="metrics" element={<RequireAdmin><PerformanceMetrics /></RequireAdmin>} />
           </Route>

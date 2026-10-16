@@ -143,7 +143,7 @@ function serialize<T>(task: () => Promise<T>): Promise<T> {
 function cacheKey(srcPath: string): string {
   const stat = fs.statSync(srcPath);
   const id = `${path.resolve(srcPath)}|${stat.size}|${stat.mtimeMs}`;
-  return crypto.createHash('sha1').update(id).digest('hex');
+  return crypto.createHash('sha256').update(id).digest('hex');
 }
 
 /** soffice.com 偶尔在进程退出后才刷完输出文件，给一小段时间等它落盘 */

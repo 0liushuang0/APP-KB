@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import {
   Search, Sparkles, Eye, Pencil, Trash2, PlusCircle, MinusCircle,
   Printer, Scale, AlertTriangle, DollarSign, ScrollText,
-  FileEdit, Send, Trophy, CheckCircle2, Hourglass,
+  FileEdit, Send, Trophy, CheckCircle2, Hourglass, Globe,
 } from 'lucide-react'
 import { quotationApi, customerApi, proposalApi, productApi } from '../api/services'
 import { useDebounce } from '../hooks/useDebounce'
@@ -37,6 +37,9 @@ import PageHeader from '../components/PageHeader'
 import RelatedChain from '../components/RelatedChain'
 import CustomerFilterSelect from '../components/CustomerFilterSelect'
 import { FormSection, FieldGrid, DetailHeader, DetailSection, DescList } from '../components/layout-kit'
+import FormSelect from '../components/FormSelect'
+import { CURRENCY_OPTIONS, LANGUAGE_OPTIONS, fmtMoney } from '../utils/currency'
+import { useCostVisible } from '../hooks/useCostVisible'
 
 /** 毛利率低于此值时在详情页告警 */
 const MARGIN_ALERT = 15
@@ -53,6 +56,11 @@ const initialForm = {
   paymentTerms: '',
   deliveryDays: '' as number | '',
   warrantyMonths: '' as number | '',
+  // 币种 / 汇率 / 报价单语言 / 报价日期：海外客户直接出美元英文报价单
+  currency: 'CNY',
+  exchangeRate: '' as number | '',
+  language: 'zh' as 'zh' | 'en',
+  quotedAt: '',
   items: [{ name: '', quantity: 1, unitPrice: 0 }] as QuotationItem[],
 }
 
@@ -110,6 +118,11 @@ export default function Quotations() {
   const [derivedProposal, setDerivedProposal] = useState<any>(null)
   /** 方案带出的草稿说明（每行为什么带出、哪些缺价、条款来自哪份报价） */
   const [draftInfo, setDraftInfo] = useState<any>(null)
+  /** 成本列是否可见：以接口返回为准（字段级权限），没返回前按角色判断 */
+  const [serverCostVisible, setServerCostVisible] = useState<boolean | null>(null)
+  const costVisible = useCostVisible(serverCostVisible)
+  /** 参考汇率（切换币种时自动填，可改） */
+  const [rates, setRates] = useState<Record<string, number>>({ CNY: 1, USD: 7.1, EUR: 7.75 })
 
   const { focus, setFocus, owner } = useFocus()
   const {
@@ -159,7 +172,9 @@ export default function Quotations() {
    * 选型号直接带出该型号的销售价(依次取 销售价/标配价/参考价), 不用再翻价格表。
    */
   const pickOptions = productPickList.flatMap((x: any) => {
-    const base = [{ key: x.id, value: x.name, productId: x.id, price: x.price ? Number(x.price) : undefined, hint: x.code || '' }]
+    const base: Array<{ key: string; value: string; productId: string; price?: number; hint: string; model?: string }> = [
+      { key: x.id, value: x.name, productId: x.id, price: x.price ? Number(x.price) : undefined, hint: x.code || '' },
+    ]
     const models = (Array.isArray(x.priceList) ? x.priceList : [])
       .filter((m: any) => m?.model)
       .map((m: any) => ({
@@ -168,6 +183,7 @@ export default function Quotations() {
         productId: x.id,
         price: Number(m.salePrice ?? m.standardPrice ?? m.referencePrice) || undefined,
         hint: m.spec || '',
+        model: String(m.model),
       }))
     return [...base, ...models]
   })
@@ -207,6 +223,10 @@ export default function Quotations() {
       paymentTerms: '',
       deliveryDays: '',
       warrantyMonths: '',
+      currency: 'CNY',
+      exchangeRate: '',
+      language: 'zh',
+      quotedAt: new Date().toISOString().slice(0, 10),
       items: [{ name: '', quantity: 1, unitPrice: 0 }],
     })
     setModalOpen(true)
@@ -217,7 +237,12 @@ export default function Quotations() {
       const items = (d?.items || []).map((it: any) => ({
         name: it.name, specification: it.specification || '', quantity: it.quantity || 1,
         unitPrice: it.unitPrice || 0, productId: it.productId || '', unit: it.unit || '',
+        // 成本按 型号价格表成本价 → 供应商采购价 → BOM 自动带出（无权限时后端不下发）
+        cost: it.cost ?? null, costSource: it.costSource || '',
+        supplierProductId: it.supplierProductId, supplierId: it.supplierId, supplierName: it.supplierName,
       }))
+      if (typeof d?.costVisible === 'boolean') setServerCostVisible(d.costVisible)
+      if (d?.rates) setRates(d.rates)
       setValues((prev) => ({
         ...prev,
         items: items.length ? items : prev.items,
@@ -225,6 +250,10 @@ export default function Quotations() {
         paymentTerms: prev.paymentTerms || d?.paymentTerms || '',
         deliveryDays: prev.deliveryDays !== '' ? prev.deliveryDays : d?.deliveryDays ?? '',
         warrantyMonths: prev.warrantyMonths !== '' ? prev.warrantyMonths : d?.warrantyMonths ?? '',
+        // 海外客户默认美元英文报价单（沿用该客户上一份报价的币种/语言）
+        currency: d?.currency || prev.currency,
+        language: d?.language || prev.language,
+        exchangeRate: d?.exchangeRate ?? '',
       }))
       setDraftInfo(d)
     }).catch(() => {})
@@ -326,17 +355,24 @@ export default function Quotations() {
       paymentTerms: (row as any).paymentTerms || '',
       deliveryDays: (row as any).deliveryDays ?? '',
       warrantyMonths: (row as any).warrantyMonths ?? '',
+      currency: row.currency || 'CNY',
+      exchangeRate: row.exchangeRate != null ? Number(row.exchangeRate) : '',
+      language: row.language === 'en' ? 'en' : 'zh',
+      quotedAt: row.quotedAt ? String(row.quotedAt).slice(0, 10) : '',
       items: [],
     })
     setModalOpen(true)
 
     try {
       const full: any = await quotationApi.get(row.id)
+      if (typeof full?.costVisible === 'boolean') setServerCostVisible(full.costVisible)
       setValues((prev) => ({
         ...prev,
         amount: full.amount ?? prev.amount,
         notes: full.notes ?? prev.notes,
-        items: full.items?.length ? full.items : [{ name: '', quantity: 1, unitPrice: 0 }],
+        items: full.items?.length
+          ? full.items.map((it: any) => ({ ...it, cost: it.cost != null ? Number(it.cost) : null }))
+          : [{ name: '', quantity: 1, unitPrice: 0 }],
       }))
     } catch {
       // 拉不到就给一条空行，至少不会拿 undefined 去渲染
@@ -378,6 +414,48 @@ export default function Quotations() {
     })
   }
 
+  /**
+   * 选了产品（或产品的某个型号）后取成本提示：型号价格表成本价 → 映射的供应商采购价 → BOM。
+   */
+  const fillCost = async (idx: number, productId: string, model?: string) => {
+    if (!productId || !costVisible) return
+    try {
+      const hint = await quotationApi.costHint(productId, model)
+      if (hint?.hidden) return
+      setValues((prev) => {
+        const items = [...prev.items]
+        const cur: any = items[idx]
+        if (!cur || cur.productId !== productId) return prev
+        items[idx] = {
+          ...cur,
+          cost: hint?.cost ?? null,
+          costSource: hint?.cost != null ? hint.label : '',
+          supplierProductId: hint?.supplierProductId,
+          supplierName: hint?.supplierName,
+        }
+        return { ...prev, items }
+      })
+    } catch {
+      /* 取不到成本不影响录入 */
+    }
+  }
+
+  /** 弹窗内实时毛利（只算填了成本的行；外币报价的单价先按汇率折人民币再与成本比） */
+  const liveMargin = (() => {
+    const rate = form.currency === 'CNY' ? 1 : Number(form.exchangeRate) || 0
+    const rows = form.items.filter((it) => it.name?.trim())
+    const withCost = rows.filter((it) => it.cost != null && String(it.cost) !== '')
+    if (!withCost.length || !rate) return null
+    const revenue = withCost.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unitPrice || 0) * rate, 0)
+    const cost = withCost.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.cost || 0), 0)
+    return {
+      revenue,
+      cost,
+      margin: revenue > 0 ? Math.round(((revenue - cost) / revenue) * 1000) / 10 : null,
+      missing: rows.length - withCost.length,
+    }
+  })()
+
   const handleSubmit = () => {
     if (!validateAll()) return
     saveMutation.mutate({
@@ -387,9 +465,25 @@ export default function Quotations() {
       paymentTerms: form.paymentTerms || undefined,
       deliveryDays: form.deliveryDays === '' ? undefined : Number(form.deliveryDays),
       warrantyMonths: form.warrantyMonths === '' ? undefined : Number(form.warrantyMonths),
-      // 空行不入库
-      items: form.items.filter((it) => it.name?.trim()),
-    })
+      currency: form.currency || 'CNY',
+      exchangeRate: form.currency === 'CNY' || form.exchangeRate === '' ? undefined : Number(form.exchangeRate),
+      language: form.language,
+      quotedAt: form.quotedAt || undefined,
+      // 空行不入库；没有成本权限时不提交成本列（后端沿用原值或自动估算）
+      items: form.items
+        .filter((it) => it.name?.trim())
+        .map((it) => {
+          const rest: any = { ...it }
+          for (const k of ['id', 'quotationId', 'createdAt', 'updatedAt', 'totalPrice']) delete rest[k]
+          if (!costVisible) {
+            delete rest.cost
+            delete rest.costSource
+          } else {
+            rest.cost = rest.cost === '' || rest.cost == null ? null : Number(rest.cost)
+          }
+          return rest
+        }),
+    } as any)
   }
 
   const proposalsArray = Array.isArray(proposals) ? proposals : proposals?.list || []
@@ -532,7 +626,7 @@ export default function Quotations() {
                   ? String(row.requirementDate).slice(0, 10)
                   : <span className="text-muted">—</span>,
             },
-            { key: 'amount', title: '金额', sortable: true, render: (row) => `¥${row.amount?.toLocaleString?.() || row.amount}` },
+            { key: 'amount', title: '金额', sortable: true, render: (row) => fmtMoney(row.amount, row.currency) },
             { key: 'status', title: '状态', sortable: true, render: (row) => <StatusBadge status={row.status} /> },
             { key: 'createdAt', title: '创建时间', sortable: true, render: (row) => new Date(row.createdAt).toLocaleDateString() },
           ]}
@@ -589,7 +683,46 @@ export default function Quotations() {
           <FormSection title="基本信息" icon={DollarSign}>
             <FieldGrid>
               <FormInput label="报价编码" value={editing?.quotationNo || ''} readOnly placeholder="保存后自动生成（继承方案编号）" />
-              <FormInput label="总金额" type="number" value={form.amount} readOnly helper="由下方明细自动汇总" />
+              <FormInput label={`总金额（${form.currency}）`} type="number" value={form.amount} readOnly helper="由下方明细自动汇总" />
+            </FieldGrid>
+          </FormSection>
+
+          <FormSection title="币种与报价单" icon={Globe} hint="海外客户直接出美元/欧元英文报价单，不必在系统外换算">
+            <FieldGrid>
+              <FormSelect
+                label="币种"
+                options={CURRENCY_OPTIONS}
+                value={form.currency}
+                onChange={(e) => {
+                  const cur = e.target.value
+                  setValues((prev) => ({ ...prev, currency: cur, exchangeRate: cur === 'CNY' ? '' : rates[cur] ?? '' }))
+                }}
+              />
+              {form.currency !== 'CNY' ? (
+                <FormInput
+                  label={`汇率（1 ${form.currency} = ? 人民币）`}
+                  type="number"
+                  step="0.0001"
+                  value={form.exchangeRate as any}
+                  onChange={(e) => setValue('exchangeRate', e.target.value === '' ? '' : Number(e.target.value))}
+                  helper="出单时锁定；工作台、周报等汇总按它折人民币"
+                />
+              ) : (
+                <div />
+              )}
+              <FormSelect
+                label="报价单语言"
+                options={LANGUAGE_OPTIONS}
+                value={form.language}
+                onChange={(e) => setValue('language', e.target.value as 'zh' | 'en')}
+              />
+              <FormInput
+                label="报价日期"
+                type="date"
+                value={form.quotedAt}
+                onChange={(e) => setValue('quotedAt', e.target.value)}
+                helper="业务发生日；「需求→报价」周期按它算"
+              />
             </FieldGrid>
           </FormSection>
 
@@ -676,6 +809,14 @@ export default function Quotations() {
           >
           <div>
             <div className="space-y-2">
+              {costVisible && (
+                <div className="grid grid-cols-12 gap-2 px-2 text-caption text-muted">
+                  <span className="col-span-4">产品名称</span>
+                  <span className="col-span-2">数量</span>
+                  <span className="col-span-3">单价（{form.currency}）</span>
+                  <span className="col-span-2">单位成本（元）</span>
+                </div>
+              )}
               {form.items.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-subtle p-2 rounded-md">
                   {/*
@@ -692,9 +833,12 @@ export default function Quotations() {
                       const picked = pickOptions.find((x) => x.value === e.target.value)
                       updateItem(idx, 'name', e.target.value)
                       updateItem(idx, 'productId', picked?.productId || '')
-                      if (picked?.price) updateItem(idx, 'unitPrice', picked.price)
+                      if (picked?.model) updateItem(idx, 'specification', picked.model)
+                      if (picked?.price && form.currency === 'CNY') updateItem(idx, 'unitPrice', picked.price)
+                      // 选中产品库里的产品：自动带出成本（型号价格表成本价 → 供应商采购价 → BOM）
+                      if (picked?.productId) void fillCost(idx, picked.productId, picked.model)
                     }}
-                    className="col-span-5 px-2 py-1 border border-border rounded text-sm"
+                    className={`${costVisible ? 'col-span-4' : 'col-span-5'} px-2 py-1 border border-border rounded text-sm`}
                   />
                   <datalist id={`prod-opts-${idx}`}>
                     {pickOptions.map((x) => (
@@ -709,15 +853,28 @@ export default function Quotations() {
                     type="number"
                     value={item.quantity}
                     onChange={(e) => updateItem(idx, 'quantity', Number(e.target.value))}
-                    className="col-span-3 px-2 py-1 border border-border rounded text-sm"
+                    className={`${costVisible ? 'col-span-2' : 'col-span-3'} px-2 py-1 border border-border rounded text-sm`}
                   />
                   <input
-                    placeholder="单价"
+                    placeholder={`单价（${form.currency}）`}
                     type="number"
                     value={item.unitPrice}
                     onChange={(e) => updateItem(idx, 'unitPrice', Number(e.target.value))}
                     className="col-span-3 px-2 py-1 border border-border rounded text-sm"
                   />
+                  {costVisible && (
+                    <input
+                      placeholder="成本"
+                      type="number"
+                      value={item.cost ?? ''}
+                      onChange={(e) => {
+                        updateItem(idx, 'cost', e.target.value === '' ? null : Number(e.target.value))
+                        updateItem(idx, 'costSource', e.target.value === '' ? '' : '手填')
+                      }}
+                      title={item.costSource || '单位成本（人民币），选产品后自动带出'}
+                      className="col-span-2 px-2 py-1 border border-border rounded text-sm"
+                    />
+                  )}
                   <button onClick={() => removeItem(idx)} className="col-span-1 text-danger-fg hover:text-danger-fg" title={"删除明细"}
                   aria-label="删除明细">
                     <MinusCircle size={18} />
@@ -727,9 +884,53 @@ export default function Quotations() {
                       该产品还没有型号价格表，单价需人工确认；在「产品管理」补上价格表后，这里可直接按型号带出价格。
                     </p>
                   )}
+                  {costVisible && item.costSource && (
+                    <p className="col-span-12 text-xs text-muted">成本来源：{item.costSource}</p>
+                  )}
+                  {costVisible && item.productId && item.cost == null && (
+                    <p className="col-span-12 text-xs text-warning-fg">
+                      缺成本：在产品详情「采购来源」关联供应商产品，或在型号价格表填成本价后可自动带出
+                    </p>
+                  )}
+                  {form.language === 'en' && (
+                    <>
+                      <input
+                        placeholder="英文品名（英文报价单用，空则打印中文）"
+                        value={item.nameEn || ''}
+                        onChange={(e) => updateItem(idx, 'nameEn', e.target.value)}
+                        className="col-span-6 px-2 py-1 border border-border rounded text-sm"
+                      />
+                      <input
+                        placeholder="英文规格 / Specification"
+                        value={item.specificationEn || ''}
+                        onChange={(e) => updateItem(idx, 'specificationEn', e.target.value)}
+                        className="col-span-6 px-2 py-1 border border-border rounded text-sm"
+                      />
+                    </>
+                  )}
                 </div>
               ))}
             </div>
+            {costVisible && liveMargin && (
+              <div
+                className={`mt-2 rounded-md px-3 py-2 text-xs flex flex-wrap gap-x-4 gap-y-1 ${
+                  liveMargin.margin != null && liveMargin.margin < MARGIN_ALERT ? 'bg-danger-bg text-danger-fg' : 'bg-subtle text-ink-soft'
+                }`}
+              >
+                <span>成本合计 ¥{Math.round(liveMargin.cost).toLocaleString('zh-CN')}</span>
+                <span>
+                  毛利 ¥{Math.round(liveMargin.revenue - liveMargin.cost).toLocaleString('zh-CN')}
+                  {form.currency !== 'CNY' && '（已按汇率折人民币）'}
+                </span>
+                <span className="font-semibold">毛利率 {liveMargin.margin ?? '-'}%</span>
+                {liveMargin.missing > 0 && <span className="text-warning-fg">另有 {liveMargin.missing} 行没有成本，未计入</span>}
+                {liveMargin.margin != null && liveMargin.margin < MARGIN_ALERT && (
+                  <span className="flex items-center gap-1">
+                    <AlertTriangle size={12} /> 毛利率低于 {MARGIN_ALERT}%，提交前请复核
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           </FormSection>
 
@@ -857,7 +1058,7 @@ export default function Quotations() {
               stats={[
                 {
                   label: '报价金额',
-                  value: `¥${detailQuery.data?.amount?.toLocaleString?.('zh-CN') ?? 0}`,
+                  value: fmtMoney(detailQuery.data?.amount, detailQuery.data?.currency),
                   emphasis: true,
                 },
                 { label: '客户', value: (selected as any)?.customerShortName },
@@ -875,6 +1076,15 @@ export default function Quotations() {
                       proposalOptions.find((o) => o.value === (detailQuery.data as any)?.proposalId)?.label,
                   },
                   { label: '明细行数', value: detailQuery.data?.items?.length ?? 0 },
+                  {
+                    label: '币种 / 语言',
+                    value: `${detailQuery.data?.currency || 'CNY'}${
+                      detailQuery.data?.currency && detailQuery.data.currency !== 'CNY' && detailQuery.data.exchangeRate
+                        ? `（汇率 ${Number(detailQuery.data.exchangeRate)}）`
+                        : ''
+                    } · ${detailQuery.data?.language === 'en' ? '英文报价单' : '中文报价单'}`,
+                  },
+                  { label: '报价日期', value: detailQuery.data?.quotedAt ? String(detailQuery.data.quotedAt).slice(0, 10) : '—' },
                   { label: '备注', value: detailQuery.data?.notes, full: true },
                 ]}
               />
@@ -952,15 +1162,15 @@ export default function Quotations() {
                           </td>
                           <td className="py-2 px-2 text-right eo-num">{it.quantity}</td>
                           <td className="py-2 px-2 text-right eo-num">
-                            ¥{Number(it.unitPrice).toLocaleString('zh-CN')}
+                            {fmtMoney(it.unitPrice, detailQuery.data?.currency)}
                           </td>
                           <td className="py-2 px-2 text-right eo-num">
-                            ¥{Number(it.totalPrice ?? it.quantity * it.unitPrice).toLocaleString('zh-CN')}
+                            {fmtMoney(it.totalPrice ?? it.quantity * it.unitPrice, detailQuery.data?.currency)}
                           </td>
                           <td className="py-2 px-2 text-label text-muted">
                             {it.supplierName || '-'}
                             {it.cost != null && (
-                              <div className="text-caption">成本 ¥{Number(it.cost).toLocaleString('zh-CN')}</div>
+                              <div className="text-caption" title={it.costSource || ''}>成本 ¥{Number(it.cost).toLocaleString('zh-CN')}</div>
                             )}
                           </td>
                         </tr>
@@ -986,10 +1196,18 @@ export default function Quotations() {
                 className="flex-1"
               >
                 <Button className="w-full">
-                  <Printer size={15} className="mr-1" /> 打印 / 导出 PDF
+                  <Printer size={15} className="mr-1" /> 打印{detailQuery.data?.language === 'en' ? '英文' : ''}报价单
                 </Button>
               </a>
             </div>
+            <a
+              href={`${import.meta.env.VITE_API_BASE_URL || '/api'}/quotations/${detailQuery.data?.id}/print?lang=${detailQuery.data?.language === 'en' ? 'zh' : 'en'}`}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-center text-caption text-accent-600 hover:underline"
+            >
+              预览{detailQuery.data?.language === 'en' ? '中文' : '英文'}版报价单
+            </a>
           </div>
         )}
       </Drawer>
@@ -1020,7 +1238,7 @@ function QuotationVersionsSection({ quotationId }: { quotationId?: string }) {
               className="w-full flex items-center gap-3 p-2 text-caption text-left"
             >
               <span className="text-ink font-medium">v{v.version}</span>
-              <span className="text-muted">金额 ¥{Number(v.snapshot?.amount || 0).toLocaleString('zh-CN')}</span>
+              <span className="text-muted">金额 {fmtMoney(v.snapshot?.amount, v.snapshot?.currency)}</span>
               <span className="text-muted">{v.snapshot?.items?.length ?? v.items?.length ?? 0} 行明细</span>
               <span className="ml-auto text-muted">{new Date(v.createdAt).toLocaleString('zh-CN')}</span>
             </button>

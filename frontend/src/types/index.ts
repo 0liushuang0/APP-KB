@@ -36,14 +36,19 @@ export const BUSINESS_STATUS_OPTIONS = [
   { value: '沉默', label: '沉默' },
   { value: '流失', label: '流失' },
 ]
+/**
+ * 区域标准写法（与后端区域字典 common/utils/region.util.ts 一致，取库里的多数写法）。
+ * 原来这里是「华东」、库里 45 家是「华东区」，按区域筛选只能筛出 1 家。
+ * 海外客户的国家单独记在「国家/地区」。
+ */
 export const REGION_OPTIONS = [
-  { value: '华东', label: '华东' },
-  { value: '华南', label: '华南' },
-  { value: '华中', label: '华中' },
-  { value: '华北', label: '华北' },
-  { value: '西北', label: '西北' },
-  { value: '西南', label: '西南' },
-  { value: '东北', label: '东北' },
+  { value: '华北区', label: '华北区' },
+  { value: '华东区', label: '华东区' },
+  { value: '华中区', label: '华中区' },
+  { value: '华南区', label: '华南区' },
+  { value: '西北区', label: '西北区' },
+  { value: '西南区', label: '西南区' },
+  { value: '东北区', label: '东北区' },
   { value: '海外', label: '海外' },
 ]
 export const SCALE_OPTIONS = [
@@ -157,6 +162,33 @@ export interface QuotationItem {
   /** 关联的自有产品；从产品库选择时带上，手工录入的临时物料可留空。
    *  产品详情页的「报价记录」就是靠它反查出来的。 */
   productId?: string
+  specification?: string
+  unit?: string
+  /** 英文报价单用的品名 / 规格（空时打印中文） */
+  nameEn?: string
+  specificationEn?: string
+  /** 单位成本（人民币）与来源说明；无成本权限的人拿不到 */
+  cost?: number | null
+  costSource?: string
+  supplierProductId?: string
+  supplierId?: string
+  supplierName?: string
+  totalPrice?: number
+}
+
+/** 客户统一时间线的一条（后端 customers/customer-timeline.ts） */
+export interface CustomerTimelineEvent {
+  id: string
+  kind: 'followup' | 'log' | 'task' | 'requirement' | 'proposal' | 'quotation' | 'contract' | 'payment' | 'project' | 'ticket' | 'document' | 'change'
+  /** 筛选大类：contact 沟通 / log 需求记录 / task 任务 / doc 单据 / file 资料 / change 修改 */
+  group: 'contact' | 'log' | 'task' | 'doc' | 'file' | 'change'
+  at: string
+  title: string
+  detail?: string
+  link?: string
+  actor?: string
+  /** 时间取的是录入时间（没填业务日期） */
+  entryDate?: boolean
 }
 
 export interface Quotation {
@@ -167,6 +199,11 @@ export interface Quotation {
   proposalId?: string
   proposal?: { id?: string; title: string }
   amount: number
+  /** 币种 / 汇率（1 外币 = x 人民币）/ 报价单语言 / 报价日期 */
+  currency?: string
+  exchangeRate?: number | null
+  language?: 'zh' | 'en'
+  quotedAt?: string | null
   status: string
   notes?: string
   costBreakdown?: string
@@ -383,6 +420,10 @@ export interface SupplierProduct {
   substituteFor?: string
   remark?: string
   status?: string
+  /** 对应的我方产品（采购来源映射）；映射后报价明细自动带出成本 */
+  productId?: string | null
+  /** 按产品查询时后端顺带给出的供应商名 */
+  supplierName?: string
   createdAt?: string
 }
 
@@ -690,6 +731,10 @@ export interface RequirementCard {
   missing?: RequirementCardMissing[]
   notes?: string
   llm_used?: boolean
+  /** 识别依据：user=需求已选产品类型；inferred=系统按资料在需求模板里判定；builtin=内置大类兜底 */
+  template_category?: string | null
+  template_source?: 'user' | 'inferred' | 'builtin' | null
+  category_reason?: string
   /** 兼容旧结构 */
   productType?: string
   params?: Array<{ key: string; value: string; unit?: string; confidence?: number }>

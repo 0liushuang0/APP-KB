@@ -13,7 +13,7 @@ interface SystemNameState {
   setSubtitle: (v: string) => void
 }
 
-const DEFAULT_NAME = 'BOYA 智能知识中心'
+const DEFAULT_NAME = 'BOYA 智能运营中心'
 const DEFAULT_SUBTITLE = 'CUSTOMER RESPONSE COPILOT'
 
 export const useSystemNameStore = create<SystemNameState>((set) => ({

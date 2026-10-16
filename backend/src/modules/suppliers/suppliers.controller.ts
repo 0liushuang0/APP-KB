@@ -98,6 +98,12 @@ export class SupplierProductsController {
     return this.service.findAll(query);
   }
 
+  /** 给我方产品推荐可能的采购来源（名称相似、尚未映射的供应产品） */
+  @Get('suggest-for-product/:productId')
+  suggestForProduct(@Param('productId') productId: string) {
+    return this.service.suggestForProduct(productId);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateSupplierProductDto) {
     return this.service.update(id, dto);

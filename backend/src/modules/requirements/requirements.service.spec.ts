@@ -1,8 +1,21 @@
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { RequirementsService } from './requirements.service';
 
+/** 需求模板表（param_templates）的两行：一个有字段的联轴器模板、一个没维护字段的空模板 */
+const TEMPLATE_ROWS = [
+  { category: '零部件/联轴器/常规联轴器', fields: JSON.stringify([{ key: 'rated_torque', label: '额定扭矩', type: 'number', required: true }]) },
+  { category: '装备/其他设备/纠偏装置', fields: '[]' },
+];
+
 const makeMocks = () => {
+  const templateQb: any = {
+    select: jest.fn().mockReturnThis(),
+    from: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    getRawMany: jest.fn().mockResolvedValue(TEMPLATE_ROWS),
+  };
   const requirementRepository = {
+    manager: { createQueryBuilder: jest.fn().mockReturnValue(templateQb) },
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),
@@ -322,6 +335,60 @@ describe('RequirementsService', () => {
       expect(spec.card.fields).toHaveLength(1);
       expect(spec.card.missing[0].label).toBe('交货地点');
       expect(spec.review).toBe(false);
+    });
+
+    it('需求已选产品类型：只把该类型的需求模板传给识别引擎', async () => {
+      const { svc, requirementRepository, aiService } = makeMocks();
+      requirementRepository.findOne.mockResolvedValue({
+        id: 'r1', title: '联轴器', description: '鼓形齿联轴器', visibility: 'public', ownerId: 'u1',
+        templateCategory: '零部件/联轴器/常规联轴器',
+      });
+      requirementRepository.save.mockImplementation(async (r: any) => r);
+      await svc.analyzeStructured('r1', user());
+      const opts = (aiService.structureRequirement as jest.Mock).mock.calls[0][3];
+      expect(opts.template.category).toBe('零部件/联轴器/常规联轴器');
+      expect(opts.template.fields[0].key).toBe('rated_torque');
+      expect(opts.candidates).toEqual([]);
+    });
+
+    it('没选产品类型：传全部有字段的模板；引擎判定出类型后自动填上并记一笔需求记录', async () => {
+      const { svc, requirementRepository, aiService, requirementLogRepository } = makeMocks();
+      requirementRepository.findOne.mockResolvedValue({
+        id: 'r1', title: '联轴器', description: '鼓形齿联轴器 2 套', visibility: 'public', ownerId: 'u1',
+      });
+      requirementRepository.save.mockImplementation(async (r: any) => r);
+      (aiService.structureRequirement as jest.Mock).mockResolvedValueOnce({
+        card: {
+          product_category: '零部件/联轴器/常规联轴器', category_confidence: 0.69,
+          template_category: '零部件/联轴器/常规联轴器', template_source: 'inferred', category_reason: '资料中出现：常规联轴器',
+          fields: [{ key: 'rated_torque', label: '额定扭矩', value: 40 }], missing: [],
+        },
+        summary: '',
+      });
+      const result = await svc.analyzeStructured('r1', user());
+      const opts = (aiService.structureRequirement as jest.Mock).mock.calls[0][3];
+      expect(opts.template).toBeNull();
+      // 空模板不传：没有字段的模板对识别没有意义
+      expect(opts.candidates.map((c: any) => c.category)).toEqual(['零部件/联轴器/常规联轴器']);
+      expect(result.templateCategory).toBe('零部件/联轴器/常规联轴器');
+      const log = requirementLogRepository.save.mock.calls[0][0];
+      expect(log.type).toBe('change');
+      expect(log.content).toContain('系统按资料判定产品类型');
+      const spec = JSON.parse(result.structuredSpec);
+      expect(spec.autoCategory).toBe('零部件/联轴器/常规联轴器');
+      expect(spec.templateSource).toBe('inferred');
+    });
+
+    it('判定置信度不足时不自动填产品类型', async () => {
+      const { svc, requirementRepository, aiService, requirementLogRepository } = makeMocks();
+      requirementRepository.findOne.mockResolvedValue({ id: 'r1', title: 't', description: '描述', visibility: 'public', ownerId: 'u1' });
+      requirementRepository.save.mockImplementation(async (r: any) => r);
+      (aiService.structureRequirement as jest.Mock).mockResolvedValueOnce({
+        card: { template_category: '零部件/联轴器/常规联轴器', template_source: 'inferred', category_confidence: 0.4, fields: [{ key: 'a', label: 'A', value: 1 }], missing: [] },
+      });
+      const result = await svc.analyzeStructured('r1', user());
+      expect(result.templateCategory).toBeUndefined();
+      expect(requirementLogRepository.save).not.toHaveBeenCalled();
     });
 
     it('AI 不可用时不记成「已完成」，恢复原状态并报错', async () => {

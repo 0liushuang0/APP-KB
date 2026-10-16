@@ -252,7 +252,7 @@ export class BackupService {
       throw new BadRequestException(`PG_DUMP_PATH 含非法字符，请检查 .env 配置`);
     }
     const dumpPath = path.join(os.tmpdir(), `aikb-pgdump-${Date.now()}.dump`);
-    const bin = process.env.PG_DUMP_PATH || 'pg_dump';
+    const bin = binRaw;
     const args = [
       '--no-owner', '--no-privileges', '-Fc',
       '-h', process.env.DB_HOST || 'localhost',

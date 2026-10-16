@@ -10,12 +10,17 @@
  *   直签 = 没走报价直接签的合同，单独计数，不混进漏斗
  *   成单率 = 已签约的报价 ÷ 全部报价（≤ 100%）
  */
+import { toCny } from '../../common/utils/currency.util';
 export interface MReq { id: string; status?: string | null; isCurrent?: boolean | null; createdAt?: any; expectedAmount?: any }
 export interface MProp { id: string; requirementId?: string | null }
-export interface MQuote { id: string; proposalId?: string | null; amount?: any; status?: string | null; createdAt?: any; updatedAt?: any }
-export interface MContract { id: string; quotationId?: string | null; amount?: any; signedDate?: any; createdAt?: any; status?: string | null }
+export interface MQuote { id: string; proposalId?: string | null; amount?: any; status?: string | null; createdAt?: any; updatedAt?: any; quotedAt?: any; currency?: string | null; exchangeRate?: any }
+export interface MContract { id: string; quotationId?: string | null; amount?: any; signedDate?: any; createdAt?: any; status?: string | null; currency?: string | null; exchangeRate?: any }
 
 const num = (v: any) => Number(v || 0) || 0;
+/** 单据金额折人民币（外币报价/合同按出单时锁定的汇率）—— 所有金额汇总都走它 */
+export const cny = (r: { amount?: any; currency?: string | null; exchangeRate?: any }) => toCny(r.amount, r.currency, r.exchangeRate);
+/** 报价的业务日期：填了报价日期用它，否则退回创建时间 */
+export const quoteDate = (q: MQuote) => q.quotedAt || q.createdAt;
 const time = (v: any) => (v ? new Date(v).getTime() : NaN);
 
 export function dealDate(c: MContract): Date | null {
@@ -76,8 +81,8 @@ export function buildFunnel(reqs: MReq[], props: MProp[], quotes: MQuote[], cont
       const p = props.find((x) => x.id === q.proposalId);
       return !!p?.requirementId && f.reqQuoted.has(p.requirementId);
     })
-    .reduce((s, q) => s + num(q.amount), 0);
-  const signedAmount = f.chainContracts.reduce((s, c) => s + num(c.amount), 0);
+    .reduce((s, q) => s + cny(q), 0);
+  const signedAmount = f.chainContracts.reduce((s, c) => s + cny(c), 0);
   const base = active.length;
   const rate = (v: number) => (base > 0 ? Math.round((v / base) * 100) : 0);
   const stages: FunnelStage[] = [
@@ -88,7 +93,7 @@ export function buildFunnel(reqs: MReq[], props: MProp[], quotes: MQuote[], cont
   ];
   return {
     stages,
-    direct: { count: f.directContracts.length, amount: f.directContracts.reduce((s, c) => s + num(c.amount), 0) },
+    direct: { count: f.directContracts.length, amount: f.directContracts.reduce((s, c) => s + cny(c), 0) },
   };
 }
 
@@ -104,7 +109,7 @@ export function dealsBetween(contracts: MContract[], from: Date, to?: Date) {
     const d = dealDate(c);
     return !!d && d.getTime() >= from.getTime() && (!to || d.getTime() < to.getTime());
   });
-  return { count: rows.length, amount: rows.reduce((s, c) => s + num(c.amount), 0) };
+  return { count: rows.length, amount: rows.reduce((s, c) => s + cny(c), 0) };
 }
 
 /** 近 N 个月：报价额/单数 与 签约额/单数，两条序列同一口径 */
@@ -114,13 +119,13 @@ export function monthlyTrend(quotes: MQuote[], contracts: MContract[], now: Date
     const from = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const to = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
     const qs = quotes.filter((q) => {
-      const t = time(q.createdAt);
+      const t = time(quoteDate(q));
       return t >= from.getTime() && t < to.getTime();
     });
     const d = dealsBetween(contracts, from, to);
     out.push({
       month: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}`,
-      quoteAmount: qs.reduce((s, q) => s + num(q.amount), 0),
+      quoteAmount: qs.reduce((s, q) => s + cny(q), 0),
       quoteCount: qs.length,
       dealAmount: d.amount,
       dealCount: d.count,

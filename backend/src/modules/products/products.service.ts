@@ -445,7 +445,8 @@ export class ProductsService {
         // 磁盘文件清理
         for (const att of attachments) {
           try {
-            const filePath = path.join(this.uploadDir, att.fileKey.replace(/^products\//, ''));
+            // resolveInsideDir 防穿越：异常 fileKey 只会抛错记日志
+            const filePath = resolveInsideDir(this.uploadDir, att.fileKey.replace(/^products\//, ''));
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
           } catch (err) {
             this.logger.error('Delete attachment file failed', err?.message);

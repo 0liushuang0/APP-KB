@@ -57,6 +57,18 @@ export class ContractsService {
     return row?.customerId ?? fallback ?? null;
   }
 
+  private async inheritCurrency(quotationId?: string): Promise<{ currency?: string; exchangeRate?: number }> {
+    if (!quotationId) return {};
+    const q = await this.contractRepository.manager
+      .createQueryBuilder()
+      .select(['q.currency AS currency', 'q."exchangeRate" AS "exchangeRate"'])
+      .from('quotations', 'q')
+      .where('CAST(q.id AS TEXT) = :id', { id: quotationId })
+      .getRawOne<{ currency: string; exchangeRate: any }>();
+    if (!q?.currency || q.currency === 'CNY') return {};
+    return { currency: q.currency, exchangeRate: q.exchangeRate != null ? Number(q.exchangeRate) : undefined };
+  }
+
   /** 列表（分页 + 权限下沉 SQL） */
   async findAll(query: QueryContractDto, user: CurrentUser): Promise<PaginatedResult<Contract>> {
     const qb = this.contractRepository.createQueryBuilder('c');
@@ -190,8 +202,11 @@ export class ContractsService {
       this.inheritCustomerId(dto.quotationId, dto.customerId),
     ]);
     const skipApproval = this.permissionService.skipApproval();
+    // 币种跟随报价：美元报价生成的合同还是美元，汇率沿用报价时锁定的
+    const currency = dto.currency ? { currency: dto.currency, exchangeRate: dto.exchangeRate } : await this.inheritCurrency(dto.quotationId);
     const contract = this.contractRepository.create({
       ...dto,
+      ...currency,
       contractNo,
       customerId,
       ownerId: user?.userId,

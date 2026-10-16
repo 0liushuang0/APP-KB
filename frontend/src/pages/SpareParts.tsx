@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Download, Package, GripVertical, Pencil } from 'lucide-react'
+import { Plus, Trash2, Download, Package, GripVertical, Pencil, Copy, FileSpreadsheet, FileText } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
 import { toList } from '../utils/apiList'
-import { groupByProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
+import { groupByProfession, resolveProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
 import { useProfessionNames } from '../hooks/useProfessionNames'
+import { exportSheetsToExcel, exportSectionsToWord, stamp } from '../utils/export-sheet'
 import Button from '../components/Button'
+import Modal from '../components/Modal'
 import PageLoader from '../components/PageLoader'
 
 /**
@@ -85,6 +87,9 @@ export default function SpareParts() {
   /** 专业组显示名（与设备配套共享改名）与组名编辑态 */
   const { displayName, rename: renameProfession } = useProfessionNames()
   const [editingGroup, setEditingGroup] = useState<string | null>(null)
+  /** 从其他设备复制备件的弹窗 */
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [copySource, setCopySource] = useState('')
   /** 拖拽排序（同设备配套：拖动手柄，目标行接收 drop） */
   const dragKeyRef = useRef<string | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
@@ -222,10 +227,22 @@ export default function SpareParts() {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
   }
 
-  const addSupplier = (row: SpareRow, name: string) => {
+  /** 追加供应商：名册里没有的自动创建到供应管理（与设备配套同口径） */
+  const addSupplier = async (row: SpareRow, name: string) => {
     const v = name.trim()
     if (!v || row.suppliers.includes(v)) return
     setCell(row.key, { suppliers: [...row.suppliers, v] })
+    const hit = (supplierPool || []).find((s) => s.name === v)
+    if (!hit) {
+      try {
+        await supplierApi.create({ name: v })
+        queryClient.invalidateQueries({ queryKey: ['spare-parts-suppliers'] })
+        queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+        toast.success(`「${v}」不在供应管理，已自动加入厂家名册`)
+      } catch (e: any) {
+        toast.error(`「${v}」加入供应管理失败：${e?.response?.data?.message || e?.message || '未知原因'}`)
+      }
+    }
   }
   const removeSupplier = (row: SpareRow, name: string) => {
     setCell(row.key, { suppliers: row.suppliers.filter((s) => s !== name) })
@@ -259,58 +276,71 @@ export default function SpareParts() {
     [rows, typeFilter],
   )
 
-  const esc = (v: unknown) => {
-    const s = v == null ? '' : String(v)
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const downloadCsv = (title: string, header: string[], lines: string[], filename: string) => {
-    const csv = '\uFEFF' + [title, '', header.join(','), ...lines].join('\r\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(a.href)
+  /** 勾选且有效的行（各导出入口共用） */
+  const selectedFilled = () => visibleRows.filter((r) => exportSelected.has(r.key) && r.part.trim())
+  const typeSuffix = typeFilter ? `（${typeFilter}）` : ''
+
+  /** 导出 Excel：全部勾选行一个工作表（含专业/备件类型列） */
+  const exportExcel = async () => {
+    const filled = selectedFilled()
+    if (!filled.length) return toast.warning('请先勾选要导出的备件行')
+    await exportSheetsToExcel(
+      [
+        {
+          name: '备件清单',
+          header: ['序号', '备件名称', '专业', '备件类型', '供应商', '备注'],
+          rows: filled.map((r, i) => [i + 1, r.part, resolveProfession(r), r.spareType, r.suppliers.join('、'), r.note]),
+        },
+      ],
+      `${equipment}_备件清单${typeFilter || ''}_${stamp()}.xlsx`,
+    )
+    toast.success(`已导出 ${filled.length} 行备件（Excel 单表）`)
   }
 
-  const exportSheet = () => {
-    const filled = visibleRows.filter((r) => exportSelected.has(r.key) && r.part.trim())
-    if (!filled.length) {
-      toast.warning('请先勾选要导出的备件行')
-      return
-    }
-    const header = ['序号', '备件名称', '专业', '备件类型', '供应商', '备注']
-    const lines = filled.map((r, i) =>
-      [i + 1, r.part, professionOfPart(r.part), r.spareType, r.suppliers.join('、'), r.note].map(esc).join(','),
+  /** 导出 Word：单文件按专业分小节，可直接复制进技术附件 */
+  const exportWord = () => {
+    const filled = selectedFilled()
+    if (!filled.length) return toast.warning('请先勾选要导出的备件行')
+    exportSectionsToWord(
+      `${equipment} 备件清单${typeSuffix}（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`,
+      groupByProfession(filled).map((g) => ({
+        name: `${displayName(g.profession)}类备件 (${g.items.length})`,
+        header: ['序号', '备件名称', '备件类型', '供应商', '备注'],
+        rows: g.items.map((r, i) => [i + 1, r.part, r.spareType, r.suppliers.join('、'), r.note]),
+      })),
+      `${equipment}_备件清单${typeFilter || ''}_${stamp()}.doc`,
     )
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    downloadCsv(
-      `${equipment} 备件清单${typeFilter ? `（${typeFilter}）` : ''}（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`,
-      header, lines, `${equipment}_备件清单${typeFilter || ''}_${stamp}.csv`,
-    )
-    toast.success(`已导出 ${filled.length} 行备件`)
+    toast.success(`已导出 Word（含 ${groupByProfession(filled).length} 个专业分组）`)
   }
 
-  /** 分专业导出：机械备件表 / 液压备件表 … */
-  const exportByProfession = () => {
-    const filled = visibleRows.filter((r) => exportSelected.has(r.key) && r.part.trim())
-    if (!filled.length) {
-      toast.warning('请先勾选要导出的备件行')
-      return
-    }
+  /** 分专业导出 Excel：一个工作簿、每专业一个工作表 */
+  const exportByProfession = async () => {
+    const filled = selectedFilled()
+    if (!filled.length) return toast.warning('请先勾选要导出的备件行')
     const groups = groupByProfession(filled)
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    groups.forEach((g, gi) => {
-      setTimeout(() => {
-        const header = ['序号', '备件名称', '备件类型', '供应商', '备注']
-        const lines = g.items.map((r, i) => [i + 1, r.part, r.spareType, r.suppliers.join('、'), r.note].map(esc).join(','))
-        downloadCsv(
-          `${equipment} ${g.profession}备件表${typeFilter ? `（${typeFilter}）` : ''}（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`,
-          header, lines, `${equipment}_${g.profession}备件表_${stamp}.csv`,
-        )
-      }, gi * 450)
-    })
-    toast.success(`按专业导出 ${groups.length} 个表：${groups.map((g) => `${g.profession}(${g.items.length})`).join('、')}`)
+    await exportSheetsToExcel(
+      groups.map((g) => ({
+        name: displayName(g.profession),
+        header: ['序号', '备件名称', '备件类型', '供应商', '备注'],
+        rows: g.items.map((r, i) => [i + 1, r.part, r.spareType, r.suppliers.join('、'), r.note]),
+      })),
+      `${equipment}_分专业备件表_${stamp()}.xlsx`,
+    )
+    toast.success(`已导出 1 个 Excel（${groups.map((g) => `${displayName(g.profession)}(${g.items.length})`).join('、')} 各一个工作表）`)
+  }
+
+  /** 从其他设备复制备件清单：整表带入后局部修改 */
+  const copyFrom = (source: string) => {
+    const stored = (spareBom as StoredSpareBom | undefined)?.[source]
+    if (!stored || !stored.length) {
+      toast.warning(`「${source}」还没有备件行，无可复制`)
+      return
+    }
+    const rekeyed = stored.map((v) => toSpareRow(v))
+    setRows(rekeyed)
+    setExportSelected(new Set(rekeyed.map((r) => r.key)))
+    setCopyOpen(false)
+    toast.success(`已从「${source}」复制 ${rekeyed.length} 行备件，可直接局部修改`)
   }
 
   return (
@@ -358,13 +388,42 @@ export default function SpareParts() {
           </select>
         </div>
         <div className="flex-1" />
-        <Button variant="secondary" size="sm" className="!py-1.5" onClick={exportSheet} title="导出勾选备件（含专业/备件类型列）">
-          <Download size={13} className="mr-0.5" /> 导出备件表
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={() => { setCopySource(''); setCopyOpen(true) }} title="把其他设备的备件清单复制到当前设备，再做局部修改">
+          <Copy size={13} className="mr-0.5" /> 从其他设备复制
         </Button>
-        <Button size="sm" className="!py-1.5" onClick={exportByProfession} title="按机械/液压/电气/仪表各导一个表">
+        <Button size="sm" className="!py-1.5" onClick={exportExcel} title="全部勾选行导出为一个 Excel（含专业/备件类型列）">
+          <FileSpreadsheet size={13} className="mr-0.5" /> 导出 Excel
+        </Button>
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={exportWord} title="导出为 Word 文档（按专业分小节）">
+          <FileText size={13} className="mr-0.5" /> 导出 Word
+        </Button>
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={exportByProfession} title="一个 Excel，每个专业各一个工作表">
           <Download size={13} className="mr-0.5" /> 分专业导出
         </Button>
       </div>
+
+      {/* 从其他设备复制备件 */}
+      <Modal
+        open={copyOpen}
+        onClose={() => setCopyOpen(false)}
+        title={`复制备件到「${equipment || '…'}」`}
+        size="sm"
+        cancelText="取消"
+        onConfirm={() => copySource && copyFrom(copySource)}
+        confirmText="复制"
+        confirmDisabled={!copySource || copySource === equipment}
+      >
+        <p className="text-sm text-muted mb-3">选择来源设备，其全部备件行（含类型/专业/供应商）将替换当前设备的清单，复制后可直接局部修改：</p>
+        <select value={copySource} onChange={(e) => setCopySource(e.target.value)} className="eo-input !py-1.5 !text-sm w-full" aria-label="来源设备">
+          <option value="">— 选择来源设备 —</option>
+          {equipmentNames.filter((n) => n !== equipment).map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        {copySource && copySource !== equipment && (
+          <p className="text-caption text-muted mt-2">「{copySource}」现有 {((spareBom as StoredSpareBom | undefined)?.[copySource] || []).length} 行备件</p>
+        )}
+      </Modal>
 
       {/* 备件清单（按专业分组） */}
       <div className="eo-card p-4">

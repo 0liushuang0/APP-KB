@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from '@nestjs/common';
 import { BackupService } from './backup.service';
 import { firstFullDelayMs, selectBackupsToKeep } from './backup-retention';
+import { JobLockService } from '../../common/services/job-lock.service';
 
 /**
  * 自动备份调度器（双层级）。
@@ -22,6 +23,7 @@ import { firstFullDelayMs, selectBackupsToKeep } from './backup-retention';
  *   BACKUP_DB_KEEP_COUNT=72           db-only 保留份数
  *   BACKUP_OFFSITE_DIR=Z:\backups     异地目录（绝对路径，网络盘/第二块盘）
  */
+/* 多台服务器共用一个数据库时经任务锁互斥：同一间隔内全集群只做一份，不会两台同时 pg_dump。 */
 @Injectable()
 export class BackupSchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BackupSchedulerService.name);
@@ -33,7 +35,10 @@ export class BackupSchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly dbIntervalHours: number;
   private readonly dbKeepCount: number;
 
-  constructor(private readonly backupService: BackupService) {
+  constructor(
+    private readonly backupService: BackupService,
+    @Optional() private readonly jobLock?: JobLockService,
+  ) {
     this.enabled = (process.env.AUTO_BACKUP_ENABLED ?? 'true') !== 'false';
     this.intervalHours = Math.max(1, parseInt(process.env.AUTO_BACKUP_INTERVAL_HOURS ?? '6', 10) || 6);
     this.keepCount = Math.max(1, parseInt(process.env.AUTO_BACKUP_KEEP_COUNT ?? '7', 10) || 7);
@@ -92,7 +97,27 @@ export class BackupSchedulerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** 抢到锁才执行；最小间隔留 10% 余量，免得相位稍有漂移就跳过一整轮 */
+  private async exclusive(name: string, intervalHours: number, ttlHours: number, fn: () => Promise<void>): Promise<void> {
+    if (!this.jobLock) return fn();
+    const r = await this.jobLock
+      .runExclusive(name, fn, { ttlMs: ttlHours * 3_600_000, minIntervalMs: intervalHours * 3_600_000 * 0.9 })
+      .catch((err) => {
+        this.logger.error(`${name} 任务锁异常：${err?.message}`);
+        return { ran: false };
+      });
+    if (!r.ran) this.logger.debug?.(`${name}：本间隔已由其他实例完成，跳过`);
+  }
+
   private async runFull(): Promise<void> {
+    return this.exclusive('backup-full', this.intervalHours, 3, () => this.doFull());
+  }
+
+  private async runDbOnly(): Promise<void> {
+    return this.exclusive('backup-db', this.dbIntervalHours, 1, () => this.doDbOnly());
+  }
+
+  private async doFull(): Promise<void> {
     try {
       const info = await this.backupService.create('自动备份（全量）');
       this.logger.log(`全量备份完成：${info.fileName}（${(info.size / 1024 / 1024).toFixed(1)} MB）`);
@@ -102,7 +127,7 @@ export class BackupSchedulerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async runDbOnly(): Promise<void> {
+  private async doDbOnly(): Promise<void> {
     try {
       const info = await this.backupService.createDbOnly('自动备份（仅数据库）');
       this.logger.log(`数据库备份完成：${info.fileName}（${(info.size / 1024 / 1024).toFixed(1)} MB）`);

@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, BadRequestException, Logger } from '@nestjs/common';
-import { buildFunnel, chainFacts, dealDate, dealsBetween, delta, monthlyTrend, winRate } from './business-metrics';
+import { buildFunnel, chainFacts, cny, dealDate, dealsBetween, delta, monthlyTrend, quoteDate, winRate } from './business-metrics';
+import { loadRegionDict, normalizeRegion } from '../../common/utils/region.util';
 import { summarizeAutomation } from '../../common/utils/automation-log';
 import { domainEvents } from '../../common/services/domain-events';
 import { ConfigService } from '@nestjs/config';
@@ -26,7 +27,7 @@ import { AiFeedback } from '../ai/entities/ai-feedback.entity';
 import { ContractPayment } from '../contracts/entities/contract-payment.entity';
 import { AuditLog } from '../audit-logs/entities/audit-log.entity';
 
-const DEFAULT_SYSTEM_NAME = 'BOYA 智能知识中心';
+const DEFAULT_SYSTEM_NAME = 'BOYA 智能运营中心';
 
 @Injectable()
 export class SystemService implements OnModuleInit {
@@ -203,12 +204,12 @@ export class SystemService implements OnModuleInit {
       const t = new Date(d).getTime();
       return t >= from.getTime() && (!to || t < to.getTime());
     };
-    const sum = (rows: any[]) => rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const sum = (rows: any[]) => rows.reduce((s, r) => s + cny(r), 0);
 
     const monthReqs = requirements.filter((r) => since(r.createdAt, monthStart)).length;
     const lastMonthReqs = requirements.filter((r) => since(r.createdAt, lastMonthStart, monthStart)).length;
-    const monthQuote = sum(quotations.filter((q) => since(q.createdAt, monthStart)));
-    const lastMonthQuote = sum(quotations.filter((q) => since(q.createdAt, lastMonthStart, monthStart)));
+    const monthQuote = sum(quotations.filter((q) => since(quoteDate(q as any), monthStart)));
+    const lastMonthQuote = sum(quotations.filter((q) => since(quoteDate(q as any), lastMonthStart, monthStart)));
     const monthDeals = dealsBetween(contracts as any, monthStart);
     const lastMonthDeals = dealsBetween(contracts as any, lastMonthStart, monthStart);
 
@@ -256,7 +257,7 @@ export class SystemService implements OnModuleInit {
         items: [...quotations]
           .sort((a, b) => ts(b.createdAt) - ts(a.createdAt))
           .slice(0, 4)
-          .map((q: any) => card({ id: q.id, title: q.projectName || q.quotationNo, no: q.quotationNo, status: q.status, amount: Number(q.amount || 0), date: q.createdAt, customerId: q.customerId, link: `/quotations?highlight=${q.id}` })),
+          .map((q: any) => card({ id: q.id, title: q.projectName || q.quotationNo, no: q.quotationNo, status: q.status, amount: cny(q), date: q.createdAt, customerId: q.customerId, link: `/quotations?highlight=${q.id}` })),
       },
       contract: {
         count: contracts.length,
@@ -264,7 +265,7 @@ export class SystemService implements OnModuleInit {
         items: [...contracts]
           .sort((a: any, b: any) => (dealDate(b)?.getTime() || 0) - (dealDate(a)?.getTime() || 0))
           .slice(0, 4)
-          .map((c: any) => card({ id: c.id, title: c.title || c.contractNo, no: c.contractNo, status: c.status, amount: Number(c.amount || 0), date: dealDate(c), customerId: c.customerId, link: `/contracts?highlight=${c.id}` })),
+          .map((c: any) => card({ id: c.id, title: c.title || c.contractNo, no: c.contractNo, status: c.status, amount: cny(c), date: dealDate(c), customerId: c.customerId, link: `/contracts?highlight=${c.id}` })),
       },
       project: {
         count: projects.length,
@@ -537,8 +538,8 @@ export class SystemService implements OnModuleInit {
     };
     const since = (d: Date | string | undefined | null, from: Date) =>
       !!d && new Date(d).getTime() >= from.getTime();
-    const sum = (rows: Array<{ amount?: number }>) =>
-      rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const sum = (rows: Array<{ amount?: number; currency?: string; exchangeRate?: any }>) =>
+      rows.reduce((s, r) => s + cny(r), 0);
 
     /*
      * 分桶时把多个状态值并进同一格。
@@ -896,6 +897,7 @@ export class SystemService implements OnModuleInit {
             等级: c.level,
             业务状态: c.businessStatus,
             区域: c.region,
+            国家: (c as any).country,
             负责人: c.salesPerson,
             地址: c.address,
             网址: c.website,
@@ -1077,6 +1079,8 @@ export class SystemService implements OnModuleInit {
     type: string,
     buffer: Buffer,
   ): Promise<{ type: string; total: number; imported: number; errors: Array<{ row: number; message: string }> }> {
+    // 导入的客户区域按字典归并（华东 → 华东区、俄罗斯 → 海外 + 国家），不再把写法拆碎
+    const regionDict = await loadRegionDict(this.dataSource.manager);
     const IMPORTERS: Record<
       string,
       { repo: Repository<any>; map: (row: any) => any | Promise<any>; required: string[] }
@@ -1094,7 +1098,9 @@ export class SystemService implements OnModuleInit {
           industry: r['行业'] ?? r['industry'],
           level: this.normalizeCustomerLevel(r['等级'] ?? r['level']),
           businessStatus: String(r['业务状态'] ?? '').trim() || null,
-          region: r['区域'] ?? r['region'],
+          region: normalizeRegion(r['区域'] ?? r['region'], regionDict, r['地址'] ?? r['address']).region,
+          country:
+            r['国家'] ?? r['country'] ?? normalizeRegion(r['区域'] ?? r['region'], regionDict, r['地址'] ?? r['address']).country,
           salesPerson: r['负责人'] ?? r['salesPerson'],
           scale: r['规模'] ?? r['scale'],
           address: r['地址'] ?? r['address'],

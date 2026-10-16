@@ -806,8 +806,16 @@ export default function RequirementDetail() {
                     </div>
                     {card?.product_category && (
                       <div>
-                        <div className="eo-label mb-1">识别大类</div>
-                        <div className="text-body-sm text-ink">{card.product_category}</div>
+                        <div className="eo-label mb-1">识别依据</div>
+                        <div className="text-body-sm text-ink">
+                          {card.template_source === 'builtin' ? `通用大类「${card.product_category}」` : `需求模板「${card.product_category}」`}
+                        </div>
+                        <div className="text-caption text-muted">
+                          {card.template_source === 'user' && '按需求所选产品类型的模板字段识别'}
+                          {card.template_source === 'inferred' &&
+                            `系统按资料判定${card.category_reason ? `（${card.category_reason.replace(/^资料中出现：/, '出现')}）` : ''}，已填为产品类型，不对可在基本信息里改`}
+                          {card.template_source === 'builtin' && '未选产品类型且需求模板里没有对应项，先在基本信息选产品类型再识别更准'}
+                        </div>
                       </div>
                     )}
                   </div>

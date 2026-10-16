@@ -51,9 +51,13 @@ export class Customer {
   @Column({ nullable: true })
   customerType: string;
 
-  /** 所属区域：华东/华南/华中/华北/西北/西南/东北/海外 */
+  /** 所属区域（受控字典，见 common/utils/region.util.ts）：华北区/华东区/华中区/华南区/西北区/西南区/东北区/海外 */
   @Column({ nullable: true })
   region: string;
+
+  /** 国家/地区（海外客户用；区域里原来写的「俄罗斯」「南亚区域」归并后落在这里） */
+  @Column({ nullable: true })
+  country: string;
 
   /** 注册地址（恢复本义，不再借用为城市） */
   @Column({ nullable: true })

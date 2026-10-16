@@ -26,13 +26,24 @@ export class QuotationsController {
    */
   /** 方案 → 报价：项目名称、按需求产品类型带出的明细（含匹配理由）、商务条款默认值 */
   @Get('draft-from-proposal/:proposalId')
-  draftFromProposal(@Param('proposalId') proposalId: string) {
-    return this.quotationsService.draftFromProposal(proposalId);
+  draftFromProposal(@Param('proposalId') proposalId: string, @CurrentUser() user: CurrentUserType) {
+    return this.quotationsService.draftFromProposal(proposalId, user);
   }
 
+  /** 选了产品（和型号）后的成本提示：型号价格表成本价 → 映射的供应商采购价 → BOM（无成本权限时不返回数值） */
+  @Get('cost-hint')
+  costHint(
+    @Query('productId') productId: string,
+    @Query('model') model: string | undefined,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.quotationsService.costHint(productId, model, user);
+  }
+
+  /** ?lang=en / zh：临时切换语言预览（不改报价单本身的语言） */
   @Get(':id/print')
-  async print(@Param('id') id: string, @Res() res: Response) {
-    const html = await this.quotationPrintService.renderHtml(id);
+  async print(@Param('id') id: string, @Query('lang') lang: string | undefined, @Res() res: Response) {
+    const html = await this.quotationPrintService.renderHtml(id, lang);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   }

@@ -27,6 +27,11 @@ export interface AdoptResult {
 }
 
 export function adoptLegacyDatabase(dbPath: string, migrationsDir: string): AdoptResult {
+  // dbPath 来自 env（管理员受控），断言仍在工程 data/ 下，防误配指向任意文件
+  const dataRoot = path.resolve(process.cwd(), 'data');
+  if (!path.resolve(dbPath).startsWith(dataRoot + path.sep)) {
+    return { adopted: false, reason: '数据库路径不在 data/ 目录内，已拒绝纳管' };
+  }
   if (!fs.existsSync(dbPath)) {
     return { adopted: false, reason: '数据库不存在，将由迁移创建' };
   }

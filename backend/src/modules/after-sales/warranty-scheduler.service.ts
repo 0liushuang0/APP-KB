@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
+import { JobLockService } from '../../common/services/job-lock.service';
 
 /**
  * 质保到期定时扫描。
@@ -18,14 +19,15 @@ export class WarrantySchedulerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
+    private readonly jobLock: JobLockService,
   ) {}
 
   onModuleInit() {
     // 启动后 2 分钟开始第一次扫描，避免启动高峰
     this.initialTimer = setTimeout(() => {
       this.initialTimer = null;
-      this.scan();
-      this.interval = setInterval(() => this.scan(), 24 * 60 * 60 * 1000);
+      void this.tick();
+      this.interval = setInterval(() => void this.tick(), 24 * 60 * 60 * 1000);
     }, 2 * 60 * 1000);
     this.initialTimer.unref?.();
   }
@@ -35,6 +37,13 @@ export class WarrantySchedulerService implements OnModuleInit, OnModuleDestroy {
     if (this.interval) clearInterval(this.interval);
     this.initialTimer = null;
     this.interval = null;
+  }
+
+  /** 多台服务器时全集群每天只扫一次（否则每台各发一份质保通知） */
+  private async tick() {
+    await this.jobLock
+      .runExclusive('warranty-scan', () => this.scan(), { ttlMs: 10 * 60_000, minIntervalMs: 23 * 3_600_000 })
+      .catch((err) => this.logger.error('质保到期扫描失败', err?.message));
   }
 
   private async scan() {

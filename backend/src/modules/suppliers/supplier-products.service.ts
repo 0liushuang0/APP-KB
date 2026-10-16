@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, In, LessThanOrEqual } from 'typeorm';
+import { Repository, ILike, In, IsNull, LessThanOrEqual } from 'typeorm';
 import {
   Supplier,
   SupplierProduct,
@@ -16,6 +16,7 @@ import {
 import { CurrentUser } from '../../common/services/permission.service';
 import { MaterialsService } from '../materials/materials.service';
 import { computeSpecSignature } from '../../common/utils/spec-signature.util';
+import { bigramScore } from '../quotations/quotation-draft';
 
 /** 比价行：供应产品 + 其供应商的分级与履约信息 */
 export interface CompareRow {
@@ -68,6 +69,7 @@ export class SupplierProductsService {
   async findAll(query: QuerySupplierProductDto): Promise<SupplierProduct[]> {
     const where: any = {};
     if (query.supplierId) where.supplierId = query.supplierId;
+    if (query.productId) where.productId = query.productId;
     if (query.category) where.category = query.category;
     if (query.brand) where.brand = ILike(`%${query.brand}%`);
     if (query.deliveryDaysMax) where.deliveryDays = LessThanOrEqual(query.deliveryDaysMax);
@@ -84,10 +86,16 @@ export class SupplierProductsService {
     });
 
     // 价格上限在应用层过滤：priceMin/priceMax 是区间，SQL 比较语义不直观
-    if (query.priceMax != null) {
-      return rows.filter((r) => r.priceMin == null || Number(r.priceMin) <= query.priceMax!);
+    const filtered = query.priceMax != null
+      ? rows.filter((r) => r.priceMin == null || Number(r.priceMin) <= query.priceMax!)
+      : rows;
+    // 按产品查映射时顺带给出供应商名（产品详情「采购来源」直接显示，不必再逐个查）
+    if (query.productId && filtered.length) {
+      const sups = await this.suppliers.find({ where: { id: In([...new Set(filtered.map((r) => r.supplierId))]) } });
+      const nameOf = new Map(sups.map((s) => [s.id, s.name]));
+      return filtered.map((r) => Object.assign(r, { supplierName: nameOf.get(r.supplierId) }));
     }
-    return rows;
+    return filtered;
   }
 
   async findBySupplier(supplierId: string): Promise<SupplierProduct[]> {
@@ -100,6 +108,8 @@ export class SupplierProductsService {
     return {
       ...rest,
       ...(priceDate ? { priceDate: new Date(priceDate) } : {}),
+      // 取消映射：前端传空串
+      ...(rest.productId === '' ? { productId: null } : {}),
     } as Partial<SupplierProduct>;
   }
 
@@ -142,6 +152,41 @@ export class SupplierProductsService {
     }
     // 多个命中：不自动绑（怕绑错），提示人工确认
     return { matched: false, materialId: product.materialId, ambiguous: hits.length > 1 };
+  }
+
+  /**
+   * 给我方产品找可能的采购来源（供应产品 → 产品映射的建议）。
+   *
+   * 只按名称相似度（两字片段重合率，双向取高）：「联轴器」对「鼓形齿联轴器」= 100%。
+   * 只建议还没映射到任何产品的供应产品，按相似度、再按有无价格排序；由人确认后才映射。
+   */
+  async suggestForProduct(productId: string, limit = 10): Promise<Array<SupplierProduct & { score: number; supplierName?: string }>> {
+    const product: any = await this.products.manager
+      .createQueryBuilder()
+      .select(['p.id AS id', 'p.name AS name', 'p.category AS category'])
+      .from('products', 'p')
+      .where('CAST(p.id AS TEXT) = :id', { id: productId })
+      .getRawOne();
+    if (!product) throw new NotFoundException('产品不存在');
+    const leaf = String(product.category || '').split('/').pop() || '';
+    const names = [product.name, leaf].filter((s: string) => s && s.length >= 2);
+    const pool = await this.products.find({ where: { productId: IsNull(), status: 'active' } as any });
+    const scored = pool
+      .map((sp) => {
+        const spText = `${sp.productName} ${sp.model || ''}`;
+        const s = Math.max(
+          ...names.map((n: string) => Math.max(bigramScore(sp.productName, n), bigramScore(n, spText))),
+          0,
+        );
+        return { sp, s };
+      })
+      .filter((x) => x.s >= 0.6)
+      .sort((a, b) => b.s - a.s || Number(b.sp.priceMax != null) - Number(a.sp.priceMax != null))
+      .slice(0, limit);
+    const supplierIds = [...new Set(scored.map((x) => x.sp.supplierId))];
+    const sups = supplierIds.length ? await this.suppliers.find({ where: { id: In(supplierIds) } }) : [];
+    const nameOf = new Map(sups.map((s) => [s.id, s.name]));
+    return scored.map((x) => ({ ...x.sp, score: Math.round(x.s * 100), supplierName: nameOf.get(x.sp.supplierId) }));
   }
 
   async remove(id: string): Promise<{ success: boolean }> {

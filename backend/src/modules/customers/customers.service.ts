@@ -21,6 +21,11 @@ import { Quotation, QuotationItem } from '../quotations/entities/quotation.entit
 import { Contract } from '../contracts/entities/contract.entity';
 import { AfterSalesTicket } from '../after-sales/entities/ticket.entity';
 import { AiService } from '../../common/services/ai.service';
+import { toCny } from '../../common/utils/currency.util';
+import { buildTimeline, parseFollowUpText, FollowUpDraft, TimelineEvent } from './customer-timeline';
+import {
+  DEFAULT_REGION_DICT, REGION_DICT_KEY, RegionDict, loadRegionDict, normalizeRegion, parseRegionDict,
+} from '../../common/utils/region.util';
 
 @Injectable()
 export class CustomersService {
@@ -67,7 +72,13 @@ export class CustomersService {
     if (query.level) qb.andWhere('c.level = :level', { level: query.level });
     if (query.businessStatus) qb.andWhere('c.businessStatus = :bs', { bs: query.businessStatus });
     if (query.industry) qb.andWhere('c.industry = :industry', { industry: query.industry });
-    if (query.region) qb.andWhere('c.region = :region', { region: query.region });
+    if (query.region) {
+      // 按标准值筛时把它的别名一起带上：历史值还没归并时也筛得全
+      const dict = await loadRegionDict(this.customerRepository.manager);
+      const hit = dict.regions.find((r) => r.value === query.region);
+      const values = [query.region, ...(hit?.aliases || []), ...(hit?.value === '海外' ? Object.keys(dict.overseas) : [])];
+      qb.andWhere('c.region IN (:...regions)', { regions: values });
+    }
     if (query.customerType) qb.andWhere('c.customerType = :ct', { ct: query.customerType });
     if (query.keyword) {
       // 名称/简称/代号/行业/地区 + 联系人姓名/电话/邮箱 一起搜：
@@ -206,8 +217,17 @@ export class CustomersService {
     }
   }
 
+  /** 区域按字典归并成标准写法；海外客户顺带补国家（只补空的） */
+  private async applyRegion<T extends { region?: string | null; country?: string | null; address?: string | null }>(dto: T): Promise<T> {
+    if (dto.region === undefined) return dto;
+    const n = normalizeRegion(dto.region, await loadRegionDict(this.customerRepository.manager), dto.address);
+    const out: any = { ...dto, region: n.region };
+    if (n.country && !dto.country) out.country = n.country;
+    return out;
+  }
+
   async create(dtoIn: CreateCustomerDto, user: CurrentUser): Promise<Customer> {
-    const dto = this.blankDates(dtoIn);
+    const dto = await this.applyRegion(this.blankDates(dtoIn));
     const skipApproval = this.permissionService.skipApproval();
     await this.assertCodeAvailable(dto.customerCode);
     // 自动生成客户编号
@@ -242,7 +262,7 @@ export class CustomersService {
     if (!this.permissionService.canManage(user, this.toSubject(customer))) {
       throw new BadRequestException('无权修改该客户');
     }
-    const { roleIds, groupIds, ...rest } = this.blankDates(dto as any);
+    const { roleIds, groupIds, ...rest } = await this.applyRegion({ address: customer.address, ...this.blankDates(dto as any) });
     await this.assertCodeAvailable(rest.customerCode, id);
     Object.assign(customer, rest);
     if (roleIds !== undefined) customer.roleCodes = roleIds;
@@ -454,6 +474,230 @@ export class CustomersService {
   }
 
   /**
+   * 区域字典 + 现有区域写法的归并预览：每个现有写法有多少家、会归到哪里。
+   */
+  async regionDictView() {
+    const m = this.customerRepository.manager;
+    const dict = await loadRegionDict(m);
+    const rows: Array<{ id: string; region: string | null; country: string | null; address: string | null }> = await m
+      .createQueryBuilder()
+      .select(['c.id AS id', 'c.region AS region', 'c.country AS country', 'c.address AS address'])
+      .from('customers', 'c')
+      .getRawMany();
+    const usage = new Map<string, { value: string; count: number; to: string | null; status: string; countries: Record<string, number> }>();
+    let changes = 0;
+    for (const r of rows) {
+      const key = r.region || '';
+      const n = normalizeRegion(r.region, dict, r.address);
+      const u = usage.get(key) || { value: key, count: 0, to: n.region, status: n.status, countries: {} };
+      u.count++;
+      const country = r.country || n.country;
+      if (country) u.countries[country] = (u.countries[country] || 0) + 1;
+      usage.set(key, u);
+      if ((n.region || null) !== (r.region || null) || (!r.country && n.country)) changes++;
+    }
+    return {
+      dict,
+      isDefault: JSON.stringify(dict) === JSON.stringify(DEFAULT_REGION_DICT),
+      usage: [...usage.values()].sort((a, b) => b.count - a.count),
+      changes,
+    };
+  }
+
+  async saveRegionDict(dict: RegionDict): Promise<RegionDict> {
+    const clean = parseRegionDict(JSON.stringify(dict || {}));
+    const repo = this.customerRepository.manager.getRepository('SystemConfig');
+    const row: any = await repo.findOne({ where: { key: REGION_DICT_KEY } });
+    if (row) {
+      row.value = JSON.stringify(clean);
+      await repo.save(row);
+    } else {
+      await repo.save(repo.create({ key: REGION_DICT_KEY, value: JSON.stringify(clean), category: 'customer', description: '客户区域字典（标准值、别名、境外国家/片区）' }));
+    }
+    return clean;
+  }
+
+  /**
+   * 按字典把历史区域写法一次性归并（dryRun=true 只返回将要改的清单）。
+   * 只改区域与空着的国家，其它字段不动；认不出的写法原样保留。
+   */
+  async applyRegionDict(dryRun = true) {
+    const m = this.customerRepository.manager;
+    const dict = await loadRegionDict(m);
+    const rows: Array<{ id: string; name: string; region: string | null; country: string | null; address: string | null }> = await m
+      .createQueryBuilder()
+      .select(['c.id AS id', 'c.name AS name', 'c.region AS region', 'c.country AS country', 'c.address AS address'])
+      .from('customers', 'c')
+      .getRawMany();
+    const changes: Array<{ id: string; name: string; from: string | null; to: string | null; country?: string | null }> = [];
+    for (const r of rows) {
+      const n = normalizeRegion(r.region, dict, r.address);
+      const regionChanged = (n.region || null) !== (r.region || null);
+      const countryFilled = !r.country && !!n.country;
+      if (!regionChanged && !countryFilled) continue;
+      changes.push({ id: r.id, name: r.name, from: r.region, to: n.region, country: countryFilled ? n.country : r.country });
+      if (!dryRun) {
+        await this.customerRepository.update(r.id, {
+          region: n.region as any,
+          ...(countryFilled ? { country: n.country as any } : {}),
+        });
+      }
+    }
+    return { dryRun, total: rows.length, changed: changes.length, changes };
+  }
+
+  /** 删除一条沟通记录（录错了要能改） */
+  async removeFollowUp(id: string, user: CurrentUser): Promise<void> {
+    const record = await this.followUpRepository.findOne({ where: { id } });
+    if (!record) throw new NotFoundException('沟通记录不存在');
+    await this.assertCustomerAccessible(record.customerId, user);
+    await this.followUpRepository.delete(id);
+  }
+
+  /**
+   * 统一时间线：沟通、需求记录、工作任务、单据（需求/方案/报价/合同/项目/售后/回款）、资料上传、单据修改，
+   * 按时间倒序排成一条线。权限沿用客户 360：每类子记录按各自可见性过滤后再合并。
+   */
+  async getTimeline(id: string, user: CurrentUser, limit = 300): Promise<{ events: TimelineEvent[]; counts: Record<string, number> }> {
+    const c360: any = await this.getCustomer360(id, user);
+    const m = this.customerRepository.manager;
+    const reqIds: string[] = c360.requirements.map((r: any) => String(r.id));
+    const contractIds: string[] = c360.contracts.map((c: any) => String(c.id));
+
+    const [logs, taskRows, payments, userRows] = await Promise.all([
+      reqIds.length
+        ? m.createQueryBuilder()
+            .select(['l.id AS id', 'l."requirementId" AS "requirementId"', 'l.type AS type', 'l.content AS content',
+              'l."actorId" AS "actorId"', 'l."actorName" AS "actorName"', 'l."createdAt" AS "createdAt"'])
+            .from('requirement_logs', 'l')
+            .where('l."requirementId" IN (:...ids)', { ids: reqIds })
+            .getRawMany()
+        : Promise.resolve([]),
+      m.createQueryBuilder()
+        .select(['t.id AS id', 't."taskNo" AS "taskNo"', 't.title AS title', 't.content AS content', 't.status AS status',
+          't."workDate" AS "workDate"', 't."createdAt" AS "createdAt"', 't."ownerId" AS "ownerId"', 't.visibility AS visibility',
+          't."departmentId" AS "departmentId"', 't."groupIds" AS "groupIds"', 't."roleCodes" AS "roleCodes"'])
+        .from('work_tasks', 't')
+        .where('t."customerId" = :cid', { cid: id })
+        .getRawMany(),
+      contractIds.length
+        ? m.createQueryBuilder()
+            .select(['p.id AS id', 'p."contractId" AS "contractId"', 'p."nodeName" AS "nodeName"', 'p."receivedDate" AS "receivedDate"',
+              'p."receivedAmount" AS "receivedAmount"', 'p."dueAmount" AS "dueAmount"'])
+            .from('contract_payments', 'p')
+            .where('p."contractId" IN (:...ids)', { ids: contractIds })
+            .andWhere('p."receivedDate" IS NOT NULL')
+            .getRawMany()
+        : Promise.resolve([]),
+      m.createQueryBuilder().select(['u.id AS id', 'u.nickname AS nickname', 'u.username AS username']).from('users', 'u').getRawMany(),
+    ]);
+    const split = (v: any) => (Array.isArray(v) ? v : String(v || '').split(',').filter(Boolean));
+    const tasks = taskRows.filter((t: any) =>
+      this.permissionService.canAccess(user, {
+        visibility: t.visibility || 'private', uploaderId: t.ownerId, departmentId: t.departmentId,
+        groupIds: split(t.groupIds), roleCodes: split(t.roleCodes),
+      }),
+    );
+
+    // 单据修改记录：只取当前用户看得到的那些单据
+    const refNo = new Map<string, string>();
+    for (const r of c360.requirements) refNo.set(String(r.id), r.requirementNo);
+    for (const p of c360.proposals) refNo.set(String(p.id), p.proposalNo);
+    for (const q of c360.quotations) refNo.set(String(q.id), q.quotationNo);
+    for (const c of c360.contracts) refNo.set(String(c.id), c.contractNo);
+    for (const p of c360.projects) refNo.set(String(p.id), p.projectNo);
+    for (const t of c360.tickets || []) refNo.set(String(t.id), t.ticketNo);
+    const objectIds = [...refNo.keys(), String(id)];
+    const changes = await m
+      .createQueryBuilder()
+      .select(['a.id AS id', 'a."objectType" AS "objectType"', 'a."objectId" AS "objectId"', 'a.detail AS detail',
+        'a."userId" AS "userId"', 'a."createdAt" AS "createdAt"'])
+      .from('audit_logs', 'a')
+      .where('a."objectId" IN (:...ids)', { ids: objectIds })
+      .andWhere("a.action = 'update'")
+      .orderBy('a."createdAt"', 'DESC')
+      .limit(400)
+      .getRawMany();
+
+    const contractNo = new Map(c360.contracts.map((c: any) => [String(c.id), c]));
+    const reqNo = new Map(c360.requirements.map((r: any) => [String(r.id), r.requirementNo]));
+    const events = buildTimeline(
+      {
+        followUps: c360.followUps,
+        requirements: c360.requirements,
+        proposals: c360.proposals,
+        quotations: c360.quotations,
+        contracts: c360.contracts,
+        projects: c360.projects,
+        tickets: c360.tickets,
+        documents: c360.documents,
+        logs: logs.map((l: any) => ({ ...l, requirementNo: reqNo.get(String(l.requirementId)) })),
+        tasks,
+        payments: payments.map((p: any) => {
+          const c: any = contractNo.get(String(p.contractId));
+          return { ...p, contractNo: c?.contractNo, currency: c?.currency };
+        }),
+        changes: changes.map((ch: any) => ({ ...ch, refNo: refNo.get(String(ch.objectId)) })),
+        users: new Map(userRows.map((u: any) => [String(u.id), u.nickname || u.username])),
+      },
+      limit,
+    );
+    const counts: Record<string, number> = {};
+    for (const e of events) counts[e.group] = (counts[e.group] || 0) + 1;
+    return { events, counts };
+  }
+
+  /**
+   * 粘贴的邮件 / 微信聊天 → 沟通记录草稿（不直接保存，给人核对后再存）。
+   * 先用规则抽（邮件头、聊天格式、下一步句子），大模型可用时再让它整理成摘要与字段；大模型失败就用规则结果。
+   */
+  async parseFollowUp(customerId: string, text: string, user: CurrentUser): Promise<FollowUpDraft & { aiUsed: boolean }> {
+    await this.assertCustomerAccessible(customerId, user);
+    const raw = String(text || '').trim();
+    if (!raw) throw new BadRequestException('请粘贴邮件或聊天内容');
+    const rule = parseFollowUpText(raw);
+    try {
+      const reply = await this.aiService.chat(
+        [
+          {
+            role: 'system',
+            content:
+              '你是销售助理。把用户粘贴的客户邮件或聊天记录整理成一条沟通记录，只输出 JSON，不要解释。字段：' +
+              'method(邮件/微信/电话/拜访/会议/展会 之一), followUpAt(沟通日期 YYYY-MM-DD，原文没有就空串), ' +
+              'participants(我方参与人), customerParticipants(客户方参与人), content(200 字内中文摘要：客户说了什么、我方答复了什么), ' +
+              'focusPoints(客户关注点，一句话), nextAction(下一步行动，一句话), deadline(下一步截止日期 YYYY-MM-DD，没有就空串)。' +
+              '只依据原文，不要编造；英文原文也用中文写摘要。',
+          },
+          { role: 'user', content: raw.slice(0, 8000) },
+        ],
+        'requirement',
+      );
+      const m = reply.match(/\{[\s\S]*\}/);
+      if (!m) return { ...rule, aiUsed: false };
+      const ai = JSON.parse(m[0]);
+      const date = (v: any) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? new Date(`${v.slice(0, 10)}T12:00:00`).toISOString() : null);
+      const methods = ['邮件', '微信', '电话', '拜访', '会议', '展会'];
+      return {
+        method: methods.includes(ai.method) ? ai.method : rule.method,
+        followUpAt: date(ai.followUpAt) || rule.followUpAt,
+        participants: String(ai.participants || rule.participants || ''),
+        customerParticipants: String(ai.customerParticipants || rule.customerParticipants || ''),
+        // 摘要放前面、原文附后：摘要方便扫读，原文留作依据
+        content: ai.content ? `${String(ai.content).trim()}
+
+—— 原文 ——
+${rule.content}`.slice(0, 6000) : rule.content,
+        focusPoints: String(ai.focusPoints || rule.focusPoints || ''),
+        nextAction: String(ai.nextAction || rule.nextAction || ''),
+        deadline: date(ai.deadline),
+        aiUsed: true,
+      };
+    } catch {
+      return { ...rule, aiUsed: false };
+    }
+  }
+
+  /**
    * 客户 360 视图。
    * 入口有客户级 canAccess 校验，但子记录（需求/方案/报价/项目/文档）可能比客户更严格——
    * 之前一次性 find 全部返回，能看客户的人就能看到该客户所有 private 子记录。
@@ -510,11 +754,11 @@ export class CustomersService {
 
     const wonProjects = visibleProjects.filter((p: any) => p.dealStage === 'won');
     const totalQuotationAmount = visibleQuotations.reduce(
-      (sum, q: any) => sum + Number(q.amount || 0),
+      (sum, q: any) => sum + toCny(q.amount, q.currency, q.exchangeRate),
       0,
     );
     const totalContractAmount = visibleContracts.reduce(
-      (sum, c: any) => sum + Number(c.amount || 0),
+      (sum, c: any) => sum + toCny(c.amount, c.currency, c.exchangeRate),
       0,
     );
 

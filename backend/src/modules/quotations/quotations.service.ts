@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { draftItems } from './quotation-draft';
+import { estimateCost, CostEstimate } from './quotation-cost';
+import { loadRates } from '../../common/utils/currency.util';
 import { BusinessTrashService } from '../recycle-bin/business-trash.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
@@ -167,7 +169,7 @@ export class QuotationsService {
    * 现在：项目名称 = 方案标题；明细按需求产品类型从产品库带出（规则见 quotation-draft.ts）；
    * 金额自动合计；付款/交货/质保取该客户上一份报价的条款作默认值（没有就留空）。
    */
-  async draftFromProposal(proposalId: string) {
+  async draftFromProposal(proposalId: string, user?: CurrentUser) {
     const m = this.quotationRepository.manager;
     const prop: any = await m
       .createQueryBuilder()
@@ -210,11 +212,25 @@ export class QuotationsService {
       }
       return { ...x, priceList };
     });
-    const items = draftItems({ category: req?.templateCategory, text }, parsed);
+    const drafted = draftItems({ category: req?.templateCategory, text }, parsed);
+
+    // 成本：按 型号价格表成本价 → 映射的供应商采购价 → BOM 依次带出（见 quotation-cost.ts）
+    const costVisible = this.permissionService.canViewCost(user);
+    const items = await Promise.all(
+      drafted.map(async (it) => {
+        if (!it.productId) return it;
+        const est = await this.costFor(it.productId, it.specification);
+        if (est.cost == null) return { ...it, costMissing: true };
+        return costVisible
+          ? { ...it, cost: est.cost, costSource: est.label, supplierProductId: est.supplierProductId, supplierId: est.supplierId, supplierName: est.supplierName }
+          : it; // 无成本权限：保存时由服务端补成本，草稿里不下发
+      }),
+    );
 
     const last: any = prop.customerId
       ? await this.quotationRepository.findOne({ where: { customerId: prop.customerId }, order: { createdAt: 'DESC' } as any })
       : null;
+    const currencyDefaults = await this.currencyDefaults(prop.customerId, last);
     return {
       projectName: prop.title || req?.title || '',
       customerId: prop.customerId,
@@ -224,7 +240,163 @@ export class QuotationsService {
       deliveryDays: last?.deliveryDays ?? null,
       warrantyMonths: last?.warrantyMonths ?? null,
       termsFrom: last?.paymentTerms || last?.deliveryDays || last?.warrantyMonths ? last.quotationNo : null,
+      costVisible,
+      ...currencyDefaults,
     };
+  }
+
+  /**
+   * 新报价的币种 / 语言默认值：该客户上一份报价用什么就沿用；没有时海外客户默认美元英文、国内人民币中文。
+   * 同时下发当前参考汇率，前端切换币种时自动填汇率（可改）。
+   */
+  private async currencyDefaults(customerId: string | null | undefined, last: Quotation | null) {
+    const rates = await loadRates(this.quotationRepository.manager);
+    let overseas = false;
+    if (customerId) {
+      const c: any = await this.customerRepository.findOne({ where: { id: customerId } });
+      overseas = !!c && (c.region === '海外' || (!!c.country && !/^中国/.test(c.country)));
+    }
+    const currency = (last as any)?.currency || (overseas ? 'USD' : 'CNY');
+    const language = (last as any)?.language || (overseas ? 'en' : 'zh');
+    return {
+      currency,
+      language,
+      exchangeRate: currency === 'CNY' ? null : rates[currency] ?? null,
+      rates,
+      overseas,
+    };
+  }
+
+  /**
+   * 某产品（某型号）的成本估算：报价弹窗选产品时调用，草稿与保存时服务端也用它补成本。
+   */
+  async costFor(productId: string, model?: string | null): Promise<CostEstimate> {
+    const m = this.quotationRepository.manager;
+    const product: any = await m
+      .createQueryBuilder()
+      .select(['x.id AS id', 'x."priceList" AS "priceList"'])
+      .from('products', 'x')
+      .where('CAST(x.id AS TEXT) = :id', { id: productId })
+      .getRawOne();
+    if (!product) return { cost: null, source: null, label: '' };
+    let priceList: any = product.priceList;
+    try {
+      priceList = typeof priceList === 'string' ? JSON.parse(priceList) : priceList;
+    } catch {
+      priceList = null;
+    }
+    const sps: any[] = await m
+      .createQueryBuilder()
+      .select([
+        'sp.id AS id', 'sp."supplierId" AS "supplierId"', 's.name AS "supplierName"', 'sp."productName" AS "productName"',
+        'sp.brand AS brand', 'sp.model AS model', 'sp."priceMin" AS "priceMin"', 'sp."priceMax" AS "priceMax"', 'sp.currency AS currency',
+      ])
+      .from('supplier_products', 'sp')
+      .leftJoin('suppliers', 's', 'CAST(s.id AS TEXT) = sp."supplierId"')
+      .where('sp."productId" = :pid', { pid: productId })
+      .andWhere("(sp.status IS NULL OR sp.status = 'active')")
+      .getRawMany();
+    if (sps.length) {
+      const quotes: any[] = await m
+        .createQueryBuilder()
+        .select(['q."supplierProductId" AS "spId"', 'q."unitPrice" AS "unitPrice"', 'q.currency AS currency', 'q."quotedAt" AS "quotedAt"', 'q."createdAt" AS "createdAt"'])
+        .from('supplier_quotes', 'q')
+        .where('q."supplierProductId" IN (:...ids)', { ids: sps.map((s) => String(s.id)) })
+        .getRawMany();
+      const latest = new Map<string, any>();
+      for (const q of quotes) {
+        const t = new Date(q.quotedAt || q.createdAt).getTime();
+        const cur = latest.get(q.spId);
+        if (!cur || t > cur.t) latest.set(q.spId, { ...q, t });
+      }
+      for (const s of sps) s.latestQuote = latest.get(String(s.id)) || null;
+    }
+    const bom = await m
+      .createQueryBuilder()
+      .select(['b.cost AS cost', 'b.quantity AS quantity'])
+      .from('product_boms', 'b')
+      .where('b."productId" = :pid', { pid: productId })
+      .getRawMany();
+    const rates = await loadRates(m);
+    return estimateCost({ priceList, model, suppliers: sps, bom, rates });
+  }
+
+  /** 报价弹窗里选了产品后取成本提示（无成本权限时不返回数值） */
+  async costHint(productId: string, model: string | undefined, user: CurrentUser) {
+    if (!this.permissionService.canViewCost(user)) return { cost: null, source: null, label: '', hidden: true };
+    return this.costFor(productId, model);
+  }
+
+  /**
+   * 保存前补齐明细成本：
+   *  · 无成本权限的人看不到成本列，提交上来的行自然不带成本 —— 先按「同一产品 / 同名」沿用这张报价原有的成本，
+   *    不能因为销售改了一下数量就把采购填的成本冲掉；
+   *  · 仍为空且选了产品的行，按产品自动估算（价格表成本价 → 供应商采购价 → BOM）。
+   * 有权限的人显式填的成本原样保留。
+   */
+  private async fillItemCosts(
+    items: CreateQuotationItemDto[],
+    user: CurrentUser,
+    existing: QuotationItem[] = [],
+  ): Promise<CreateQuotationItemDto[]> {
+    const canSee = this.permissionService.canViewCost(user);
+    const out: CreateQuotationItemDto[] = [];
+    for (const it of items) {
+      const row: any = { ...it };
+      if (!canSee) {
+        delete row.cost;
+        delete row.costSource;
+        const prev = existing.find((e) => (it.productId && e.productId === it.productId) || e.name === it.name);
+        if (prev && prev.cost != null) {
+          row.cost = Number(prev.cost);
+          row.costSource = prev.costSource;
+          row.supplierProductId = prev.supplierProductId;
+          row.supplierId = prev.supplierId;
+          row.supplierName = prev.supplierName;
+        }
+      }
+      if ((row.cost === undefined || row.cost === null) && row.productId) {
+        const est = await this.costFor(row.productId, row.specification).catch(() => null);
+        if (est?.cost != null) {
+          row.cost = est.cost;
+          row.costSource = est.label;
+          row.supplierProductId = row.supplierProductId || est.supplierProductId;
+          row.supplierId = row.supplierId || est.supplierId;
+          row.supplierName = row.supplierName || est.supplierName;
+        }
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  /** 无成本权限的人：明细去掉成本与采购来源，毛利不返回 */
+  private stripCost<T extends Record<string, any>>(rows: T[]): T[] {
+    return rows.map((r) => {
+      const { cost: _c, costSource: _s, supplierProductId: _sp, supplierId: _si, supplierName: _sn, ...rest } = r as any;
+      return rest as T;
+    });
+  }
+
+  /**
+   * 币种与汇率规整：人民币单据不存汇率；外币单据没给汇率就用系统配置的参考汇率。
+   * 报价日期没填按今天（业务周期指标优先用它）。
+   */
+  private async normalizeCurrency(data: any, isCreate: boolean): Promise<void> {
+    if (data.currency !== undefined || isCreate) {
+      const cur = String(data.currency || 'CNY').toUpperCase();
+      data.currency = cur;
+      if (cur === 'CNY') data.exchangeRate = null;
+      else if (!(Number(data.exchangeRate) > 0)) {
+        const rates = await loadRates(this.quotationRepository.manager);
+        data.exchangeRate = rates[cur] ?? null;
+      }
+    }
+    if (isCreate && !data.quotedAt) {
+      const d = new Date();
+      data.quotedAt = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    if (data.quotedAt === '') data.quotedAt = null;
   }
 
   /** 报价编号继承所关联方案的流水号：PROP-2026-007 → QUO-2026-007 */
@@ -263,8 +435,11 @@ export class QuotationsService {
       where: { quotationId: id },
       order: { sortOrder: 'ASC' },
     });
-    (quotation as any).items = items;
-    (quotation as any).margin = this.calcMargin(items);
+    // 成本与毛利字段级可见：无权限的人拿到的明细没有成本列，毛利不返回
+    const costVisible = this.permissionService.canViewCost(user);
+    (quotation as any).items = costVisible ? items : this.stripCost(items);
+    (quotation as any).margin = costVisible ? this.calcMargin(items) : null;
+    (quotation as any).costVisible = costVisible;
     return quotation;
   }
 
@@ -318,7 +493,8 @@ export class QuotationsService {
    */
   async create(dto: CreateQuotationDto, user: CurrentUser): Promise<Quotation> {
     const { items, ...data } = dto;
-    const { computed, amount } = this.normalizeItems(items);
+    await this.normalizeCurrency(data, true);
+    const { computed, amount } = this.normalizeItems(await this.fillItemCosts(items || [], user));
     const skipApproval = this.permissionService.skipApproval();
 
     const saved = await this.tx.run(
@@ -399,13 +575,18 @@ export class QuotationsService {
 
     // projectName 不是报价表的列；version 已用于冲突检查，不能再赋回实体
     const { items, projectName: _pn, version: _v, ...data } = dto as any;
+    await this.normalizeCurrency(data, false);
     const wasApproved = quotation.status === 'approved';
+    // findOne 挂上的非列字段不能随实体保存回去
+    delete (quotation as any).items;
+    delete (quotation as any).margin;
+    delete (quotation as any).costVisible;
     Object.assign(quotation, data);
 
     // 明细存在时金额由服务器重算，覆盖客户端传值
     let computed: CreateQuotationItemDto[] | undefined;
     if (items?.length) {
-      const norm = this.normalizeItems(items);
+      const norm = this.normalizeItems(await this.fillItemCosts(items, user, currentItems));
       computed = norm.computed;
       quotation.amount = norm.amount;
     }
@@ -499,15 +680,24 @@ export class QuotationsService {
       where: { quotationId: id },
       order: { createdAt: 'DESC' },
     });
-    return rows.map((r) => ({
-      id: r.id,
-      version: r.version,
-      changedBy: r.changedBy,
-      note: r.note,
-      createdAt: r.createdAt,
-      snapshot: JSON.parse(r.snapshot),
-      items: r.itemsSnapshot ? JSON.parse(r.itemsSnapshot) : [],
-    }));
+    const costVisible = this.permissionService.canViewCost(user);
+    return rows.map((r) => {
+      const items = r.itemsSnapshot ? JSON.parse(r.itemsSnapshot) : [];
+      const snapshot = JSON.parse(r.snapshot);
+      if (!costVisible) {
+        delete snapshot.margin;
+        if (Array.isArray(snapshot.items)) snapshot.items = this.stripCost(snapshot.items);
+      }
+      return {
+        id: r.id,
+        version: r.version,
+        changedBy: r.changedBy,
+        note: r.note,
+        createdAt: r.createdAt,
+        snapshot,
+        items: costVisible ? items : this.stripCost(items),
+      };
+    });
   }
 
   async approve(id: string, user: CurrentUser): Promise<Quotation> {

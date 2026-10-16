@@ -213,6 +213,14 @@ export class SupplierProduct {
   @Column({ nullable: true })
   materialId: string;
 
+  /**
+   * 对应的我方产品：这条供应产品是我方哪个产品的采购来源（外购件 / 外协件）。
+   * 映射后，报价明细选了该产品就自动带出成本（供应价折人民币），毛利随之算出。
+   */
+  @Index()
+  @Column({ nullable: true })
+  productId: string;
+
   /** 结构化规格 [{name,value}]（JSON 文本），用于计算 specSignature 自动匹配物料 */
   @Column({ type: 'text', nullable: true })
   specs: string;

@@ -17,7 +17,7 @@ export default function TermsOfService() {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-ink">一、服务说明</h2>
         <div className="bg-surface border border-border rounded-lg p-4 space-y-3 text-sm text-ink-soft">
-          <p>BOYA 智能知识中心（以下简称"本系统"）是一款面向装备制造企业的 AI 驱动型业务知识库与 CRM 系统，主要功能包括：</p>
+          <p>BOYA 智能运营中心（以下简称"本系统"）是一款面向装备制造企业的 AI 驱动型业务知识库与 CRM 系统，主要功能包括：</p>
           <ul className="list-disc list-inside space-y-1 ml-4">
             <li>客户、需求、方案、报价、项目全链路管理</li>
             <li>AI 智能问答、需求结构化、方案生成</li>

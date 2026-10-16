@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { Activity, Archive, Hash, Info, ScrollText, Settings, Sparkles, DollarSign, Trash2, ShieldCheck } from 'lucide-react'
+import { Activity, Archive, Hash, Info, ScrollText, Settings, Sparkles, DollarSign, Trash2, ShieldCheck, MapPin } from 'lucide-react'
 import ZhManagedNotice from '../lib/ZhManagedNotice'
 
 const tabs = [
@@ -9,6 +9,7 @@ const tabs = [
   { path: '/settings/ai', label: 'AI 配置', icon: Sparkles },
   { path: '/settings/budget', label: 'AI 预算', icon: DollarSign },
   { path: '/settings/numbering', label: '编号规则', icon: Hash },
+  { path: '/settings/regions', label: '区域字典', icon: MapPin },
   // 回收站排在备份还原旁边：都是"数据找得回来"这一类事，用户会往一处找
   { path: '/settings/recycle-bin', label: '回收站', icon: Trash2 },
   { path: '/settings/backup', label: '备份还原', icon: Archive },

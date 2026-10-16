@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil, GripVertical } from 'lucide-react'
+import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil, GripVertical, Copy, FileSpreadsheet, FileText } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
 import { toList } from '../utils/apiList'
-import { groupByProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
+import { groupByProfession, resolveProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
 import { useProfessionNames } from '../hooks/useProfessionNames'
+import { exportSheetsToExcel, exportSectionsToWord, stamp } from '../utils/export-sheet'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -15,7 +16,7 @@ import PageLoader from '../components/PageLoader'
  * 设备配套选型表：设备 → 配件清单 → 每个配件选供应商 → 导出对照表。
  *
  * 用途：做技术方案/投标附件时，选"拉弯矫直机"自动带出它的常用配件，
- * 每行从供应管理里挑供应商（带出品牌层级/联系人/电话），一键导出
+ * 每行从供应管理里挑供应商（新厂家自动入名册），一键导出
  * 可直接复制进技术附件文档的表格。
  *
  * 持久化（全部自动，无需手动保存）：
@@ -113,6 +114,9 @@ export default function EquipmentConfig() {
   /** 专业组显示名（共享配置，设备配套/备件管理一致）与组名编辑态 */
   const { displayName, rename: renameProfession } = useProfessionNames()
   const [editingGroup, setEditingGroup] = useState<string | null>(null)
+  /** 从其他设备复制配套的弹窗 */
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [copySource, setCopySource] = useState('')
   /** 拖拽排序：拖动手柄把行插到目标行前（rows 数组序即持久化顺序） */
   const dragKeyRef = useRef<string | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
@@ -259,18 +263,27 @@ export default function EquipmentConfig() {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
   }
 
-  /** 追加一个供应商（去重）；首个供应商与供应管理精确匹配 → 带出品牌层级/联系人/电话 */
-  const addSupplier = (row: ConfigRow, name: string) => {
+  /**
+   * 追加一个供应商（去重）：
+   * · 供应管理里已有 → datalist 搜索提示选中（自动跳出）
+   * · 供应管理里没有 → 自动创建到供应管理（厂家名册），编号按规则生成，
+   *   下次任何页面搜索该厂家都能找到
+   */
+  const addSupplier = async (row: ConfigRow, name: string) => {
     const v = name.trim()
     if (!v || row.suppliers.includes(v)) return
+    setCell(row.key, { suppliers: [...row.suppliers, v] })
     const hit = (supplierPool || []).find((s) => s.name === v)
-    setCell(row.key, {
-      suppliers: [...row.suppliers, v],
-      // 联系信息只在还没填时带出（取首个命中的供应商），多选后不覆盖
-      tier: row.tier || (hit ? (({ tier1: '一线', tier2: '二线', tier3: '三线' } as Record<string, string>)[hit.tier] || hit.tier || '') : ''),
-      contact: row.contact || hit?.contactName || '',
-      phone: row.phone || hit?.phone || '',
-    })
+    if (!hit) {
+      try {
+        await supplierApi.create({ name: v })
+        queryClient.invalidateQueries({ queryKey: ['equipment-config-suppliers'] })
+        queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+        toast.success(`「${v}」不在供应管理，已自动加入厂家名册`)
+      } catch (e: any) {
+        toast.error(`「${v}」加入供应管理失败：${e?.response?.data?.message || e?.message || '未知原因'}`)
+      }
+    }
   }
 
   const removeSupplier = (row: ConfigRow, name: string) => {
@@ -301,60 +314,75 @@ export default function EquipmentConfig() {
     toast.info(`新设备「${name}」已加入清单：请添加配件行，内容会自动保存`)
   }
 
-  /** 导出对照表：只导勾选的行，4 列（序号/配件名称/供应商/备注），复制进技术附件文档 */
-  const exportSheet = () => {
-    const filled = rows.filter((r) => exportSelected.has(r.key) && (r.part.trim() || r.suppliers.length))
-    if (!filled.length) {
-      toast.warning('请先勾选要导出的配件行')
-      return
-    }
-    const esc = (v: unknown) => {
-      const s = v == null ? '' : String(v)
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }
-    const header = ['序号', '配件名称', '供应商', '备注']
-    const title = `${equipment} 配套件供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`
-    const lines = filled.map((r, i) => [i + 1, r.part, r.suppliers.join('、'), r.note].map(esc).join(','))
-    const csv = '\uFEFF' + [title, '', header.join(','), ...lines].join('\r\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${equipment}_配套供应商表_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
-    toast.success(`已导出勾选的 ${filled.length} 行，可直接复制进技术附件`)
+  /** 勾选且有效的行（各导出入口共用） */
+  const selectedFilled = () =>
+    rows.filter((r) => exportSelected.has(r.key) && (r.part.trim() || r.suppliers.length))
+
+  const rowToCells = (r: ConfigRow) => [r.part, r.suppliers.join('、'), r.note]
+
+  /** 导出 Excel：全部勾选行进一个工作表（含专业列），xlsx 按需加载 */
+  const exportExcel = async () => {
+    const filled = selectedFilled()
+    if (!filled.length) return toast.warning('请先勾选要导出的配件行')
+    await exportSheetsToExcel(
+      [
+        {
+          name: '配套件',
+          header: ['序号', '配件名称', '专业', '供应商', '备注'],
+          rows: filled.map((r, i) => [i + 1, r.part, resolveProfession(r), r.suppliers.join('、'), r.note]),
+        },
+      ],
+      `${equipment}_配套供应商表_${stamp()}.xlsx`,
+    )
+    toast.success(`已导出 ${filled.length} 行（Excel 单表）`)
   }
 
-  /** 分专业导出：勾选行按 机械/液压/电气/仪表 分组，每个专业一个 CSV（如"拉矫机_机械供应商表"） */
-  const exportByProfession = () => {
-    const filled = rows.filter((r) => exportSelected.has(r.key) && (r.part.trim() || r.suppliers.length))
-    if (!filled.length) {
-      toast.warning('请先勾选要导出的配件行')
+  /** 导出 Word：单文件，按专业分小节（HTML→.doc，双击即用 Word 打开，可直接复制进技术附件） */
+  const exportWord = () => {
+    const filled = selectedFilled()
+    if (!filled.length) return toast.warning('请先勾选要导出的配件行')
+    exportSectionsToWord(
+      `${equipment} 配套件供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`,
+      groupByProfession(filled).map((g) => ({
+        name: `${displayName(g.profession)}类配件 (${g.items.length})`,
+        header: ['序号', '配件名称', '供应商', '备注'],
+        rows: g.items.map((r, i) => [i + 1, ...rowToCells(r)]),
+      })),
+      `${equipment}_配套供应商表_${stamp()}.doc`,
+    )
+    toast.success(`已导出 Word（含 ${groupByProfession(filled).length} 个专业分组）`)
+  }
+
+  /** 分专业导出 Excel：一个工作簿、每个专业一个工作表（如"机械""液压"） */
+  const exportByProfession = async () => {
+    const filled = selectedFilled()
+    if (!filled.length) return toast.warning('请先勾选要导出的配件行')
+    const groups = groupByProfession(filled)
+    await exportSheetsToExcel(
+      groups.map((g) => ({
+        name: displayName(g.profession),
+        header: ['序号', '配件名称', '供应商', '备注'],
+        rows: g.items.map((r, i) => [i + 1, ...rowToCells(r)]),
+      })),
+      `${equipment}_分专业供应商表_${stamp()}.xlsx`,
+    )
+    toast.success(`已导出 1 个 Excel（${groups.map((g) => `${displayName(g.profession)}(${g.items.length})`).join('、')} 各一个工作表）`)
+  }
+
+  /** 从其他设备复制配套：整表带入后局部修改，避免重复录入 */
+  const copyFrom = async (source: string) => {
+    const stored = (bomConfig as StoredBom | undefined)?.[source]
+    if (!stored || !stored.length) {
+      toast.warning(`「${source}」还没有配件行，无可复制`)
       return
     }
-    const esc = (v: unknown) => {
-      const s = v == null ? '' : String(v)
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }
-    const groups = groupByProfession(filled)
-    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    groups.forEach((g, gi) => {
-      // 多文件依次下载，间隔给浏览器留出处理时间（文件名用自定义组名）
-      setTimeout(() => {
-        const pname = displayName(g.profession)
-        const header = ['序号', '配件名称', '供应商', '备注']
-        const title = `${equipment} ${pname}供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`
-        const lines = g.items.map((r, i) => [i + 1, r.part, r.suppliers.join('、'), r.note].map(esc).join(','))
-        const csv = '\uFEFF' + [title, '', header.join(','), ...lines].join('\r\n')
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `${equipment}_${pname}供应商表_${stamp}.csv`
-        a.click()
-        URL.revokeObjectURL(a.href)
-      }, gi * 450)
-    })
-    toast.success(`按专业导出 ${groups.length} 个表：${groups.map((g) => `${displayName(g.profession)}(${g.items.length})`).join('、')}`)
+    const next = stored.map((v) => toConfigRow(v))
+    // 行 key 重新生成，避免与当前行冲突
+    const rekeyed = next.map((r) => ({ ...r, key: `r${++rowSeq}` }))
+    setRows(rekeyed)
+    setExportSelected(new Set(rekeyed.map((r) => r.key)))
+    setCopyOpen(false)
+    toast.success(`已从「${source}」复制 ${rekeyed.length} 行配件，可直接局部修改`)
   }
 
   // ── 设备管理：改名 / 删除 ──
@@ -452,6 +480,9 @@ export default function EquipmentConfig() {
         <span className="text-caption text-muted self-center h-5 flex items-center" aria-live="polite">
           {autoSaved ? '✓ 已自动保存' : ''}
         </span>
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={() => { setCopySource(''); setCopyOpen(true) }} title="把其他设备的整表配套复制到当前设备，再做局部修改">
+          <Copy size={13} className="mr-0.5" /> 从其他设备复制
+        </Button>
         <Button variant="secondary" size="sm" className="!py-1.5" onClick={openManage} title="设备清单改名 / 删除 / 新增">
           <Settings2 size={13} className="mr-0.5" /> 管理设备
         </Button>
@@ -461,14 +492,40 @@ export default function EquipmentConfig() {
         }} title="内容已自动保存，此按钮为立即保存兜底">
           <Save size={13} className="mr-0.5" /> 立即保存
         </Button>
-        <Button size="sm" className="!py-1.5" onClick={exportSheet} title="导出勾选行为 4 列 CSV（序号/配件名称/供应商/备注），Excel 打开后复制进技术附件">
-          <Download size={13} className="mr-0.5" /> 导出配套表{rows.length > 0 ? ` (${[...exportSelected].filter((k) => rows.some((r) => r.key === k)).length}/${rows.length})` : ''}
+        <Button size="sm" className="!py-1.5" onClick={exportExcel} title="全部勾选行导出为一个 Excel（含专业列）">
+          <FileSpreadsheet size={13} className="mr-0.5" /> 导出 Excel{rows.length > 0 ? ` (${[...exportSelected].filter((k) => rows.some((r) => r.key === k)).length}/${rows.length})` : ''}
         </Button>
-        {/* 分专业导出：机械表/液压表/电气表/仪表表 各一个文件 */}
-        <Button variant="secondary" size="sm" className="!py-1.5" onClick={exportByProfession} title="按机械/液压/电气/仪表分组，每个专业各导一个 CSV">
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={exportWord} title="导出为 Word 文档（按专业分小节），可直接复制进技术附件">
+          <FileText size={13} className="mr-0.5" /> 导出 Word
+        </Button>
+        {/* 分专业导出：一个 Excel 工作簿、每个专业一个工作表 */}
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={exportByProfession} title="一个 Excel，每个专业各一个工作表">
           <Download size={13} className="mr-0.5" /> 分专业导出
         </Button>
       </div>
+
+      {/* 从其他设备复制配套：整表带入当前设备后局部修改 */}
+      <Modal
+        open={copyOpen}
+        onClose={() => setCopyOpen(false)}
+        title={`复制配套到「${equipment}」`}
+        size="sm"
+        cancelText="取消"
+        onConfirm={() => copySource && copyFrom(copySource)}
+        confirmText="复制"
+        confirmDisabled={!copySource || copySource === equipment}
+      >
+        <p className="text-sm text-muted mb-3">选择来源设备，其全部配件行（含供应商/专业/备注）将替换当前设备的清单，复制后可直接局部修改：</p>
+        <select value={copySource} onChange={(e) => setCopySource(e.target.value)} className="eo-input !py-1.5 !text-sm w-full" aria-label="来源设备">
+          <option value="">— 选择来源设备 —</option>
+          {equipmentNames.filter((n) => n !== equipment).map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        {copySource && copySource !== equipment && (
+          <p className="text-caption text-muted mt-2">「{copySource}」现有 {((bomConfig as StoredBom | undefined)?.[copySource] || []).length} 行配件</p>
+        )}
+      </Modal>
 
       {/* 配件-供应商对照表 */}
       <div className="eo-card p-4">
@@ -515,10 +572,7 @@ export default function EquipmentConfig() {
                   <th className="py-2 pr-2 w-10 font-normal">序号</th>
                   <th className="py-2 pr-2 font-normal">配件/部件名称</th>
                   <th className="py-2 pr-2 w-28 font-normal">专业分类</th>
-                  <th className="py-2 pr-2 font-normal">供应商（输入时提示该品类厂家）</th>
-                  <th className="py-2 pr-2 w-20 font-normal">品牌层级</th>
-                  <th className="py-2 pr-2 w-24 font-normal">联系人</th>
-                  <th className="py-2 pr-2 w-32 font-normal">电话</th>
+                  <th className="py-2 pr-2 font-normal">供应商（输入提示该品类厂家，新厂家自动入名册）</th>
                   <th className="py-2 pr-2 w-36 font-normal">备注</th>
                   <th className="py-2 w-8 font-normal" />
                 </tr>
@@ -528,7 +582,7 @@ export default function EquipmentConfig() {
                 {groupByProfession(rows).map((g) => (
                   <Fragment key={g.profession}>
                     <tr className="bg-subtle">
-                      <td colSpan={11} className="py-1.5 px-2">
+                      <td colSpan={8} className="py-1.5 px-2">
                         <span className="text-xs font-semibold text-accent-700">
                           {displayName(g.profession)}类配件 ({g.items.length})
                         </span>
@@ -668,15 +722,6 @@ export default function EquipmentConfig() {
                         </div>
                       </td>
                       <td className="py-1.5 pr-2">
-                        <input value={r.tier} onChange={(e) => setCell(r.key, { tier: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" />
-                      </td>
-                      <td className="py-1.5 pr-2">
-                        <input value={r.contact} onChange={(e) => setCell(r.key, { contact: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" />
-                      </td>
-                      <td className="py-1.5 pr-2">
-                        <input value={r.phone} onChange={(e) => setCell(r.key, { phone: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" />
-                      </td>
-                      <td className="py-1.5 pr-2">
                         <input value={r.note} onChange={(e) => setCell(r.key, { note: e.target.value })} className="eo-input !py-1 !text-xs !border-transparent hover:!border-border w-full" placeholder="型号/品牌等" />
                       </td>
                       <td className="py-1.5">
@@ -696,7 +741,7 @@ export default function EquipmentConfig() {
                 ))}
                 {!rows.length && (
                   <tr>
-                    <td colSpan={11} className="py-6 text-center text-sm text-muted">
+                    <td colSpan={8} className="py-6 text-center text-sm text-muted">
                       该设备还没有配件行，点「添加配件行」逐行录入，内容会自动保存（切换设备后不丢）
                     </td>
                   </tr>
@@ -706,7 +751,7 @@ export default function EquipmentConfig() {
           </div>
         )}
         <p className="text-caption text-muted mt-3">
-          配件与供应商选择自动保存（切换设备/刷新前也会立即落盘）；供应商输入按配件品类过滤供应管理里的厂家，选中后自动带出品牌层级/联系人/电话。勾选行后点「导出配套表」导出 4 列表格（序号/配件名称/供应商/备注），Excel 打开后直接复制进技术附件文档。
+          配件与供应商选择自动保存；供应商输入按配件品类提示供应管理里的厂家，名册里没有的新厂家回车即自动加入供应管理。勾选行后点「导出配套表」导出 4 列表格（序号/配件名称/供应商/备注），Excel 打开后直接复制进技术附件文档。
         </p>
       </div>
 

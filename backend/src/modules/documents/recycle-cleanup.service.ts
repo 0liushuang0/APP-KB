@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RecycleBinService } from '../recycle-bin/recycle-bin.service';
+import { JobLockService } from '../../common/services/job-lock.service';
 
 /**
  * 回收站过期清理。
@@ -20,7 +21,19 @@ export class RecycleCleanupService implements OnModuleInit, OnModuleDestroy {
   /** 每 6 小时扫一次；单机产品不常关机，用 setInterval 足够（同备份调度的做法） */
   private static readonly INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-  constructor(private readonly recycleBin: RecycleBinService) {}
+  constructor(
+    private readonly recycleBin: RecycleBinService,
+    @Optional() private readonly jobLock?: JobLockService,
+  ) {}
+
+  /** 多台服务器时只让一台清理（两台同时删同一批文件会互相报错） */
+  private exclusivePurge(): Promise<unknown> {
+    if (!this.jobLock) return this.purgeExpired();
+    return this.jobLock.runExclusive('recycle-cleanup', () => this.purgeExpired(), {
+      ttlMs: 30 * 60_000,
+      minIntervalMs: 5 * 3_600_000,
+    });
+  }
 
   private get trashDir(): string {
     return path.resolve(process.cwd(), 'data', 'uploads', '.trash');
@@ -28,11 +41,11 @@ export class RecycleCleanupService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     // 启动时先跑一次：机器可能关了好几天，开机就该把过期的清掉
-    this.purgeExpired().catch((err) =>
+    this.exclusivePurge().catch((err) =>
       this.logger.warn(`回收站启动清理失败：${err?.message}`),
     );
     this.timer = setInterval(() => {
-      this.purgeExpired().catch((err) =>
+      this.exclusivePurge().catch((err) =>
         this.logger.warn(`回收站定时清理失败：${err?.message}`),
       );
     }, RecycleCleanupService.INTERVAL_MS);

@@ -34,8 +34,17 @@ export class Contract {
   @Column({ nullable: true })
   quotationId: string;
 
+  /** 合同金额（合同币种）；汇总时按 exchangeRate 折人民币 */
   @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
   amount: number;
+
+  /** 币种：从报价生成时沿用报价的币种与汇率 */
+  @Column({ type: 'varchar', default: 'CNY' })
+  currency: string;
+
+  /** 1 合同币种 = x 人民币；人民币合同为空 */
+  @Column({ type: 'decimal', precision: 14, scale: 6, nullable: true })
+  exchangeRate: number;
 
   /** 签订日期 */
   @Column({ type: 'date', nullable: true })

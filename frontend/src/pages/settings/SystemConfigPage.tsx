@@ -184,7 +184,7 @@ export default function SystemConfigPage() {
                 </div>
               ) : (
                 <div className="flex items-center justify-between">
-                  <span className="text-ink font-medium">{nameInput || 'BOYA 智能知识中心'}</span>
+                  <span className="text-ink font-medium">{nameInput || 'BOYA 智能运营中心'}</span>
                   <button onClick={() => setEditingName(true)} className="text-muted hover:text-accent-600" title={"编辑"}
                   aria-label="编辑">
                     <Pencil size={15} />

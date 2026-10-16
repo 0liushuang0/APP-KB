@@ -1093,6 +1093,9 @@ export default function ParamTemplates() {
               </div>
               <h3 className="text-base font-medium text-ink mb-1">选择左侧分类查看需求模板</h3>
               <p className="text-sm text-muted">需求模板定义了各类产品的技术参数字段</p>
+              <p className="text-sm text-muted mt-1">
+                需求资料的 AI 识别直接按这里的字段抽取：勾了「必填」的识别不到会列为缺失项、生成补问；需求没选产品类型时按资料自动判定是哪个模板
+              </p>
             </div>
           </div>
         ) : (

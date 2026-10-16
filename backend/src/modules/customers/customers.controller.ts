@@ -4,6 +4,7 @@ import { CustomersService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto, CreateContactPersonDto, UpdateContactPersonDto, CreateFollowUpDto, QueryCustomerDto } from './dto/customer.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUser as CurrentUserType } from '../../common/services/permission.service';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('客户管理')
 @Controller('customers')
@@ -13,6 +14,25 @@ export class CustomersController {
   @Get()
   findAll(@Query() query: QueryCustomerDto, @CurrentUser() user: CurrentUserType) {
     return this.customersService.findAll(query, user);
+  }
+
+  /** 区域字典 + 现有写法的归并预览（声明在 :id 之前） */
+  @Get('region-dict')
+  regionDict() {
+    return this.customersService.regionDictView();
+  }
+
+  @Roles('admin')
+  @Post('region-dict')
+  saveRegionDict(@Body() body: any) {
+    return this.customersService.saveRegionDict(body);
+  }
+
+  /** 按字典归并历史区域写法；dryRun=true 只看将要改什么 */
+  @Roles('admin')
+  @Post('region-dict/apply')
+  applyRegionDict(@Body() body: { dryRun?: boolean }) {
+    return this.customersService.applyRegionDict(body?.dryRun !== false);
   }
 
   /** 客户资料总览（左侧导航用，支持翻页）；必须声明在 :id 之前，否则被动态路由吞掉 */
@@ -37,6 +57,18 @@ export class CustomersController {
   @Get(':id/360')
   get360View(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {
     return this.customersService.getCustomer360(id, user);
+  }
+
+  /** 统一时间线：沟通、需求记录、工作任务、单据、资料、修改，按时间倒序 */
+  @Get(':id/timeline')
+  timeline(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {
+    return this.customersService.getTimeline(id, user);
+  }
+
+  /** 粘贴邮件 / 聊天记录 → 沟通记录草稿（不保存，给人核对） */
+  @Post(':id/follow-ups/parse')
+  parseFollowUp(@Param('id') id: string, @Body() body: { text: string }, @CurrentUser() user: CurrentUserType) {
+    return this.customersService.parseFollowUp(id, body?.text, user);
   }
 
   @Post(':id/similar')
@@ -103,5 +135,10 @@ export class CustomersController {
   @Post('follow-ups')
   addFollowUp(@Body() dto: CreateFollowUpDto, @CurrentUser() user: CurrentUserType) {
     return this.customersService.addFollowUp(dto, user);
+  }
+
+  @Delete('follow-ups/:followUpId')
+  removeFollowUp(@Param('followUpId') followUpId: string, @CurrentUser() user: CurrentUserType) {
+    return this.customersService.removeFollowUp(followUpId, user);
   }
 }

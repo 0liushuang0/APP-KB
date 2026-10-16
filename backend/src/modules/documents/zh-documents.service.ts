@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnApplicationBootstrap, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { JobLockService } from '../../common/services/job-lock.service';
 import { recordAutomation } from '../../common/utils/automation-log';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -38,6 +39,7 @@ export class ZhDocumentsService implements OnApplicationBootstrap {
     @InjectRepository(ApprovalFlow) private readonly flows: Repository<ApprovalFlow>,
     private readonly documents: DocumentsService,
     private readonly permissions: PermissionService,
+    @Optional() private readonly jobLock?: JobLockService,
   ) {}
 
   async importItems(items: ZhDocumentItemDto[]) {
@@ -149,7 +151,11 @@ export class ZhDocumentsService implements OnApplicationBootstrap {
   onApplicationBootstrap(): void {
     if ((process.env.ZH_KB_COLLAPSE_REVISIONS ?? 'true') === 'false') return;
     const t = setTimeout(() => {
-      void this.serialize(() => this.collapseBacklog()).catch((error) =>
+      const run = () => this.serialize(() => this.collapseBacklog());
+      void (this.jobLock
+        ? this.jobLock.runExclusive('zh-collapse-revisions', run, { ttlMs: 30 * 60_000, minIntervalMs: 10 * 60_000 })
+        : run()
+      ).catch((error) =>
         this.logger.warn(`收拢历史待审版本失败：${error instanceof Error ? error.message : error}`),
       );
     }, 60_000);

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Optional,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -32,6 +33,7 @@ import {
   ArchiveType,
 } from '../../common/services/file-archive.service';
 import { TransactionService } from '../../common/services/transaction.service';
+import { JobLockService } from '../../common/services/job-lock.service';
 import { OFFICE_ZIP_EXTS, slimOfficeFile } from '../../common/utils/office-slim.util';
 import {
   hasRealParsedText,
@@ -72,11 +74,18 @@ export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
 
   onApplicationBootstrap(): void {
     if (process.env.DOC_REPARSE === 'false' || process.env.NODE_ENV === 'test') return;
+    // 多台服务器同时启动时各任务只让一台做
+    const exclusive = (name: string, fn: () => Promise<unknown>, ttlMs: number) =>
+      this.jobLock ? this.jobLock.runExclusive(name, fn, { ttlMs, minIntervalMs: 10 * 60_000 }) : fn();
     setTimeout(() => {
-      this.reparseFailedDocuments().catch((e) => this.logger.warn(`历史资料重解析中止: ${e?.message}`));
+      exclusive('doc-reparse', () => this.reparseFailedDocuments(), 3 * 3_600_000).catch((e) =>
+        this.logger.warn(`历史资料重解析中止: ${e?.message}`),
+      );
     }, 90_000).unref?.();
     setTimeout(() => {
-      this.linkCustomersFromChain().catch((e) => this.logger.warn(`资料归属客户补齐中止: ${e?.message}`));
+      exclusive('doc-link-customers', () => this.linkCustomersFromChain(), 30 * 60_000).catch((e) =>
+        this.logger.warn(`资料归属客户补齐中止: ${e?.message}`),
+      );
     }, 30_000).unref?.();
   }
 
@@ -241,6 +250,7 @@ export class DocumentsService implements OnModuleInit, OnApplicationBootstrap {
     private permissionQuery: PermissionQueryService,
     private readonly tx: TransactionService,
     private readonly recycleBin: RecycleBinService,
+    @Optional() private readonly jobLock?: JobLockService,
   ) {
     this.uploadDir = path.resolve(process.cwd(), 'data', 'uploads', 'documents');
     this.knowledgeDir = path.resolve(process.cwd(), 'data', 'uploads', 'knowledge');

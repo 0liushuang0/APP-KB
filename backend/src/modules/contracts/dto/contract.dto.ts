@@ -21,6 +21,14 @@ export class CreateContractDto {
   amount?: number;
 
   @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
+
+  @IsOptional()
   @IsDateString()
   signedDate?: string;
 

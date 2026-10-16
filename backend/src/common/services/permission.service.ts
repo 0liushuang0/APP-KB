@@ -19,6 +19,9 @@ export interface CurrentUser {
   isSystemAdmin: boolean;
 }
 
+/** 可以看成本价与毛利的角色 */
+export const COST_VIEW_ROLES = ['admin', 'manager', 'sales_lead', 'purchase', 'approver', 'dept_admin'];
+
 @Injectable()
 export class PermissionService {
   constructor(private configService: ConfigService) {}
@@ -73,6 +76,17 @@ export class PermissionService {
     if (!user) return false;
     if (user.isSystemAdmin) return true;
     return user.roles.includes('admin') || user.roles.includes('approver');
+  }
+
+  /**
+   * 成本价、毛利属于字段级敏感信息：单机版、系统管理员、管理层/销售主管/采购/审批人/部门管理员可见；
+   * 其他角色看得到报价单本身，但看不到成本列与毛利（接口直接不返回，前端也不显示）。
+   */
+  canViewCost(user: CurrentUser | undefined): boolean {
+    if (this.isSingleMode()) return true;
+    if (!user) return false;
+    if (user.isSystemAdmin) return true;
+    return (user.roles || []).some((r) => COST_VIEW_ROLES.includes(r));
   }
 
   skipApproval(): boolean {

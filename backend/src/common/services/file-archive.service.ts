@@ -255,7 +255,9 @@ export class FileArchiveService {
 
       const files = fs.readdirSync(typeDir);
       for (const file of files) {
-        const filePath = path.join(typeDir, file);
+        const filePath = path.resolve(typeDir, file);
+        // readdir 返回的名字理论受控，仍断言在目录内（防符号链接等意外）
+        if (!filePath.startsWith(path.resolve(typeDir) + path.sep)) continue;
         const fileStats = fs.statSync(filePath);
         if (fileStats.isFile()) {
           stats.totalFiles++;

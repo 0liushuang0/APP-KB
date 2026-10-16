@@ -46,7 +46,7 @@ export default function OnboardingWizard() {
   const steps = [
     {
       icon: Zap,
-      title: '欢迎使用 BOYA 智能知识中心',
+      title: '欢迎使用 BOYA 智能运营中心',
       desc: '系统已就绪，接下来配置 AI 能力让知识库更智能。',
       action: () => setStep(1),
       actionLabel: '开始配置',

@@ -662,10 +662,19 @@ export class AiService {
     }
   }
 
+  /**
+   * 需求结构化识别。
+   * opts.template：需求已选产品类型时传该类型的需求模板（按它的字段抽取）；
+   * opts.candidates：没选时传全部需求模板，由 AI 服务按资料内容判定类型。
+   */
   async structureRequirement(
     title: string,
     description: string,
     sources: any[],
+    opts: {
+      template?: { category: string; fields: any[] } | null;
+      candidates?: Array<{ category: string; fields: any[] }>;
+    } = {},
   ): Promise<any> {
     try {
       // 资料长、走大模型时常要 40–90 秒；默认 60 秒超时会把正常的识别判成"服务不可用"
@@ -673,6 +682,8 @@ export class AiService {
         title,
         description,
         sources,
+        template: opts.template || undefined,
+        candidates: opts.candidates || [],
       }, { timeout: 180_000 });
       return res.data;
     } catch (err) {

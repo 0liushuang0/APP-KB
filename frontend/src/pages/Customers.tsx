@@ -68,6 +68,7 @@ const initialForm = {
   level: '',
   businessStatus: '活跃',
   region: '',
+  country: '',
   creditCode: '',
   address: '',
   website: '',
@@ -247,6 +248,7 @@ export default function Customers() {
       level: (row as any).level || '',
       businessStatus: (row as any).businessStatus || '',
       region: (row as any).region || '',
+      country: (row as any).country || '',
       creditCode: (row as any).creditCode || '',
       address: row.address || '',
       website: row.website || '',
@@ -694,7 +696,27 @@ export default function Customers() {
           <FormSelect label="所属行业" options={INDUSTRY_OPTIONS} value={form.industry} onChange={(e) => setValue('industry', e.target.value)} error={errors.industry} required />
           <FormSelect label="客户等级" options={CUSTOMER_LEVEL_OPTIONS} value={form.level} onChange={(e) => setValue('level', e.target.value)} />
           <FormSelect label="业务状态" options={BUSINESS_STATUS_OPTIONS} value={form.businessStatus} onChange={(e) => setValue('businessStatus', e.target.value)} />
-          <FormSelect label="所属区域" options={REGION_OPTIONS} value={form.region} onChange={(e) => setValue('region', e.target.value)} />
+          <FormSelect
+            label="所属区域"
+            options={!form.region || REGION_OPTIONS.some((o) => o.value === form.region) ? REGION_OPTIONS : [{ value: form.region, label: `${form.region}（保存时按区域字典归并）` }, ...REGION_OPTIONS]}
+            value={form.region}
+            onChange={(e) => setValue('region', e.target.value)}
+          />
+          {form.region === '海外' && (
+            <FormInput
+              label="国家/地区"
+              list="country-options"
+              value={(form as any).country || ''}
+              onChange={(e) => setValue('country' as any, e.target.value)}
+              placeholder="如 印度、俄罗斯"
+              helper="海外客户新建报价默认美元英文报价单"
+            />
+          )}
+          <datalist id="country-options">
+            {['印度', '俄罗斯', '巴基斯坦', '巴西', '越南', '印度尼西亚', '土耳其', '伊朗', '哈萨克斯坦', '泰国', '马来西亚', '沙特阿拉伯', '阿联酋', '墨西哥'].map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
           <FormSelect label="企业规模" options={SCALE_OPTIONS} value={form.scale} onChange={(e) => setValue('scale', e.target.value)} />
         </FieldGrid>
         </FormSection>
@@ -920,7 +942,10 @@ export default function Customers() {
                   items={[
                     { label: '客户类型', value: (detailQuery.data as any)?.customerType || '—' },
                     { label: '企业规模', value: detailQuery.data?.scale || '—' },
-                    { label: '所属区域', value: (detailQuery.data as any)?.region || '—' },
+                    {
+                      label: '所属区域',
+                      value: [(detailQuery.data as any)?.region, (detailQuery.data as any)?.country].filter(Boolean).join(' · ') || '—',
+                    },
                     { label: '负责销售', value: (detailQuery.data as any)?.salesPerson || '—' },
                     { label: '首次合作', value: (detailQuery.data as any)?.firstCooperationDate ? new Date((detailQuery.data as any).firstCooperationDate).toLocaleDateString('zh-CN') : '—' },
                   ]}

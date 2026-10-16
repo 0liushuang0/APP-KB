@@ -5,6 +5,7 @@ import { Project, ProjectRisk, ProjectStage } from './entities/project.entity';
 import { evaluateHealth } from './project-health';
 import { NotificationsService } from '../notifications/notifications.service';
 import { recordAutomation } from '../../common/utils/automation-log';
+import { JobLockService } from '../../common/services/job-lock.service';
 
 /**
  * 项目健康度每日重算。
@@ -12,6 +13,7 @@ import { recordAutomation } from '../../common/utils/automation-log';
  * 健康度会随时间变化（今天还绿，过了计划完工日就该红），只在编辑时算等于永远不变。
  * 启动 1 分钟后跑一次，之后每 24 小时一次；新变红的项目给负责人发一条通知。
  * PROJECT_HEALTH_SCHEDULER=false 可关闭。
+ * 多台服务器共用数据库时经任务锁保证全集群每天只算一次、只发一次通知。
  */
 @Injectable()
 export class ProjectHealthScheduler implements OnApplicationBootstrap, OnModuleDestroy {
@@ -23,12 +25,17 @@ export class ProjectHealthScheduler implements OnApplicationBootstrap, OnModuleD
     @InjectRepository(ProjectStage) private readonly stages: Repository<ProjectStage>,
     @InjectRepository(ProjectRisk) private readonly risks: Repository<ProjectRisk>,
     private readonly notifications: NotificationsService,
+    private readonly jobLock: JobLockService,
   ) {}
 
   onApplicationBootstrap(): void {
     if (process.env.PROJECT_HEALTH_SCHEDULER === 'false' || process.env.NODE_ENV === 'test') return;
-    const first = setTimeout(() => void this.runOnce().catch((e) => this.logger.warn(`健康度重算失败：${e?.message}`)), 60_000);
-    const every = setInterval(() => void this.runOnce().catch((e) => this.logger.warn(`健康度重算失败：${e?.message}`)), 24 * 3_600_000);
+    const tick = () =>
+      void this.jobLock
+        .runExclusive('project-health', () => this.runOnce(), { ttlMs: 30 * 60_000, minIntervalMs: 23 * 3_600_000 })
+        .catch((e) => this.logger.warn(`健康度重算失败：${e?.message}`));
+    const first = setTimeout(tick, 60_000);
+    const every = setInterval(tick, 24 * 3_600_000);
     first.unref?.();
     every.unref?.();
     this.timers.push(first, every);

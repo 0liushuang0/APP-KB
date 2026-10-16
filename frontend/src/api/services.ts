@@ -2,6 +2,7 @@ import apiClient from './client'
 import type { PaginatedResponse, Material } from '../types'
 import type {
   Customer,
+  CustomerTimelineEvent,
   Proposal,
   Quotation,
   Contract,
@@ -46,6 +47,18 @@ export const customerApi = {
     apiClient.get<Customer[] | PaginatedResponse<Customer>>('/customers', { params }).then((res) => res.data),
   get: (id: string) => apiClient.get<Customer>(`/customers/${id}`).then((res) => res.data),
   get360: (id: string) => apiClient.get<Customer360>(`/customers/${id}/360`).then((res) => res.data),
+  /** 统一时间线：沟通、需求记录、工作任务、单据、资料、修改 */
+  timeline: (id: string) =>
+    apiClient.get<{ events: CustomerTimelineEvent[]; counts: Record<string, number> }>(`/customers/${id}/timeline`).then((res) => res.data),
+  /** 粘贴邮件 / 聊天 → 沟通记录草稿（不保存） */
+  parseFollowUp: (id: string, text: string) =>
+    apiClient.post<any>(`/customers/${id}/follow-ups/parse`, { text }, { timeout: 120_000 }).then((res) => res.data),
+  removeFollowUp: (followUpId: string) => apiClient.delete(`/customers/follow-ups/${followUpId}`).then((res) => res.data),
+  /** 区域字典 + 现有写法归并预览 */
+  regionDict: () => apiClient.get<any>('/customers/region-dict').then((res) => res.data),
+  saveRegionDict: (dict: any) => apiClient.post<any>('/customers/region-dict', dict).then((res) => res.data),
+  /** 按字典归并历史区域写法；dryRun=true 只看将要改什么 */
+  applyRegionDict: (dryRun: boolean) => apiClient.post<any>('/customers/region-dict/apply', { dryRun }).then((res) => res.data),
   /** 客户资料总览：一页客户 + 各家分阶段资料数（客户资料页左侧导航，支持翻页） */
   docOverview: (params?: { keyword?: string; limit?: number; page?: number }) =>
     apiClient.get('/customers/doc-overview', { params }).then((res) => res.data),
@@ -113,6 +126,14 @@ export const quotationApi = {
   /** 方案 → 报价草稿：项目名称、按需求产品类型带出的明细（含理由）、上一份报价的商务条款 */
   draftFromProposal: (proposalId: string) =>
     apiClient.get<any>(`/quotations/draft-from-proposal/${proposalId}`).then((res) => res.data),
+  /** 选了产品（和型号）后的成本提示：型号价格表成本价 → 映射的供应商采购价 → BOM */
+  costHint: (productId: string, model?: string) =>
+    apiClient
+      .get<{ cost: number | null; source: string | null; label: string; supplierProductId?: string; supplierName?: string; hidden?: boolean }>(
+        '/quotations/cost-hint',
+        { params: { productId, model: model || undefined } },
+      )
+      .then((res) => res.data),
 }
 
 export const contractApi = {
@@ -218,6 +239,11 @@ export const supplierProductApi = {
     apiClient.post<SupplierQuote>(`/supplier-products/${id}/quotes`, dto).then((res) => res.data),
   priceHistory: (id: string) =>
     apiClient.get<SupplierQuote[]>(`/supplier-products/${id}/price-history`).then((res) => res.data),
+  /** 给我方产品推荐可能的采购来源（名称相似、尚未映射的供应产品） */
+  suggestForProduct: (productId: string) =>
+    apiClient
+      .get<Array<SupplierProduct & { score: number }>>(`/supplier-products/suggest-for-product/${productId}`)
+      .then((res) => res.data),
 }
 
 export const projectApi = {
