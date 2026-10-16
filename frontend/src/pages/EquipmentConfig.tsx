@@ -6,7 +6,7 @@ import { supplierApi, systemConfigApi } from '../api/services'
 import { toList } from '../utils/apiList'
 import { groupByProfession, resolveProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
 import { useProfessionNames } from '../hooks/useProfessionNames'
-import { exportSheetsToExcel, exportSectionsToWord, stamp } from '../utils/export-sheet'
+import { exportSheetsToExcel, exportSectionsToWordDocx, stamp } from '../utils/export-sheet'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -75,8 +75,8 @@ interface ConfigRow {
   note: string
 }
 
-/** 持久化形态：只存业务字段；兼容旧格式（supplierName 单值字符串、纯配件名字符串） */
-type StoredRow = Partial<Omit<ConfigRow, 'key'> & { supplierName?: string }>
+/** 持久化形态：业务字段 + 行 key（保存/载入复用同一 key，防止自动保存重放时输入框被重建打断输入） */
+type StoredRow = Partial<Omit<ConfigRow, never> & { supplierName?: string }>
 type StoredBom = Record<string, Array<string | StoredRow>>
 
 let rowSeq = 0
@@ -91,15 +91,19 @@ const newRow = (part = ''): ConfigRow => ({
   note: '',
 })
 
-const toConfigRow = (v: string | StoredRow): ConfigRow =>
-  typeof v === 'string'
-    ? newRow(v)
-    : {
-        ...newRow(),
-        ...v,
-        // 兼容旧的单值 supplierName 字符串
-        suppliers: v.suppliers ?? (v.supplierName ? [v.supplierName] : []),
-      }
+const toConfigRow = (v: string | StoredRow): ConfigRow => {
+  if (typeof v === 'string') return newRow(v)
+  const base = newRow()
+  return {
+    ...base,
+    ...v,
+    // 行 key 持久化复用：自动保存 → 刷新配置 → 载入重放时 React 按 key 复用 DOM，
+    // 输入框不会卸载重建（否则打字到一半被重置，只留下第一个字符）
+    key: (v as any).key || base.key,
+    // 兼容旧的单值 supplierName 字符串
+    suppliers: v.suppliers ?? (v.supplierName ? [v.supplierName] : []),
+  }
+}
 
 export default function EquipmentConfig() {
   const queryClient = useQueryClient()
@@ -188,8 +192,14 @@ export default function EquipmentConfig() {
   // 把该设备的配件清空写库（刷新页面后"配件全部丢失"的根因）。
   // 置 skipNextSave：载入重放的行不算用户编辑，不回写。
   const skipNextSaveRef = useRef(false)
+  const lastLoadedEquipRef = useRef<string | null>(null)
   useEffect(() => {
     if (bomConfig === undefined) return
+    // 自动保存回写会触发 refetch：服务器数据就是我们 600ms 前写进去的，
+    // 此时重放 setRows 会在打字间隙覆盖输入（表现为只打出第一个字母）。
+    // 只有切换设备或首次载入才重放；自动保存路径的数据本来就在本地 state 里。
+    if (lastLoadedEquipRef.current === equipment) return
+    lastLoadedEquipRef.current = equipment
     const stored = (bomConfig as StoredBom)?.[equipment]
     const next = (stored || []).map(toConfigRow)
     skipNextSaveRef.current = true
@@ -230,7 +240,8 @@ export default function EquipmentConfig() {
   const persistCurrent = async (rs: ConfigRow[], equip: string) => {
     // 配置未就绪不写；设备不在当前配置（刚被删除）不写 —— 写回即删除被撤销
     if (!bomRef.current || !Object.prototype.hasOwnProperty.call(bomRef.current, equip)) return
-    const stripped: StoredRow[] = rs.map(({ key: _key, ...rest }) => rest)
+    // key 一并保存：载入重放时复用，输入不被自动保存打断
+    const stripped: StoredRow[] = rs.map((r) => ({ ...r }))
     await persistBom({ ...bomRef.current, [equip]: stripped }, true)
   }
   useEffect(() => {
@@ -385,7 +396,7 @@ export default function EquipmentConfig() {
   const exportWord = () => {
     const filled = selectedFilled()
     if (!filled.length) return toast.warning('请先勾选要导出的配件行')
-    exportSectionsToWord(
+    exportSectionsToWordDocx(
       `${equipment} 配套件供应商表（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`,
       groupByProfession(filled).map((g) => ({
         name: `${displayName(g.profession)}类配件 (${g.items.length})`,
@@ -531,7 +542,7 @@ export default function EquipmentConfig() {
           <Settings2 size={13} className="mr-0.5" /> 管理设备
         </Button>
         <Button variant="secondary" size="sm" className="!py-1.5" onClick={async () => {
-          const stripped: StoredRow[] = rows.map(({ key: _key, ...rest }) => rest)
+          const stripped: StoredRow[] = rows.map((r) => ({ ...r }))
           await persistBom({ ...(bomConfig as StoredBom), [equipment]: stripped })
         }} title="内容已自动保存，此按钮为立即保存兜底">
           <Save size={13} className="mr-0.5" /> 立即保存

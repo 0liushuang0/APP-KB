@@ -50,6 +50,7 @@ import ErrorState from '../components/ErrorState'
 import EmptyState from '../components/EmptyState'
 import KeyValueList from '../components/KeyValueList'
 import ParamTable, { type ParamField } from '../components/ParamTable'
+import SpecSummary, { groupParamsByLabel, type SpecExtras } from '../components/SpecSummary'
 import CalcRunner from '../components/CalcRunner'
 import CalcSheetList from '../components/CalcSheetList'
 import EntityFileUpload from '../components/EntityFileUpload'
@@ -352,6 +353,25 @@ export default function RequirementDetail() {
       return { review: false, sources: [] as string[] }
     }
   }, [detail?.structuredSpec])
+  /** 识别结果里的文字部分：摘要/特殊要求/执行标准/风险（原来只送 AI 不上屏） */
+  const specExtras = useMemo<SpecExtras>(() => {
+    try {
+      const sp = detail?.structuredSpec ? JSON.parse(detail.structuredSpec) : null
+      const card = sp?.card ?? sp
+      const arr = (v: unknown): string[] =>
+        Array.isArray(v) ? v.map((x) => (typeof x === 'string' ? x : String((x as any)?.text ?? x ?? ''))).filter(Boolean) : []
+      return {
+        summary: typeof card?.summary === 'string' ? card.summary : undefined,
+        specialRequirements: arr(card?.specialRequirements ?? sp?.specialRequirements),
+        standards: arr(card?.standards ?? sp?.standards),
+        risks: arr(card?.risks ?? sp?.risks),
+        productType: typeof (card?.productType ?? sp?.productType) === 'string' ? (card?.productType ?? sp?.productType) : undefined,
+      }
+    } catch {
+      return {}
+    }
+  }, [detail?.structuredSpec])
+
   const confirmSpecMutation = useMutation({
     mutationFn: () => requirementApi.confirmSpec(id!),
     onSuccess: () => {
@@ -825,7 +845,28 @@ export default function RequirementDetail() {
                     </span>
                   )}
                 </div>
-                <ParamTable fields={fields} onEdit={editField} />
+                {/* 摘要/特殊要求/执行标准/风险 的规范分区（此前不上屏，只在 AI 上下文里） */}
+                <SpecSummary extras={specExtras} />
+                {/*
+                  无模板分组的识别结果按参数名智能归组（材料/几何/性能/结构），
+                  已有分组的走 ParamTable 自带分组 —— 两者都收进带组标题的可折叠卡片
+                */}
+                {(() => {
+                  // 已有模板分组 → ParamTable 自带分组；无分组 → 按参数名智能归组
+                  const smart = groupParamsByLabel(fields)
+                  if (!smart.length) return <ParamTable fields={fields} onEdit={editField} />
+                  return (
+                    <div className="space-y-3">
+                      {smart.map((g) => (
+                        <ParamTable
+                          key={g.name}
+                          fields={g.items.map((f) => ({ ...f, group: f.group || g.name }))}
+                          onEdit={editField}
+                        />
+                      ))}
+                    </div>
+                  )
+                })()}
               </>
             )}
           </div>

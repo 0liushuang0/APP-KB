@@ -22,6 +22,7 @@ import {
   CheckSquare,
   PencilLine,
   Download,
+  Tags,
   X,
 } from 'lucide-react'
 import { supplierApi, supplierProductApi, materialApi } from '../api/services'
@@ -216,6 +217,46 @@ export default function Suppliers() {
     isDefault: catIsDefault,
   } = useSupplierCategories()
   const [newCat, setNewCat] = useState('')
+  /** 品类管理弹窗 */
+  const [catManageOpen, setCatManageOpen] = useState(false)
+  const [catRenaming, setCatRenaming] = useState<{ from: string; to: string } | null>(null)
+
+  /**
+   * 品类改名：先加新名，把所有勾了旧名的供应商逐家更新为新名，再删旧名。
+   * 不做这一步的话改名会把供应商身上已选的品类弄丢。
+   */
+  const renameCategory = async (from: string, to: string) => {
+    const target = to.trim()
+    if (!target || target === from) { setCatRenaming(null); return }
+    if (catOptions.some((c: any) => c.value === target)) {
+      toast.error(`已存在品类「${target}」`)
+      return
+    }
+    try {
+      addCategory(target)
+      const res: any = await supplierApi.list({ pageSize: 200 })
+      let total = (res as any)?.total ?? 0
+      let all = Array.isArray(res) ? res : (res as any)?.list ?? []
+      for (let pg = 2; pg <= Math.ceil(Number(total) / 200); pg++) {
+        const nx: any = await supplierApi.list({ pageSize: 200, page: pg })
+        all = all.concat(Array.isArray(nx) ? nx : nx?.list ?? [])
+      }
+      let n = 0
+      for (const sup of all) {
+        const cats = Array.isArray(sup.productCategories) ? sup.productCategories : String(sup.productCategories || '').split(',').filter(Boolean)
+        if (cats.includes(from)) {
+          await supplierApi.update(sup.id, { productCategories: cats.map((x: string) => (x === from ? target : x)) })
+          n++
+        }
+      }
+      removeCategory(from)
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+      setCatRenaming(null)
+      toast.success(`品类「${from}」已改名「${target}」，${n} 家供应商同步更新`)
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || '改名失败')
+    }
+  }
 
   // 批量修改
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -316,6 +357,10 @@ export default function Suppliers() {
         {/* 按当前筛选导出分类表：筛好设备类别后一键成表，可直接作为附件上传归档 */}
         <Button variant="secondary" size="sm" className="!py-1 !text-sm" onClick={exportCategorySheet} title="按当前筛选导出供应商分类表（CSV，Excel 可直接打开）">
           <Download size={13} className="mr-0.5" /> 导出分类表
+        </Button>
+        {/* 品类管理：独立入口（此前只能藏在编辑弹窗里加，用户找不到） */}
+        <Button variant="secondary" size="sm" className="!py-1 !text-sm" onClick={() => setCatManageOpen(true)} title="产品类别的新增 / 改名 / 删除（改名会同步全部供应商）">
+          <Tags size={13} className="mr-0.5" /> 管理品类
         </Button>
         <Button size="sm" className="!py-1 !text-sm" onClick={() => { setEditing(null); reset(); setModalOpen(true) }}>
           <Plus size={13} className="mr-0.5" /> 新增
@@ -650,6 +695,73 @@ export default function Suppliers() {
           )}
         </div>
       </div>
+
+      {/* 品类管理：新增 / 改名（同步供应商）/ 删除 / 恢复默认 */}
+      <Modal
+        open={catManageOpen}
+        onClose={() => setCatManageOpen(false)}
+        title={`管理产品类别（${catOptions.length}）`}
+        size="sm"
+        cancelText="关闭"
+      >
+        <div className="space-y-1 max-h-72 overflow-y-auto">
+          {catOptions.map((c: any) => (
+            <div key={c.value} className="flex items-center gap-2">
+              <span className="text-xs text-muted w-5 text-right">{String(c.value).length}</span>
+              <span className="text-sm text-ink flex-1 truncate" title={`双击可改名；勾选此品类的供应商${catRenaming?.from === c.value ? '（改名中…）' : ''}`}>{c.value}</span>
+              <button
+                onClick={() => setCatRenaming({ from: c.value, to: c.value })}
+                className="text-muted hover:text-accent-600 p-1"
+                title="改名（同步全部供应商的已选品类）"
+                aria-label={`改名品类 ${c.value}`}
+              >
+                <Pencil size={14} />
+              </button>
+              <button
+                onClick={() => { removeCategory(c.value); toast.success(`已删除品类「${c.value}」（供应商身上的已选值保留不受影响）`) }}
+                className="text-muted hover:text-danger-fg p-1"
+                title="从类别清单删除（不影响已勾选该类的供应商）"
+                aria-label={`删除品类 ${c.value}`}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+        {catRenaming && (
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-divider">
+            <span className="text-caption text-muted shrink-0">{catRenaming.from} →</span>
+            <input
+              autoFocus
+              defaultValue={catRenaming.to}
+              className="eo-input !py-1 !text-sm flex-1"
+              aria-label="品类新名称"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') renameCategory(catRenaming.from, (e.target as HTMLInputElement).value)
+                if (e.key === 'Escape') setCatRenaming(null)
+              }}
+              onBlur={(e) => renameCategory(catRenaming.from, e.target.value)}
+            />
+          </div>
+        )}
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-divider">
+          <input
+            value={newCat}
+            onChange={(e) => setNewCat(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { addCategory(newCat); setNewCat('') } }}
+            placeholder="新增品类，如 整机"
+            className="eo-input !py-1 !text-sm flex-1"
+            aria-label="新增品类"
+          />
+          <Button size="sm" className="!py-1" onClick={() => { addCategory(newCat); setNewCat('') }}>添加</Button>
+          {!catIsDefault && (
+            <button onClick={() => { resetCategories(); toast.info('已恢复默认类别清单') }} className="text-caption text-muted hover:text-ink whitespace-nowrap">
+              恢复默认
+            </button>
+          )}
+        </div>
+        <p className="text-caption text-muted mt-2">品类是筛选与弹窗勾选的选项清单；改名会同步所有已勾选旧名的供应商，删除不影响已有数据。</p>
+      </Modal>
 
       {/* 新建 / 编辑 */}
       <Modal

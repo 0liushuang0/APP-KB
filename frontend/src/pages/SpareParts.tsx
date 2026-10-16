@@ -6,7 +6,7 @@ import { supplierApi, systemConfigApi } from '../api/services'
 import { toList } from '../utils/apiList'
 import { groupByProfession, resolveProfession, professionOfPart, PROFESSIONS, moveItem } from '../utils/profession'
 import { useProfessionNames } from '../hooks/useProfessionNames'
-import { exportSheetsToExcel, exportSectionsToWord, stamp } from '../utils/export-sheet'
+import { exportSheetsToExcel, exportSectionsToWordDocx, stamp } from '../utils/export-sheet'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import PageLoader from '../components/PageLoader'
@@ -36,7 +36,7 @@ interface SpareRow {
   note: string
 }
 
-type StoredSpare = Partial<Omit<SpareRow, 'key' | 'spareType' | 'suppliers'> & { spareType?: string; suppliers?: string[] }>
+type StoredSpare = Partial<Omit<SpareRow, 'spareType' | 'suppliers'> & { spareType?: string; suppliers?: string[] }>
 type StoredSpareBom = Record<string, StoredSpare[]>
 
 let rowSeq = 0
@@ -52,6 +52,8 @@ const newSpare = (part = '', spareType: SpareType = '调试备件'): SpareRow =>
 const toSpareRow = (v: StoredSpare): SpareRow => ({
   ...newSpare(),
   ...v,
+  // 行 key 持久化复用：防自动保存重放打断输入（同设备配套）
+  key: (v as any).key || `s${++rowSeq}`,
   spareType: (SPARE_TYPES as readonly string[]).includes(v.spareType || '') ? (v.spareType as SpareType) : '调试备件',
   suppliers: v.suppliers ?? [],
 })
@@ -170,8 +172,12 @@ export default function SpareParts() {
 
   // 载入（配置未就绪不置空，防清库）
   const skipNextSaveRef = useRef(false)
+  const lastLoadedEquipRef = useRef<string | null>(null)
   useEffect(() => {
     if (spareBom === undefined) return
+    // 自动保存回写的 refetch 不重放（同设备配套：防打字间隙覆盖输入）
+    if (lastLoadedEquipRef.current === equipment) return
+    lastLoadedEquipRef.current = equipment
     const stored = (spareBom as StoredSpareBom)?.[equipment]
     const next = (stored || []).map(toSpareRow)
     skipNextSaveRef.current = true
@@ -201,7 +207,7 @@ export default function SpareParts() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const persistCurrent = async (rs: SpareRow[], equip: string) => {
     if (!bomRef.current || !Object.prototype.hasOwnProperty.call(bomRef.current, equip)) return
-    const stripped = rs.map(({ key: _k, ...rest }) => rest)
+    const stripped = rs.map((r) => ({ ...r }))
     await persistBom({ ...bomRef.current, [equip]: stripped }, true)
   }
   useEffect(() => {
@@ -338,7 +344,7 @@ export default function SpareParts() {
   const exportWord = () => {
     const filled = selectedFilled()
     if (!filled.length) return toast.warning('请先勾选要导出的备件行')
-    exportSectionsToWord(
+    exportSectionsToWordDocx(
       `${equipment} 备件清单${typeSuffix}（导出日期 ${new Date().toLocaleDateString('zh-CN')}）`,
       groupByProfession(filled).map((g) => ({
         name: `${displayName(g.profession)}类备件 (${g.items.length})`,
