@@ -7,7 +7,7 @@ import Button from '../components/Button'
 import PageLoader from '../components/PageLoader'
 
 const TYPE_ICON: Record<string, string> = {
-  approval: '📋', document: '📄', ai: '🤖', system: '⚙️', warranty: '🛡️', report: '📊',
+  approval: '📋', document: '📄', ai: '🤖', system: '⚙️', warranty: '🛡️', report: '📊', payment: '💰',
 }
 
 export default function Notifications() {

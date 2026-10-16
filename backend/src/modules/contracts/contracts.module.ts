@@ -11,11 +11,13 @@ import { TransactionService } from '../../common/services/transaction.service';
 import { PermissionService } from '../../common/services/permission.service';
 import { KnowledgeSyncService } from '../../common/services/knowledge-sync.service';
 import { AiService } from '../../common/services/ai.service';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { PaymentDueScheduler } from './payment-due.scheduler';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Contract, ContractPayment]), ApprovalsModule, RecycleBinModule],
+  imports: [TypeOrmModule.forFeature([Contract, ContractPayment]), ApprovalsModule, RecycleBinModule, NotificationsModule],
   controllers: [ContractsController],
-  providers: [ContractsService, PermissionQueryService, TransactionService, PermissionService, KnowledgeSyncService, AiService],
+  providers: [ContractsService, PermissionQueryService, TransactionService, PermissionService, KnowledgeSyncService, AiService, PaymentDueScheduler],
   exports: [ContractsService],
 })
 export class ContractsModule {}
