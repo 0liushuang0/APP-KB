@@ -641,7 +641,8 @@ export const aiIndexApi = {
 
 export const systemApi = {
   info: () => apiClient.get('/system/info').then((res) => res.data),
-  dashboardStats: () => apiClient.get('/system/dashboard-stats').then((res) => res.data),
+  /** scope=mine：「我的今天」只数我负责的 */
+  dashboardStats: (scope: 'mine' | 'all' = 'all') => apiClient.get('/system/dashboard-stats', { params: { scope } }).then((res) => res.data),
   /** 各业务列表页顶部统计卡片：一次拿回客户/需求/方案/报价/合同/项目的分状态计数 */
   moduleStats: () =>
     apiClient.get<BusinessModuleStats>('/system/module-stats').then((res) => res.data),
@@ -723,6 +724,9 @@ export const afterSalesApi = {
   convertToFaq: (id: string) => apiClient.post<{ fileName: string }>(`/after-sales/${id}/convert-to-faq`).then((res) => res.data),
   stats: () => apiClient.get<any>('/after-sales/stats').then((res) => res.data),
   /** 项目所供设备型号（来自报价明细） */
+  /** 项目所供设备的备件清单（备件管理 / 设备配套） */
+  sparesForProject: (projectId: string) =>
+    apiClient.get<{ equipments: Array<{ name: string; spares: Array<{ part: string; spareType?: string }>; parts: Array<{ part: string }> }> }>(`/after-sales/spares-for-project/${projectId}`).then((res) => res.data),
   modelsForProject: (projectId: string) =>
     apiClient.get<Array<{ value: string; label: string }>>(`/after-sales/models-for-project/${projectId}`).then((res) => res.data),
 }

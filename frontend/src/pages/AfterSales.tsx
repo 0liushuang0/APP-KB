@@ -165,6 +165,12 @@ export default function AfterSales() {
     enabled: !!(form as any).projectId && modalOpen,
   })
   const projectModels = modelsQuery.data || []
+  const sparesQuery = useQuery({
+    queryKey: ['after-sales-spares', (form as any).projectId],
+    queryFn: () => afterSalesApi.sparesForProject((form as any).projectId),
+    enabled: !!(form as any).projectId && modalOpen,
+  })
+  const projectSpares = sparesQuery.data?.equipments || []
   useEffect(() => {
     // 只有一种设备时直接填上；多种时留给人选
     if (modalOpen && !editing && projectModels.length === 1 && !form.productModel) setValue('productModel', projectModels[0].value)
@@ -415,6 +421,35 @@ export default function AfterSales() {
             </FieldGrid>
             <FormTextarea label="处理过程" rows={3} value={form.resolution} onChange={(e) => setValue('resolution', e.target.value)} placeholder="记录故障原因、处理步骤、更换部件…" />
             <FormTextarea label="使用备件" rows={2} value={form.spareParts} onChange={(e) => setValue('spareParts', e.target.value)} placeholder="备件名称、型号、数量…" />
+            {/* 本项目设备的备件清单（供应管理 → 备件管理维护的那一份）：点一下加进「使用备件」 */}
+            {projectSpares.length > 0 && (
+              <div className="-mt-1 space-y-1">
+                {projectSpares.map((eq) => {
+                  const list = eq.spares.length ? eq.spares : eq.parts
+                  if (!list.length) return null
+                  return (
+                    <div key={eq.name} className="flex flex-wrap items-center gap-1 text-caption">
+                      <span className="text-muted shrink-0">{eq.name}{eq.spares.length ? '备件' : '配件'}：</span>
+                      {list.slice(0, 16).map((x: any) => {
+                        const has = (form.spareParts || '').split(/[，,、\s]/).map((t: string) => t.trim()).includes(x.part)
+                        return (
+                          <button
+                            key={x.part}
+                            type="button"
+                            disabled={has}
+                            onClick={() => setValue('spareParts', form.spareParts ? `${form.spareParts}、${x.part}` : x.part)}
+                            className={`px-1.5 py-0.5 rounded border ${has ? 'border-border text-muted' : 'border-accent-300 text-accent-700 hover:bg-accent-50'}`}
+                            title={x.spareType ? `${x.spareType}` : undefined}
+                          >
+                            {x.part}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             <FieldGrid cols={3}>
               <FormSelect label="满意度(1-5)" value={form.satisfactionScore} onChange={(e) => setValue('satisfactionScore', e.target.value)} options={[{value:'',label:'未评'},{value:'1',label:'1★'},{value:'2',label:'2★'},{value:'3',label:'3★'},{value:'4',label:'4★'},{value:'5',label:'5★'}]} />
               <FormInput label="回访日期" type="date" value={form.visitDate} onChange={(e) => setValue('visitDate', e.target.value)} />

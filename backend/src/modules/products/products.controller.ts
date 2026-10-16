@@ -31,6 +31,30 @@ export class ProductsController {
   findAll(@Query() query: QueryProductDto, @CurrentUser() user: CurrentUserType) {
     return this.productsService.findAll(query, user);
   }
+
+  /** 全部产品价格表模板（Excel）：一个文件补齐所有产品的型号价格 */
+  @Get('price-list/template')
+  async exportAllPriceTemplate(@Res() res: Response) {
+    const buffer = await this.productsService.exportAllPriceTemplate();
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=aikb-all-price-lists-${date}.xlsx`);
+    res.send(buffer);
+  }
+
+  /** 一次导入全部产品的价格表；dryRun=1 只预览不保存 */
+  @Post('price-list/import-all')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file'))
+  importAllPriceLists(
+    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: MAX_UPLOAD_BYTES })] }))
+    file: Express.Multer.File,
+    @Query('dryRun') dryRun: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.productsService.importAllPriceLists(file.buffer, user, dryRun === '1' || dryRun === 'true');
+  }
   /** 产品被引用情况：报过哪些价、价格区间 */
   @Get(':id/usage')
   usage(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {

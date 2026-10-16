@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Package, ChevronRight } from 'lucide-react'
+import { Package, ChevronRight, FileSpreadsheet } from 'lucide-react'
+import PriceListBulkImport from './PriceListBulkImport'
 import apiClient from '../api/client'
 
 /**
@@ -16,12 +18,22 @@ export default function ProductGapList({ onPick }: { onPick: (id: string) => voi
   const report = (data as any)?.data ?? data
   const labelOf: Record<string, string> = Object.fromEntries((report?.fields || []).map((f: any) => [f.key, f.label]))
   const gaps: any[] = report?.gaps || []
+  const [importOpen, setImportOpen] = useState(false)
   return (
     <div className="h-full overflow-y-auto p-5">
       <div className="flex items-center gap-2 mb-1">
         <Package size={18} className="text-accent-600" />
         <h3 className="text-base font-semibold text-ink">先补这几个产品</h3>
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          className="ml-auto flex items-center gap-1 rounded-md bg-accent-500 text-white text-sm px-2.5 py-1 hover:opacity-90"
+          title="下载一个 Excel，填好全部产品的型号价格后一次导入"
+        >
+          <FileSpreadsheet size={14} /> 一次补齐全部价格表
+        </button>
       </div>
+      <PriceListBulkImport open={importOpen} onClose={() => setImportOpen(false)} />
       <p className="text-sm text-muted mb-4">
         {report ? (
           <>报价就绪 <b className="text-ink">{report.quoteReady}/{report.total}</b>（有型号价格表和规格参数）。补齐后，报价单选型号即可带出价格，AI 问答也能按参数选型。</>

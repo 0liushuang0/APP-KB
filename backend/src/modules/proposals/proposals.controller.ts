@@ -29,7 +29,7 @@ export class ProposalsController {
 
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserType) {
-    return this.proposalsService.findOne(id, user);
+    return this.proposalsService.findOneDetailed(id, user);
   }
 
   @Post()

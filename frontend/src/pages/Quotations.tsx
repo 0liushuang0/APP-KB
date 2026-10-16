@@ -111,7 +111,7 @@ export default function Quotations() {
   /** 方案带出的草稿说明（每行为什么带出、哪些缺价、条款来自哪份报价） */
   const [draftInfo, setDraftInfo] = useState<any>(null)
 
-  const { focus, setFocus } = useFocus()
+  const { focus, setFocus, owner } = useFocus()
   const {
     list: listData,
     pagination,
@@ -124,7 +124,7 @@ export default function Quotations() {
     refetch,
   } = usePagedQuery<Quotation>({
     key: ['quotations'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined },
+    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined, owner: owner || undefined },
     fetcher: (params) => quotationApi.list(params) as any,
     initialPageSize: 15,
   })

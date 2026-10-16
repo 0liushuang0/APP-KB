@@ -17,6 +17,7 @@ import { ApiTags, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { MAX_UPLOAD_BYTES } from '../../common/constants/upload';
 import { Response } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
+import { CurrentUser as CurrentUserType } from '../../common/services/permission.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -43,8 +44,8 @@ export class SystemController {
   }
 
   @Get('dashboard-stats')
-  async dashboardStats() {
-    return this.systemService.getDashboardStats();
+  async dashboardStats(@CurrentUser() user: CurrentUserType, @Query('scope') scope?: string) {
+    return this.systemService.getDashboardStats(user as any, scope === 'mine' ? 'mine' : 'all');
   }
 
   /** 各业务列表页顶部统计卡片（客户/需求/方案/报价/合同/项目） */

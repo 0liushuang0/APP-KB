@@ -68,10 +68,10 @@ export default function Contracts() {
   const [selected, setSelected] = useState<Contract | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const { focus, setFocus } = useFocus()
+  const { focus, setFocus, owner } = useFocus()
   const { list, isLoading, isError, error, refetch, onSort, sortBy, sortOrder, pagination } = usePagedQuery<Contract>({
     key: ['contracts'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined },
+    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined, owner: owner || undefined },
     fetcher: (params) => contractApi.list(params) as any,
   })
 
@@ -337,7 +337,7 @@ export default function Contracts() {
     <>
       {/* 统计卡片：与业务概览顶部同一套组件，各模块高度与配色一致 */}
       <StatCards className="mb-4" loading={statsLoading} skeletonCount={7} items={contractCards} />
-      <FocusBar focus={focus} labels={{ delivery: '7 天内到交货期的合同', warranty: '30 天内质保到期的合同 —— 到期前主动回访' }} onClear={() => setFocus('')} count={pagination?.total} />
+      <FocusBar focus={focus} labels={{ delivery: '7 天内到交货期的合同', warranty: '30 天内质保到期的合同 —— 到期前主动回访', payment: '有回款节点 7 天内到期或已逾期未收的合同' }} onClear={() => setFocus('')} count={pagination?.total} />
 
       <DataTable
         data={list}

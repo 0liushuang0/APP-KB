@@ -61,6 +61,13 @@ export class ContractsService {
   async findAll(query: QueryContractDto, user: CurrentUser): Promise<PaginatedResult<Contract>> {
     const qb = this.contractRepository.createQueryBuilder('c');
     if (query.status) qb.andWhere('c.status = :status', { status: query.status });
+    if ((query as any).owner === 'me' && user?.userId) qb.andWhere('c.ownerId = :ownerMe', { ownerMe: user.userId });
+    if ((query as any).focus === 'payment') {
+      // 有 7 天内到期或已逾期、尚未收款的回款节点
+      qb.andWhere(`EXISTS (SELECT 1 FROM contract_payments fp WHERE fp."contractId" = CAST(c.id AS TEXT)
+        AND fp."receivedDate" IS NULL AND fp."dueDate" IS NOT NULL AND fp."dueDate" <= :fPayDue)`,
+        { fPayDue: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
+    }
     const todayStr = new Date().toISOString().slice(0, 10);
     const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     if ((query as any).focus === 'delivery') {

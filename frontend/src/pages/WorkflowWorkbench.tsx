@@ -1,11 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   ClipboardList, FileText, DollarSign, AlertTriangle, TrendingUp, Percent,
   ScrollText, FolderKanban, Headset, Stamp, CalendarClock, Sparkles, Truck,
-  ShieldCheck, Hourglass, Bot, CheckCircle2, ChevronRight,
+  ShieldCheck, Hourglass, Bot, CheckCircle2, ChevronRight, Wallet,
 } from 'lucide-react'
+import { useAuthStore } from '../store/authStore'
 import { systemApi } from '../api/services'
 import { usePageActions } from '../contexts/PageActionsContext'
 import PageLoader from '../components/PageLoader'
@@ -84,6 +85,7 @@ const TODO_DEFS: Array<{ key: string; label: string; icon: any; tone: Tone; to: 
   { key: 'deliveriesSoon', label: '7 天内交货', icon: Truck, tone: 'warning', to: '/contracts?focus=delivery', hint: '合同约定的交货期临近' },
   { key: 'projectsRisk', label: '项目预警/关注', icon: FolderKanban, tone: 'danger', to: '/projects?focus=risk', hint: '逾期或临近完工、进度不足' },
   { key: 'warranties', label: '质保 30 天内到期', icon: ShieldCheck, tone: 'info', to: '/contracts?focus=warranty', hint: '到期前主动回访' },
+  { key: 'paymentsDue', label: '回款 7 天内到期', icon: Wallet, tone: 'danger', to: '/contracts?focus=payment', hint: '回款节点到期或已逾期、还没收到款' },
 ]
 
 export default function WorkflowWorkbench() {
@@ -91,7 +93,19 @@ export default function WorkflowWorkbench() {
   const setPageActions = usePageActions()
   useEffect(() => { setPageActions(null); return () => setPageActions(null) }, [])
 
-  const statsQuery = useQuery({ queryKey: ['dashboard-stats'], queryFn: () => systemApi.dashboardStats(), refetchInterval: 60_000 })
+  // 「我的今天」只看我负责的 / 看全部：团队版默认看自己的，单机版默认全部；选择记在本机
+  const appMode = useAuthStore((s) => s.appMode)
+  const [scope, setScope] = useState<'mine' | 'all'>(() => {
+    try {
+      const v = localStorage.getItem('aikb-today-scope')
+      if (v === 'mine' || v === 'all') return v
+    } catch { /* 存储不可用时用默认值 */ }
+    return appMode === 'team' ? 'mine' : 'all'
+  })
+  useEffect(() => {
+    try { localStorage.setItem('aikb-today-scope', scope) } catch { /* 忽略 */ }
+  }, [scope])
+  const statsQuery = useQuery({ queryKey: ['dashboard-stats', scope], queryFn: () => systemApi.dashboardStats(scope), refetchInterval: 60_000 })
   const activitiesQuery = useQuery({ queryKey: ['recent-activities'], queryFn: () => systemApi.recentActivities() })
 
   if (statsQuery.isLoading) return <PageLoader />
@@ -103,7 +117,8 @@ export default function WorkflowWorkbench() {
   const funnel: Array<{ stage: string; value: number; amount: number; rate: number }> = stats.funnel || []
   const direct = stats.directDeals || { count: 0, amount: 0 }
 
-  const todoItems = TODO_DEFS.map((d) => ({ ...d, n: Number(todos[d.key] || 0) }))
+  const ownerQs = scope === 'mine' ? (s: string) => (s.includes('?') ? `${s}&owner=me` : s) : (s: string) => s
+  const todoItems = TODO_DEFS.map((d) => ({ ...d, n: Number(todos[d.key] || 0), to: d.key === 'approvals' ? d.to : ownerQs(d.to) }))
   const todoTotal = todoItems.reduce((s, i) => s + i.n, 0)
   const hour = new Date().getHours()
   const greet = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好'
@@ -181,9 +196,15 @@ export default function WorkflowWorkbench() {
             <h2 className="text-base font-semibold text-ink">
               {greet}，{todoTotal > 0 ? <>今天有 <span className="text-accent-600 tabular-nums">{todoTotal}</span> 件事等你推动</> : '今天没有待推动的事项'}
             </h2>
-            <span className="text-caption text-muted">{today}</span>
+            <span className="flex items-center gap-2">
+              <span className="inline-flex rounded-md border border-border overflow-hidden text-caption">
+                <button type="button" onClick={() => setScope('mine')} className={`px-2 py-0.5 ${scope === 'mine' ? 'bg-accent-50 text-accent-700' : 'text-muted hover:text-ink'}`}>只看我负责的</button>
+                <button type="button" onClick={() => setScope('all')} className={`px-2 py-0.5 border-l border-border ${scope === 'all' ? 'bg-accent-50 text-accent-700' : 'text-muted hover:text-ink'}`}>全部</button>
+              </span>
+              <span className="text-caption text-muted">{today}</span>
+            </span>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
             {todoItems.map((t) => {
               const Icon = t.icon
               const on = t.n > 0

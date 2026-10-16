@@ -161,16 +161,23 @@ export class SystemService implements OnModuleInit {
   private dashboardCache: { data: any; expiresAt: number } | null = null;
   private static readonly DASHBOARD_TTL_MS = 15_000;
 
-  async getDashboardStats() {
-    if (this.dashboardCache && Date.now() < this.dashboardCache.expiresAt) {
-      return this.dashboardCache.data;
+  /**
+   * 工作台数据。公司口径的 KPI/流水线/漏斗走缓存；「我的今天」按人现算（几条计数查询，很便宜）。
+   *
+   * scope='mine'：只数当前用户负责的（需求/报价/合同按负责人、项目按项目经理、回款按合同负责人；
+   * 审批：有审批权的人看全部待审，没有的看自己提交的）。原来计数是全公司合计，团队上线后每个人看到的都是全公司的待办。
+   */
+  async getDashboardStats(user?: { userId?: string; isSystemAdmin?: boolean; roles?: string[] }, scope: 'mine' | 'all' = 'all') {
+    if (!this.dashboardCache || Date.now() >= this.dashboardCache.expiresAt) {
+      this.dashboardCache = {
+        data: await this.computeDashboardStats(),
+        expiresAt: Date.now() + SystemService.DASHBOARD_TTL_MS,
+      };
     }
-    const result = await this.computeDashboardStats();
-    this.dashboardCache = {
-      data: result,
-      expiresAt: Date.now() + SystemService.DASHBOARD_TTL_MS,
-    };
-    return result;
+    const mine = scope === 'mine' && !!user?.userId;
+    const approver = !!user?.isSystemAdmin || (user?.roles || []).some((r) => ['admin', 'approver', 'manager'].includes(r));
+    const todos = await this.computeTodos(mine ? user!.userId : undefined, mine && !approver ? user!.userId : undefined);
+    return { ...this.dashboardCache.data, todos, todosScope: mine ? 'mine' : 'all' };
   }
 
   private async computeDashboardStats() {
@@ -301,7 +308,6 @@ export class SystemService implements OnModuleInit {
       directDeals: funnel.direct,
       trend: monthlyTrend(quotations as any, contracts as any, now, 6),
       pipeline,
-      todos: await this.computeTodos(),
       automation: await this.automationSummary(),
     };
   }
@@ -309,46 +315,58 @@ export class SystemService implements OnModuleInit {
   /**
    * 我的今天：需要人推动的事，每类都给计数和直达链接（带筛选参数，点过去就是那几条）。
    */
-  private async computeTodos() {
+  private async computeTodos(ownerId?: string, submittedBy?: string) {
     const today = new Date().toISOString().slice(0, 10);
     const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
     const stale = new Date(Date.now() - 14 * 86400000);
 
+    // 按人过滤：参数追加在最后，占位符按序号续上（SQLite 下 portable 会统一换成 ?）
+    const own = (col: string, params: any[]) => (ownerId ? ` AND ${col} = $${params.length + 1}` : '');
+    const withOwner = (params: any[]) => (ownerId ? [...params, ownerId] : params);
     const one = (sql: string, params: any[] = []) =>
       this.dataSource.query(this.portable(sql), params).then((rows: any[]) => Number((rows[0] || {}).n || 0));
 
-    const [approvals, followups, followupsOverdue, warranties, projectsRisk, deliveriesSoon] = await Promise.all([
-      one(`SELECT COUNT(*) AS n FROM approval_flows WHERE status = 'pending'`),
+    const [approvals, followups, followupsOverdue, warranties, projectsRisk, deliveriesSoon, paymentsDue] = await Promise.all([
+      submittedBy
+        ? one(`SELECT COUNT(*) AS n FROM approval_flows WHERE status = 'pending' AND "submittedBy" = $1`, [submittedBy])
+        : one(`SELECT COUNT(*) AS n FROM approval_flows WHERE status = 'pending'`),
       one(
         `SELECT COUNT(*) AS n FROM requirements
          WHERE ("isCurrent" IS NULL OR "isCurrent" = true) AND "nextFollowUpDate" IS NOT NULL
-           AND "nextFollowUpDate" BETWEEN $1 AND $2 AND (status IS NULL OR status NOT IN ('lost', 'closed', 'won'))`,
-        [today, in7],
+           AND "nextFollowUpDate" BETWEEN $1 AND $2 AND (status IS NULL OR status NOT IN ('lost', 'closed', 'won'))` + own('"ownerId"', [today, in7]),
+        withOwner([today, in7]),
       ),
       one(
         `SELECT COUNT(*) AS n FROM requirements
          WHERE ("isCurrent" IS NULL OR "isCurrent" = true) AND "nextFollowUpDate" IS NOT NULL
-           AND "nextFollowUpDate" < $1 AND (status IS NULL OR status NOT IN ('lost', 'closed', 'won'))`,
-        [today],
+           AND "nextFollowUpDate" < $1 AND (status IS NULL OR status NOT IN ('lost', 'closed', 'won'))` + own('"ownerId"', [today]),
+        withOwner([today]),
       ),
       one(
         `SELECT COUNT(*) AS n FROM contracts
-         WHERE "warrantyExpiryDate" IS NOT NULL AND "warrantyExpiryDate" > $1 AND "warrantyExpiryDate" <= $2`,
-        [today, in30],
+         WHERE "warrantyExpiryDate" IS NOT NULL AND "warrantyExpiryDate" > $1 AND "warrantyExpiryDate" <= $2` + own('"ownerId"', [today, in30]),
+        withOwner([today, in30]),
       ),
-      one(`SELECT COUNT(*) AS n FROM projects WHERE health IN ('red', 'yellow')`),
+      one(`SELECT COUNT(*) AS n FROM projects WHERE health IN ('red', 'yellow')` + own('"managerId"', []), withOwner([])),
       one(
         `SELECT COUNT(*) AS n FROM contracts
          WHERE "deliveryDate" IS NOT NULL AND "deliveryDate" >= $1 AND "deliveryDate" <= $2
-           AND (status IS NULL OR status NOT IN ('completed', 'terminated'))`,
-        [today, in7],
+           AND (status IS NULL OR status NOT IN ('completed', 'terminated'))` + own('"ownerId"', [today, in7]),
+        withOwner([today, in7]),
+      ),
+      // 回款到期：7 天内到期或已逾期、还没收到款的回款节点（原来到期不提醒，24 个节点全靠人记）
+      one(
+        `SELECT COUNT(*) AS n FROM contract_payments p JOIN contracts c ON CAST(c.id AS TEXT) = p."contractId"
+         WHERE p."receivedDate" IS NULL AND p."dueDate" IS NOT NULL AND p."dueDate" <= $1
+           AND (c.status IS NULL OR c.status NOT IN ('terminated'))` + own('c."ownerId"', [in7]),
+        withOwner([in7]),
       ),
     ]);
 
     // 报价超 14 天没有签约（已审核/已发送、且没有合同挂着它）
     const [quotes, contractQuoteIds] = await Promise.all([
-      this.quotationRepository.find({ select: ['id', 'status', 'updatedAt', 'createdAt'] as any }),
+      this.quotationRepository.find({ select: ['id', 'status', 'updatedAt', 'createdAt', 'ownerId'] as any, ...(ownerId ? { where: { ownerId } as any } : {}) }),
       this.contractRepository.find({ select: ['quotationId'] as any }),
     ]);
     const signed = new Set(contractQuoteIds.map((c: any) => c.quotationId).filter(Boolean));
@@ -359,7 +377,8 @@ export class SystemService implements OnModuleInit {
 
     // 自动识别出参数、等人确认的需求
     const specRows: Array<{ s: string }> = await this.dataSource.query(
-      `SELECT "structuredSpec" AS s FROM requirements WHERE ("isCurrent" IS NULL OR "isCurrent" = true) AND "structuredSpec" IS NOT NULL`,
+      this.portable(`SELECT "structuredSpec" AS s FROM requirements WHERE ("isCurrent" IS NULL OR "isCurrent" = true) AND "structuredSpec" IS NOT NULL` + own('"ownerId"', [])),
+      withOwner([]),
     );
     const specsToConfirm = specRows.filter((r) => {
       try {
@@ -378,6 +397,7 @@ export class SystemService implements OnModuleInit {
       deliveriesSoon,
       quotesStale,
       specsToConfirm,
+      paymentsDue,
     };
   }
 

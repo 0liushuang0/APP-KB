@@ -90,7 +90,7 @@ export default function Projects() {
   const [draftSources, setDraftSources] = useState<{ startDate?: string; endDate?: string } | null>(null)
   /** 列表 / 甘特图 */
   const [view, setView] = useState<'list' | 'gantt'>('list')
-  const { focus, setFocus } = useFocus()
+  const { focus, setFocus, owner } = useFocus()
   const seedContract = (location.state as any)?.contract
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
@@ -139,7 +139,7 @@ export default function Projects() {
     refetch,
   } = usePagedQuery<Project>({
     key: ['projects'],
-    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, dealStage: dealFilter || undefined, focus: focus || undefined },
+    filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, dealStage: dealFilter || undefined, focus: focus || undefined, owner: owner || undefined },
     fetcher: (params) => projectApi.list(params) as any,
     initialPageSize: 15,
   })

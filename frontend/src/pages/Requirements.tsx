@@ -136,7 +136,7 @@ export default function Requirements() {
   })
 
   const setPageActions = usePageActions()
-  const { focus, setFocus } = useFocus()
+  const { focus, setFocus, owner } = useFocus()
 
   const {
     list: listData,
@@ -156,6 +156,7 @@ export default function Requirements() {
       customerId: customerFilter || undefined,
       landStage: landFilter || undefined,
       focus: focus || undefined,
+      owner: owner || undefined,
     },
     fetcher: (params) => requirementApi.list(params) as any,
     initialPageSize: 15,

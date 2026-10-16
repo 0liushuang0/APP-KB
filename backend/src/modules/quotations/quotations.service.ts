@@ -44,6 +44,7 @@ export class QuotationsService {
     const qb = this.quotationRepository.createQueryBuilder('q');
 
     if (query.status) qb.andWhere('q.status = :status', { status: query.status });
+    if ((query as any).owner === 'me' && user?.userId) qb.andWhere('q.ownerId = :ownerMe', { ownerMe: user.userId });
     if ((query as any).focus === 'stale') {
       // 已审核/已发送超过 14 天、还没有合同挂着它
       qb.andWhere("q.status IN ('approved','sent','pending')")

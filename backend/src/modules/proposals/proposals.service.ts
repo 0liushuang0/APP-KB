@@ -198,6 +198,17 @@ export class ProposalsService {
     return proposal;
   }
 
+  /**
+   * 详情（带项目名称、客户名）。
+   * 原来单条接口只回方案表本身，项目名称/客户名只在列表接口里补；
+   * 从方案「生成报价」时弹窗取的是单条接口，于是项目、客户两栏是空的 —— 报价时看不到给谁报。
+   */
+  async findOneDetailed(id: string, user: CurrentUser): Promise<any> {
+    const proposal = await this.findOne(id, user);
+    const [withRel] = await this.attachRelations([proposal]);
+    return withRel;
+  }
+
   /** 方案编号：优先继承所关联需求的流水号，便于一眼看出是同一单 */
   private async nextNo(requirementId?: string): Promise<string> {
     if (!requirementId) return this.numbering.next('proposal');

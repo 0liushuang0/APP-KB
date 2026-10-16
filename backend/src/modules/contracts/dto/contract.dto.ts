@@ -64,6 +64,11 @@ export class UpdateContractDto extends PartialType(CreateContractDto) {
 }
 
 export class QueryContractDto extends PaginationQueryDto {
+  /** owner=me：只看我负责的（工作台「我的今天」按人直达时带上） */
+  @IsOptional()
+  @IsString()
+  owner?: string;
+
   /** 工作台「我的今天」直达筛选（见各 service 的 focus 分支） */
   @IsOptional()
   @IsString()

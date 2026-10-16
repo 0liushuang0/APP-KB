@@ -164,27 +164,11 @@ export class ProductsService {
     for (let i = 0; i < rows.length; i++) {
       const rowNo = i + 2; // +2：第 1 行是表头，行号从 1 开始
       const r = rows[i];
-      const model = String(r['型号规格'] ?? r['型号'] ?? r['model'] ?? '').trim();
+      const { model, patch } = this.rowToPricePatch(r);
       if (!model) {
         errors.push({ row: rowNo, message: '缺少型号规格' });
         continue;
       }
-      const patch: Partial<ProductPriceItem> = {};
-      const spec = r['关键参数'] ?? r['spec'];
-      const unit = r['单位'] ?? r['unit'];
-      const remark = r['备注'] ?? r['remark'];
-      if (spec != null && spec !== '') patch.spec = String(spec);
-      if (unit != null && unit !== '') patch.unit = String(unit);
-      if (remark != null && remark !== '') patch.remark = String(remark);
-      const costPrice = this.toPriceNumber(r['成本价'] ?? r['costPrice']);
-      const referencePrice = this.toPriceNumber(r['参考价'] ?? r['referencePrice']);
-      const standardPrice = this.toPriceNumber(r['标配价'] ?? r['standardPrice']);
-      const salePrice = this.toPriceNumber(r['销售价'] ?? r['salePrice']);
-      if (costPrice !== undefined) patch.costPrice = costPrice;
-      if (referencePrice !== undefined) patch.referencePrice = referencePrice;
-      if (standardPrice !== undefined) patch.standardPrice = standardPrice;
-      if (salePrice !== undefined) patch.salePrice = salePrice;
-      patch.updatedAt = new Date().toISOString();
 
       if (idxByModel.has(model)) {
         const idx = idxByModel.get(model)!;
@@ -204,6 +188,152 @@ export class ProductsService {
     );
 
     return { total: rows.length, added, updated, errors, priceList: merged };
+  }
+
+  /** 一行 Excel → 型号 + 要覆盖的字段（只取非空列，导出后只改部分列也能回灌） */
+  private rowToPricePatch(r: any): { model: string; patch: Partial<ProductPriceItem> } {
+    const model = String(r['型号规格'] ?? r['型号'] ?? r['model'] ?? '').trim();
+    const patch: Partial<ProductPriceItem> = {};
+    const spec = r['关键参数'] ?? r['spec'];
+    const unit = r['单位'] ?? r['unit'];
+    const remark = r['备注'] ?? r['remark'];
+    if (spec != null && spec !== '') patch.spec = String(spec);
+    if (unit != null && unit !== '') patch.unit = String(unit);
+    if (remark != null && remark !== '') patch.remark = String(remark);
+    const costPrice = this.toPriceNumber(r['成本价'] ?? r['costPrice']);
+    const referencePrice = this.toPriceNumber(r['参考价'] ?? r['referencePrice']);
+    const standardPrice = this.toPriceNumber(r['标配价'] ?? r['standardPrice']);
+    const salePrice = this.toPriceNumber(r['销售价'] ?? r['salePrice']);
+    if (costPrice !== undefined) patch.costPrice = costPrice;
+    if (referencePrice !== undefined) patch.referencePrice = referencePrice;
+    if (standardPrice !== undefined) patch.standardPrice = standardPrice;
+    if (salePrice !== undefined) patch.salePrice = salePrice;
+    patch.updatedAt = new Date().toISOString();
+    return { model, patch };
+  }
+
+  /**
+   * 全部产品的价格表模板（一个 Excel 补齐所有产品）。
+   *
+   * 54 个产品原来只能逐个打开、逐个导入价格表，业务方一直补不齐 —— 报价草稿能匹配到产品，
+   * 单价却全是 0。模板每个已有型号一行；还没有价格表的产品给一行空型号，填上即可。
+   */
+  async exportAllPriceTemplate(): Promise<Buffer> {
+    const products = await this.productRepository.find({ order: { category: 'ASC', name: 'ASC' } as any });
+    const rows: any[] = [];
+    for (const p of products) {
+      const base = { 产品编码: p.code || '', 产品名称: p.name, 产品分类: p.category || '' };
+      const list = Array.isArray(p.priceList) ? p.priceList : [];
+      if (!list.length) {
+        rows.push({ ...base, 型号规格: '', 关键参数: '', 成本价: '', 参考价: p.price ?? '', 标配价: '', 销售价: '', 单位: p.unit || '台', 备注: '' });
+      }
+      for (const r of list) {
+        rows.push({
+          ...base, 型号规格: r.model, 关键参数: r.spec || '', 成本价: r.costPrice ?? '', 参考价: r.referencePrice ?? '',
+          标配价: r.standardPrice ?? '', 销售价: r.salePrice ?? '', 单位: r.unit || p.unit || '', 备注: r.remark || '',
+        });
+      }
+    }
+    const wb = XLSX.utils.book_new();
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    sheet['!cols'] = [10, 22, 22, 18, 24, 10, 10, 10, 10, 6, 20].map((w) => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, sheet, '全部产品价格表');
+    return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+  }
+
+  /**
+   * 一次导入全部产品的价格表。按「产品编码」匹配，没有编码再按「产品名称」精确匹配（名称重复时不猜，报错让人改）；
+   * 同一产品的多行按型号合并（规则与单品导入一致：已有型号只覆盖非空字段，新型号追加）。
+   * dryRun=true 只出预览不保存：每个产品会新增/更新几个型号、哪些行对不上。
+   */
+  async importAllPriceLists(buffer: Buffer, user: CurrentUser, dryRun = false) {
+    let rows: any[];
+    try {
+      const wb = XLSX.read(buffer, { type: 'buffer' });
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
+    } catch {
+      throw new BadRequestException('文件解析失败，请确认是有效的 xlsx / csv 文件');
+    }
+    const products = await this.productRepository.find();
+    const byCode = new Map(products.filter((p) => p.code).map((p) => [String(p.code).trim(), p]));
+    const byName = new Map<string, Product[]>();
+    for (const p of products) {
+      const k = String(p.name || '').trim();
+      byName.set(k, [...(byName.get(k) || []), p]);
+    }
+    const errors: Array<{ row: number; message: string }> = [];
+    const touched = new Map<string, { product: Product; merged: ProductPriceItem[]; idx: Map<string, number>; added: number; updated: number }>();
+    let skippedBlank = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNo = i + 2;
+      const r = rows[i];
+      const code = String(r['产品编码'] ?? '').trim();
+      const name = String(r['产品名称'] ?? '').trim();
+      const { model, patch } = this.rowToPricePatch(r);
+      const hasPrice = ['costPrice', 'referencePrice', 'standardPrice', 'salePrice'].some((k) => (patch as any)[k] !== undefined);
+      if (!model) {
+        // 模板里给的空型号行：没填就跳过，不算错
+        if (hasPrice) errors.push({ row: rowNo, message: '填了价格但缺少型号规格' });
+        else skippedBlank++;
+        continue;
+      }
+      let product: Product | undefined = code ? byCode.get(code) : undefined;
+      if (!product && name) {
+        const hits = byName.get(name) || [];
+        if (hits.length > 1) {
+          errors.push({ row: rowNo, message: `产品名称「${name}」有 ${hits.length} 个同名产品，请填写产品编码` });
+          continue;
+        }
+        product = hits[0];
+      }
+      if (!product) {
+        errors.push({ row: rowNo, message: `找不到产品（编码「${code || '-'}」/ 名称「${name || '-'}」）` });
+        continue;
+      }
+      if (!this.permissionService.canManage(user, this.toSubject(product))) {
+        errors.push({ row: rowNo, message: `无权修改产品「${product.name}」` });
+        continue;
+      }
+      let t = touched.get(product.id);
+      if (!t) {
+        const merged = [...(product.priceList || [])];
+        t = { product, merged, idx: new Map(merged.map((x, j) => [x.model, j])), added: 0, updated: 0 };
+        touched.set(product.id, t);
+      }
+      if (t.idx.has(model)) {
+        const j = t.idx.get(model)!;
+        t.merged[j] = { ...t.merged[j], ...patch };
+        t.updated++;
+      } else {
+        t.merged.push({ model, ...patch });
+        t.idx.set(model, t.merged.length - 1);
+        t.added++;
+      }
+    }
+
+    const summary = [...touched.values()].map((t) => ({
+      productId: t.product.id,
+      name: t.product.name,
+      added: t.added,
+      updated: t.updated,
+      models: t.merged.length,
+    }));
+    if (!dryRun && touched.size) {
+      await this.tx.run(
+        async (manager) => {
+          for (const t of touched.values()) {
+            t.product.priceList = t.merged;
+            await manager.getRepository(Product).save(t.product);
+          }
+          return [...touched.values()].map((t) => t.product);
+        },
+        async (saved: Product[]) => {
+          for (const prod of saved) await this.sync(prod);
+        },
+      );
+    }
+    return { dryRun, rows: rows.length, products: summary.length, skippedBlank, summary, errors };
   }
 
   private toPriceNumber(v: any): number | undefined {

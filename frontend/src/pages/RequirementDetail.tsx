@@ -366,8 +366,15 @@ export default function RequirementDetail() {
       (f.value === null || f.value === undefined || f.value === '') &&
       (f.requiredForMatch || f.requiredForQuote),
   )
-  const completeness = fields.length
-    ? Math.round(((fields.length - fields.filter((f) => f.value == null || f.value === '').length) / fields.length) * 100)
+  /*
+   * 完整度 = 有值的参数 ÷（识别到的参数 + 引擎列出的缺失项）。
+   * 原来只按"识别到的参数里有几个有值"算，识别到的几乎都有值，于是页头恒为 100%，
+   * 同屏提示条却写着"还缺 5 项"——两个数字互相打架。缺失项必须计入分母。
+   */
+  const missingCount = Array.isArray((card as any)?.missing) ? (card as any).missing.length : 0
+  const filledCount = fields.filter((f) => !(f.value == null || f.value === '')).length
+  const completeness = fields.length + missingCount
+    ? Math.round((filledCount / (fields.length + missingCount)) * 100)
     : 0
 
   const analyzeMutation = useMutation({

@@ -224,6 +224,7 @@ export class RequirementsService implements OnModuleInit, OnModuleDestroy, OnApp
 
     if (query.category) qb.andWhere('r.category = :category', { category: query.category });
     if (query.status) qb.andWhere('r.status = :status', { status: query.status });
+    if ((query as any).owner === 'me' && user?.userId) qb.andWhere('r.ownerId = :ownerMe', { ownerMe: user.userId });
     const todayStr = new Date().toISOString().slice(0, 10);
     const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     switch ((query as any).focus) {

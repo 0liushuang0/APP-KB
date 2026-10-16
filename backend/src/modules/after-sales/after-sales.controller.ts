@@ -20,6 +20,12 @@ export class AfterSalesController {
     return this.afterSalesService.getStats(user);
   }
 
+  /** 项目所供设备的备件清单（来自「备件管理」，未维护时给设备配套的配件清单） */
+  @Get('spares-for-project/:projectId')
+  sparesForProject(@Param('projectId') projectId: string) {
+    return this.afterSalesService.sparesForProject(projectId);
+  }
+
   /** 项目所供设备的型号（报价明细），新建工单时下拉选择，不必手敲 */
   @Get('models-for-project/:projectId')
   modelsForProject(@Param('projectId') projectId: string) {

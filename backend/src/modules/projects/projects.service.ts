@@ -139,6 +139,7 @@ export class ProjectsService {
     const qb = this.projectRepository.createQueryBuilder('p');
 
     if (query.status) qb.andWhere('p.status = :status', { status: query.status });
+    if ((query as any).owner === 'me' && user?.userId) qb.andWhere('p.managerId = :ownerMe', { ownerMe: user.userId });
     if ((query as any).focus === 'risk') qb.andWhere("p.health IN ('red','yellow')");
     if (query.dealStage) qb.andWhere('p.dealStage = :ds', { ds: query.dealStage });
     // 'none' 是前端"未关联客户"筛选项

@@ -148,6 +148,65 @@ export class AfterSalesService {
     return saved;
   }
 
+  /**
+   * 项目所供设备的备件清单（售后工单「备件」从这里选，不再手写）。
+   *
+   * 备件清单只维护一份 ——「供应管理 → 备件管理」（system_configs.spare_parts_bom，按设备名分组）；
+   * 没维护备件时退到「设备配套」的配件清单（equipment_bom）作参考。
+   * 项目供了哪些设备：报价明细名称 + 明细所选产品的分类末级 + 项目名称，与清单里的设备名做包含匹配。
+   */
+  async sparesForProject(projectId: string) {
+    const m = this.ticketRepository.manager;
+    const p: any = await m
+      .createQueryBuilder()
+      .select(['p.name AS name', 'p."quotationId" AS "quotationId"', 'p."contractId" AS "contractId"'])
+      .from('projects', 'p')
+      .where('CAST(p.id AS TEXT) = :id', { id: projectId })
+      .getRawOne();
+    if (!p) return { equipments: [] };
+    let quotationId = p.quotationId;
+    if (p.contractId) {
+      const c: any = await m.createQueryBuilder().select('c."quotationId"', 'quotationId').from('contracts', 'c')
+        .where('CAST(c.id AS TEXT) = :id', { id: p.contractId }).getRawOne();
+      quotationId = c?.quotationId || quotationId;
+    }
+    const texts: string[] = [p.name || ''];
+    if (quotationId) {
+      const items: any[] = await m
+        .createQueryBuilder()
+        .select(['i.name AS name', 'pr.category AS category'])
+        .from('quotation_items', 'i')
+        .leftJoin('products', 'pr', 'CAST(pr.id AS TEXT) = i."productId"')
+        .where('i."quotationId" = :id', { id: quotationId })
+        .getRawMany();
+      for (const it of items) texts.push(it.name || '', String(it.category || '').split('/').pop() || '');
+    }
+    const cfg: any[] = await m
+      .createQueryBuilder()
+      .select(['s.key AS key', 's.value AS value'])
+      .from('system_configs', 's')
+      .where('s.key IN (:...keys)', { keys: ['spare_parts_bom', 'equipment_bom'] })
+      .getRawMany();
+    const parse = (k: string): Record<string, any[]> => {
+      try {
+        return JSON.parse(cfg.find((x) => x.key === k)?.value || '{}') || {};
+      } catch {
+        return {};
+      }
+    };
+    const spares = parse('spare_parts_bom');
+    const kits = parse('equipment_bom');
+    const hay = texts.join(' ');
+    const names = [...new Set([...Object.keys(spares), ...Object.keys(kits)])].filter((n) => n && hay.includes(n));
+    return {
+      equipments: names.map((name) => ({
+        name,
+        spares: (spares[name] || []).filter((r: any) => r?.part).map((r: any) => ({ part: r.part, spareType: r.spareType || '', profession: r.profession || '' })),
+        parts: (kits[name] || []).filter((r: any) => r?.part).map((r: any) => ({ part: r.part, profession: r.profession || '' })),
+      })),
+    };
+  }
+
   async modelsForProject(projectId: string): Promise<Array<{ value: string; label: string }>> {
     const m = this.ticketRepository.manager;
     const p: any = await m

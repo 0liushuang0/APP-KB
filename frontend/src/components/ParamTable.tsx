@@ -10,7 +10,7 @@ export interface ParamField {
   unit?: string
   confidence?: number
   source?: FieldSource
-  /** 原文片段，悬浮显示，用于核对 AI 抽取是否断章取义 */
+  /** 原文片段：显示在值下方，用于核对 AI 抽取是否断章取义 */
   evidence?: string[]
   /** 影响方案匹配 */
   requiredForMatch?: boolean
@@ -108,6 +108,15 @@ function Row({
                 <Pencil size={12} />
               </button>
             )}
+          </div>
+        )}
+        {/* 原文片段直接显示在值下面：核对时不用逐个悬停，一眼看出有没有断章取义 */}
+        {!editing && !!field.evidence?.length && (
+          <div
+            className="mt-0.5 max-w-[42ch] text-caption text-muted line-clamp-2"
+            title={field.evidence.join(' / ')}
+          >
+            「{field.evidence[0]}」{field.evidence.length > 1 ? ` 等 ${field.evidence.length} 处` : ''}
           </div>
         )}
       </td>
