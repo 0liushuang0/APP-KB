@@ -13,6 +13,12 @@ const eq: StoredBom = {
   ],
 }
 const spare: StoredBom = { 圆盘剪: [{ part: '轴承', suppliers: ['NSK'], spareType: '2年期备件' }] }
+const out: StoredBom = {
+  圆盘剪: [
+    { part: '机架', mode: 'purchase', suppliers: ['国茂'] },
+    { part: '刀片', mode: 'process', processes: [{ name: '热处理', supplier: '力士乐' }, { name: '发黑', supplier: 'SKF' }] },
+  ],
+}
 
 describe('供应管理联动', () => {
   it('在哪用到：两份清单都扫，兼容旧的单值 supplierName', () => {
@@ -23,6 +29,19 @@ describe('供应管理联动', () => {
     expect(whereUsed('力士乐', eq, spare)).toHaveLength(1)
     expect(whereUsed('NSK', eq, spare)).toEqual([{ source: '备件管理', equipment: '圆盘剪', part: '轴承' }])
     expect(whereUsed('无此厂', eq, spare)).toEqual([])
+  })
+
+  it('在哪用到：外协加工也要扫，包括工序外协行 processes 里按工序单选的厂家', () => {
+    expect(whereUsed('国茂', eq, spare, out)).toEqual([
+      { source: '设备配套', equipment: '圆盘剪', part: '减速机' },
+      { source: '设备配套', equipment: '拉矫机', part: '减速机' },
+      { source: '外协加工', equipment: '圆盘剪', part: '机架' },
+    ])
+    // 力士乐只在外协的工序明细里按「热处理」工序选用，不在主 suppliers 字段
+    expect(whereUsed('力士乐', eq, spare, out)).toEqual([
+      { source: '设备配套', equipment: '拉矫机', part: '液压缸' },
+      { source: '外协加工', equipment: '圆盘剪', part: '刀片 · 热处理' },
+    ])
   })
 
   it('同名配件用过的厂家按次数排序', () => {

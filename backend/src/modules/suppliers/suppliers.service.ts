@@ -75,7 +75,12 @@ export class SuppliersService {
 
     this.permissionQuery.apply(qb, 's', user);
 
-    const result = await paginate(qb, 's', query, ['createdAt', 'name', 'rating']);
+    /*
+     * 排序白名单补上 tier/cooperationLevel/origin：供应商列表的核心场景是比价，
+     * 产品数/价格区间/平均交期这几列是分页后另查统计表拼上去的（priceRangeBySupplier），
+     * 不是 Supplier 表自身字段，排不了序；层级/合作等级/评级/名称都是真实列，可以直接排。
+     */
+    const result = await paginate(qb, 's', query, ['createdAt', 'name', 'rating', 'tier', 'cooperationLevel', 'origin']);
 
     // 只为当前这一页补统计，不再扫全表
     const stats = await this.supplierProductsService.priceRangeBySupplier(

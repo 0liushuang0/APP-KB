@@ -55,7 +55,7 @@ import FormTextarea from '../components/FormTextarea'
 import DataTable from '../components/DataTable'
 import PageHeader from '../components/PageHeader'
 import { useSupplierCategories } from '../hooks/useSupplierCategories'
-import { useEquipmentBom, useSpareBom, useSupplierPool, whereUsed } from '../hooks/useSupplyData'
+import { useEquipmentBom, useOutsourcingBom, useSpareBom, useSupplierPool, whereUsed } from '../hooks/useSupplyData'
 import { FormSection, FieldGrid } from '../components/layout-kit'
 import PageLoader from '../components/PageLoader'
 import ErrorState from '../components/ErrorState'
@@ -198,6 +198,9 @@ export default function Suppliers() {
     isError,
     error,
     refetch,
+    onSort,
+    sortBy,
+    sortOrder,
   } = usePagedQuery<Supplier>({
     key: ['suppliers'],
     filters: params,
@@ -212,18 +215,20 @@ export default function Suppliers() {
   })
 
   /*
-   * 厂家在设备配套 / 备件清单里被哪些行引用：两份清单按厂家名存，原来在供应管理里看不到、
+   * 厂家在设备配套 / 备件清单 / 外协加工里被哪些行引用：三份清单按厂家名存，原来在供应管理里看不到、
    * 删除时也不提示 —— 删了之后那些行就挂着一个名册里不存在的名字。
+   * （外协加工是后加的第 5 个页签，whereUsed 此前只扫了前两份，这里补上第三份。）
    */
   const { data: eqBom } = useEquipmentBom()
   const { data: spareBom } = useSpareBom()
+  const { data: outBom } = useOutsourcingBom()
   const { data: supplierPool } = useSupplierPool()
   const detailUses = useMemo(
-    () => (detailQuery.data?.name ? whereUsed(detailQuery.data.name, eqBom, spareBom) : []),
-    [detailQuery.data?.name, eqBom, spareBom],
+    () => (detailQuery.data?.name ? whereUsed(detailQuery.data.name, eqBom, spareBom, outBom) : []),
+    [detailQuery.data?.name, eqBom, spareBom, outBom],
   )
   const deleteName = deleteId ? (supplierPool || []).find((x: any) => x.id === deleteId)?.name : undefined
-  const deleteUses = useMemo(() => (deleteName ? whereUsed(deleteName, eqBom, spareBom) : []), [deleteName, eqBom, spareBom])
+  const deleteUses = useMemo(() => (deleteName ? whereUsed(deleteName, eqBom, spareBom, outBom) : []), [deleteName, eqBom, spareBom, outBom])
 
 
   const {
@@ -606,6 +611,7 @@ export default function Suppliers() {
                 {
                   key: 'name',
                   title: '供应商',
+                  sortable: true,
                   render: (row: Supplier) => (
                     <div className="min-w-0">
                       <div className="text-ink truncate">{row.name}</div>
@@ -616,6 +622,7 @@ export default function Suppliers() {
                 {
                   key: 'origin',
                   title: '来源',
+                  sortable: true,
                   render: (row: Supplier) =>
                     row.origin ? (
                       <span className="inline-flex items-center gap-1 text-label">
@@ -630,6 +637,7 @@ export default function Suppliers() {
                 {
                   key: 'tier',
                   title: '层级',
+                  sortable: true,
                   render: (row: Supplier) =>
                     row.tier ? (
                       <span
@@ -689,9 +697,13 @@ export default function Suppliers() {
                 {
                   key: 'cooperationLevel',
                   title: '合作等级',
+                  sortable: true,
                   render: (row: Supplier) => <StatusBadge status={row.cooperationLevel} />,
                 },
               ]}
+              onSort={onSort}
+              sortKey={sortBy}
+              sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}
               pagination={pagination}
               actions={(row: Supplier) => (
                 <div className="flex items-center gap-2">
@@ -1252,14 +1264,15 @@ export default function Suppliers() {
 
             {detailTab === 'usage' &&
               (detailUses.length === 0 ? (
-                <p className="text-sm text-muted py-6 text-center">设备配套与备件清单里还没有选用这家厂家</p>
+                <p className="text-sm text-muted py-6 text-center">设备配套、备件清单与外协加工里还没有选用这家厂家</p>
               ) : (
                 <div className="space-y-3">
-                  {(['设备配套', '备件管理'] as const).map((src) => {
+                  {(['设备配套', '备件管理', '外协加工'] as const).map((src) => {
                     const uses = detailUses.filter((u) => u.source === src)
                     if (!uses.length) return null
                     const byEquip = new Map<string, string[]>()
                     for (const u of uses) byEquip.set(u.equipment, [...(byEquip.get(u.equipment) || []), u.part])
+                    const tab = src === '设备配套' ? 'equipment' : src === '备件管理' ? 'spares' : 'outsourcing'
                     return (
                       <div key={src}>
                         <div className="text-label text-muted mb-1.5">
@@ -1272,7 +1285,7 @@ export default function Suppliers() {
                                 className="text-body-sm font-medium text-accent-700 hover:underline shrink-0"
                                 onClick={() => {
                                   setDrawerOpen(false)
-                                  navigate(`/suppliers?tab=${src === '设备配套' ? 'equipment' : 'spares'}&equipment=${encodeURIComponent(equip)}`)
+                                  navigate(`/suppliers?tab=${tab}&equipment=${encodeURIComponent(equip)}`)
                                 }}
                                 title={`打开${src} · ${equip}`}
                               >
