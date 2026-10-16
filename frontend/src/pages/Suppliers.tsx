@@ -55,6 +55,7 @@ import FormTextarea from '../components/FormTextarea'
 import DataTable from '../components/DataTable'
 import PageHeader from '../components/PageHeader'
 import { useSupplierCategories } from '../hooks/useSupplierCategories'
+import { useEquipmentBom, useSpareBom, useSupplierPool, whereUsed } from '../hooks/useSupplyData'
 import { FormSection, FieldGrid } from '../components/layout-kit'
 import PageLoader from '../components/PageLoader'
 import ErrorState from '../components/ErrorState'
@@ -207,6 +208,20 @@ export default function Suppliers() {
     queryFn: () => (selected?.id ? supplierApi.get(selected.id) : null),
     enabled: !!selected?.id,
   })
+
+  /*
+   * 厂家在设备配套 / 备件清单里被哪些行引用：两份清单按厂家名存，原来在供应管理里看不到、
+   * 删除时也不提示 —— 删了之后那些行就挂着一个名册里不存在的名字。
+   */
+  const { data: eqBom } = useEquipmentBom()
+  const { data: spareBom } = useSpareBom()
+  const { data: supplierPool } = useSupplierPool()
+  const detailUses = useMemo(
+    () => (detailQuery.data?.name ? whereUsed(detailQuery.data.name, eqBom, spareBom) : []),
+    [detailQuery.data?.name, eqBom, spareBom],
+  )
+  const deleteName = deleteId ? (supplierPool || []).find((x: any) => x.id === deleteId)?.name : undefined
+  const deleteUses = useMemo(() => (deleteName ? whereUsed(deleteName, eqBom, spareBom) : []), [deleteName, eqBom, spareBom])
 
 
   const {
@@ -1127,7 +1142,13 @@ export default function Suppliers() {
         loading={deleteMutation.isPending}
         confirmText="删除"
       >
-        <p className="text-sm text-ink-soft">确定要删除该供应商吗？其产品目录和历史报价也会一并删除。</p>
+        <p className="text-sm text-ink-soft">确定要删除{deleteName ? `「${deleteName}」` : '该供应商'}吗？其产品目录和历史报价也会一并删除。</p>
+        {deleteUses.length > 0 && (
+          <p className="mt-2 text-body-sm text-warning-fg bg-warning-bg border border-warning-line rounded-md px-3 py-2">
+            它还被 {deleteUses.length} 行引用（{[...new Set(deleteUses.map((u) => `${u.source}·${u.equipment}`))].slice(0, 4).join('、')}
+            {new Set(deleteUses.map((u) => `${u.source}·${u.equipment}`)).size > 4 ? ' 等' : ''}）。删除后这些行会标黄为「不在名册」，需重新选厂家。
+          </p>
+        )}
       </Modal>
 
       {/* 详情 */}
@@ -1154,6 +1175,7 @@ export default function Suppliers() {
                 { value: 'basic', label: '基本信息' },
                 { value: 'products', label: '产品目录', count: detailQuery.data?.products?.length },
                 { value: 'capabilities', label: '能力明细', count: detailQuery.data?.capabilities?.length },
+                { value: 'usage', label: '在哪用到', count: detailUses.length },
               ]}
               value={detailTab}
               onChange={setDetailTab}
@@ -1200,6 +1222,44 @@ export default function Suppliers() {
                 setOpen={setProductModalOpen}
               />
             )}
+
+            {detailTab === 'usage' &&
+              (detailUses.length === 0 ? (
+                <p className="text-sm text-muted py-6 text-center">设备配套与备件清单里还没有选用这家厂家</p>
+              ) : (
+                <div className="space-y-3">
+                  {(['设备配套', '备件管理'] as const).map((src) => {
+                    const uses = detailUses.filter((u) => u.source === src)
+                    if (!uses.length) return null
+                    const byEquip = new Map<string, string[]>()
+                    for (const u of uses) byEquip.set(u.equipment, [...(byEquip.get(u.equipment) || []), u.part])
+                    return (
+                      <div key={src}>
+                        <div className="text-label text-muted mb-1.5">
+                          {src}（{uses.length} 行）
+                        </div>
+                        <div className="space-y-1.5">
+                          {[...byEquip.entries()].map(([equip, parts]) => (
+                            <div key={equip} className="bg-subtle rounded-md px-3 py-2 flex items-start gap-3">
+                              <button
+                                className="text-body-sm font-medium text-accent-700 hover:underline shrink-0"
+                                onClick={() => {
+                                  setDrawerOpen(false)
+                                  navigate(`/suppliers?tab=${src === '设备配套' ? 'equipment' : 'spares'}&equipment=${encodeURIComponent(equip)}`)
+                                }}
+                                title={`打开${src} · ${equip}`}
+                              >
+                                {equip}
+                              </button>
+                              <span className="text-body-sm text-ink-soft">{parts.join('、')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
 
             {detailTab === 'capabilities' &&
               ((detailQuery.data?.capabilities || []).length === 0 ? (

@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { professionOfPart, resolveProfession, groupByProfession, moveItem, PROFESSIONS } from './profession'
+import {
+  professionOfPart,
+  resolveProfession,
+  groupByProfession,
+  moveItem,
+  PROFESSIONS,
+  DEFAULT_PROFESSIONS,
+  fallbackProfession,
+  normalizeProfessions,
+  parseKeywords,
+} from './profession'
 
 describe('专业判定', () => {
   it('按名称关键词自动归类', () => {
@@ -61,5 +71,56 @@ describe('拖拽排序 moveItem', () => {
     expect(moveItem(arr, 1, 1)).toBe(arr)
     expect(moveItem(arr, -1, 0)).toBe(arr)
     expect(moveItem(arr, 0, 99)).toBe(arr)
+  })
+})
+
+describe('可维护的分类清单', () => {
+  const withPneumatic = [
+    ...DEFAULT_PROFESSIONS.filter((d) => d.key !== '其他'),
+    { key: '气动', name: '气动', keywords: ['气缸', '气动', '电磁阀'] },
+    { key: '其他', name: '整机', keywords: [] },
+  ]
+
+  it('新增分类优先匹配：气动件从液压里分出来', () => {
+    expect(professionOfPart('气动三联件')).toBe('液压')
+    expect(professionOfPart('气动三联件', withPneumatic)).toBe('气动')
+    expect(professionOfPart('气缸', withPneumatic)).toBe('气动')
+    // 内置分类之间的老优先级不变：电机轴 → 电气
+    expect(professionOfPart('电机轴', withPneumatic)).toBe('电气')
+  })
+
+  it('改名只改显示：键不变，已有行照常归组', () => {
+    const groups = groupByProfession([{ part: '不明物' }], withPneumatic)
+    expect(groups[0].profession).toBe('其他')
+  })
+
+  it('删除分类：手动归入它的行改按名称自动归类，不命中归兜底', () => {
+    const noInstrument = DEFAULT_PROFESSIONS.filter((d) => d.key !== '仪表')
+    expect(resolveProfession({ part: '接近开关', profession: '仪表' }, noInstrument)).toBe('其他')
+    expect(resolveProfession({ part: '轴承座', profession: '仪表' }, noInstrument)).toBe('机械')
+  })
+
+  it('没有「其他」时兜底到最后一类', () => {
+    const defs = DEFAULT_PROFESSIONS.filter((d) => d.key !== '其他')
+    expect(fallbackProfession(defs)).toBe('仪表')
+    expect(professionOfPart('不明物', defs)).toBe('仪表')
+  })
+
+  it('清单校验：名称必填、不重名，新分类以名称为键，键冲突自动加序号', () => {
+    expect(normalizeProfessions([]).ok).toBe(false)
+    expect(normalizeProfessions([{ key: 'a', name: ' ', keywords: [] }]).ok).toBe(false)
+    expect(normalizeProfessions([{ key: 'a', name: '机械', keywords: [] }, { key: 'b', name: '机械', keywords: [] }]).ok).toBe(false)
+    const r = normalizeProfessions([
+      { key: '机械', name: '机械件', keywords: [' 辊 ', '辊', ''] },
+      { key: '', name: '机械', keywords: [] },
+    ])
+    expect(r.ok && r.defs).toEqual([
+      { key: '机械', name: '机械件', keywords: ['辊'] },
+      { key: '机械2', name: '机械', keywords: [] },
+    ])
+  })
+
+  it('关键词输入支持顿号、逗号、空格分隔并去重', () => {
+    expect(parseKeywords('气缸、电磁阀, 气源  气缸')).toEqual(['气缸', '电磁阀', '气源'])
   })
 })
