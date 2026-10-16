@@ -18,6 +18,10 @@ class FieldValue:
     confidence: float = 0.0
     evidence: list[dict] = field(default_factory=list)
     source: str = "ai"
+    # 来自需求模板：分组（参数表按组显示）、是否必填（影响选型/报价）
+    group: str | None = None
+    required_for_match: bool = False
+    required_for_quote: bool = False
 
     @property
     def level(self) -> str:
@@ -48,6 +52,10 @@ class RequirementCard:
     notes: str = ""
     llm_used: bool = False
     summary: str = ""
+    # 识别依据：template_source = user（需求已选产品类型）/ inferred（按资料在需求模板里判定）/ builtin（内置大类兜底）
+    template_category: str | None = None
+    template_source: str | None = None
+    category_reason: str = ""
 
     def field_map(self) -> dict[str, FieldValue]:
         return {f.key: f for f in self.fields}

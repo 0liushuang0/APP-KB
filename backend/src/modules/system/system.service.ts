@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, BadRequestException, Logger } from '@nestjs/common';
 import { buildFunnel, chainFacts, cny, dealDate, dealsBetween, delta, monthlyTrend, quoteDate, winRate } from './business-metrics';
 import { loadRegionDict, normalizeRegion } from '../../common/utils/region.util';
+import { cycleMetrics } from './cycle-metrics';
 import { summarizeAutomation } from '../../common/utils/automation-log';
 import { domainEvents } from '../../common/services/domain-events';
 import { ConfigService } from '@nestjs/config';
@@ -316,7 +317,8 @@ export class SystemService implements OnModuleInit {
   /**
    * 我的今天：需要人推动的事，每类都给计数和直达链接（带筛选参数，点过去就是那几条）。
    */
-  private async computeTodos(ownerId?: string, submittedBy?: string) {
+  /** 「我的今天」待办计数（周报也用这一份口径） */
+  async computeTodos(ownerId?: string, submittedBy?: string) {
     const today = new Date().toISOString().slice(0, 10);
     const in7 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
@@ -404,14 +406,44 @@ export class SystemService implements OnModuleInit {
 
   /** 本周系统替你做了什么：只数事实（来自 audit_logs 里 action='auto' 的记录） */
   private async automationSummary(days = 7): Promise<Array<{ kind: string; label: string; count: number }>> {
-    const from = new Date(Date.now() - days * 86400000);
-    const rows = await this.auditLogRepository
+    return this.automationBetween(new Date(Date.now() - days * 86400000));
+  }
+
+  /** 某段时间里系统自动做了什么（周报按自然周取） */
+  async automationBetween(from: Date, to?: Date): Promise<Array<{ kind: string; label: string; count: number }>> {
+    const qb = this.auditLogRepository
       .createQueryBuilder('a')
       .select(['a.objectType AS kind', 'a.objectId AS "objectId"', 'a.detail AS detail', 'a.createdAt AS "createdAt"'])
       .where('a.action = :a', { a: 'auto' })
-      .andWhere('a.createdAt >= :from', { from })
-      .getRawMany<{ kind: string; objectId: string | null; detail: string; createdAt: any }>();
+      .andWhere('a.createdAt >= :from', { from });
+    if (to) qb.andWhere('a.createdAt < :to', { to });
+    const rows = await qb.getRawMany<{ kind: string; objectId: string | null; detail: string; createdAt: any }>();
     return summarizeAutomation(rows);
+  }
+
+  /**
+   * 业务结果指标：报价响应天数、需求→签约周期、赢单率、丢单原因、回款及时率（定义见 cycle-metrics.ts）。
+   * ownerId 给了就只算本人负责的需求链。
+   */
+  async getCycleMetrics(ownerId?: string, days = 180) {
+    const [reqs, props, quotes, contracts, payments] = await Promise.all([
+      this.requirementRepository.find({
+        select: ['id', 'ownerId', 'requirementDate', 'createdAt', 'updatedAt', 'status', 'lossReason', 'isCurrent'] as any,
+        ...(ownerId ? { where: { ownerId } as any } : {}),
+      }),
+      this.proposalRepository.find({ select: ['id', 'requirementId'] as any }),
+      this.quotationRepository.find({ select: ['id', 'proposalId', 'quotedAt', 'createdAt'] as any }),
+      this.contractRepository.find({ select: ['id', 'quotationId', 'signedDate', 'createdAt', 'status'] as any }),
+      this.dataSource.query(`SELECT "contractId", "dueDate", "receivedDate" FROM contract_payments`) as Promise<any[]>,
+    ]);
+    let pays = payments;
+    if (ownerId) {
+      const mine = new Set(
+        (await this.contractRepository.find({ select: ['id'] as any, where: { ownerId } as any })).map((c: any) => String(c.id)),
+      );
+      pays = payments.filter((p) => mine.has(String(p.contractId)));
+    }
+    return cycleMetrics({ reqs: reqs as any, props: props as any, quotes: quotes as any, contracts: contracts as any, payments: pays }, new Date(), days);
   }
 
   /** $1/$2 占位符在 SQLite 下换成 ?（PG 原样） */

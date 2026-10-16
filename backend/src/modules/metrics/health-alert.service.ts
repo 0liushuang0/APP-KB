@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
 import { User } from '../users/entities/user.entity';
 import { MetricsService } from './metrics.service';
+import { JobLockService } from '../../common/services/job-lock.service';
 
 /**
  * 运行告警（评估框架 P1 可观测性）：
@@ -12,6 +13,9 @@ import { MetricsService } from './metrics.service';
  *   · AI 服务不可达 → 通知（每 1h 一次）
  *   · 错误率 10 分钟窗口 > 10% 且样本足够 → 通知（每 1h 一次）
  * 无 Prometheus 的单机环境里，站内通知就是第一道告警防线。
+ *
+ * 磁盘、错误率是每台服务器自己的事，各报各的；备份、AI 是全集群共用的，
+ * 经任务锁保证多台服务器共用数据库时同一冷却期只发一次。
  */
 @Injectable()
 export class HealthAlertService implements OnModuleInit, OnModuleDestroy {
@@ -32,7 +36,11 @@ export class HealthAlertService implements OnModuleInit, OnModuleDestroy {
     private readonly notificationsService: NotificationsService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly jobLock: JobLockService,
   ) {}
+
+  /** 全集群共用的告警（备份、AI）：同一冷却期内只有一台服务器发 */
+  private static readonly SHARED = new Set(['backup', 'ai']);
 
   onModuleInit(): void {
     // 首检延迟 3 分钟（等服务稳定），之后每 10 分钟一轮
@@ -55,6 +63,23 @@ export class HealthAlertService implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
     if (now - (this.lastFired.get(kind) || 0) < this.cooldown[kind]) return;
     this.lastFired.set(kind, now);
+    if (HealthAlertService.SHARED.has(kind)) {
+      const r = await this.jobLock
+        .runExclusive(`health-alert:${kind}`, () => this.notifyAdmins(title, content), {
+          ttlMs: 60_000,
+          minIntervalMs: this.cooldown[kind],
+        })
+        .catch((e) => {
+          this.logger.error(`告警任务锁失败：${e?.message}`);
+          return null;
+        });
+      if (r && !r.ran) this.logger.debug(`[告警] ${title} 已由其他服务器发出`);
+      return;
+    }
+    await this.notifyAdmins(title, content);
+  }
+
+  private async notifyAdmins(title: string, content: string): Promise<void> {
     try {
       const admins = await this.userRepository.find({ where: { isSystemAdmin: true } });
       const targets = admins.length ? admins : await this.userRepository.find({ take: 5 });
@@ -91,7 +116,7 @@ export class HealthAlertService implements OnModuleInit, OnModuleDestroy {
 
       if (!summary.aiServiceUp) {
         await this.fire('ai', 'AI 服务不可达',
-          'AI 问答/生成功能暂不可用（基础业务不受影响）。请检查 ai-service 进程（端口 8100）。');
+          'AI 问答/生成功能暂不可用（基础业务不受影响）。请检查 ai-service 进程（运行状态页可看地址与日志）。');
       }
 
       const err = summary.http as { total: number; rate: number };

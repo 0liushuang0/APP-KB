@@ -10,6 +10,7 @@ import { useDebounce } from '../hooks/useDebounce'
 import { toList } from '../utils/apiList'
 import { useFormValidation, required } from '../hooks/useFormValidation'
 import { usePagedQuery } from '../hooks/usePagedQuery'
+import SavedViewsBar, { useSavedViews } from '../components/SavedViewsBar'
 import { useModuleStats } from '../hooks/useModuleStats'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
 import { usePageActions } from '../contexts/PageActionsContext'
@@ -105,19 +106,21 @@ export default function Requirements() {
   const debouncedSearch = useDebounce(search, 300)
   // 需求即商机：按商机阶段（状态）过滤，后端列表接口已支持 status 参数。
   // 状态写入 URL：跳详情再返回筛选不丢，还能把筛好的视图直接分享/收藏。
-  const [statusFilter, setStatusFilterState] = useState(searchParams.get('status') || '')
-  const setStatusFilter = (v: string) => {
-    setStatusFilterState(v)
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
+  // 渲染后再同步网址：同一次操作里别处（如套用保存的视图）也会改网址，在事件里直接写会互相覆盖
+  useEffect(() => {
+    if ((searchParams.get('status') || '') === statusFilter) return
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev)
-        if (v) next.set('status', v)
+        if (statusFilter) next.set('status', statusFilter)
         else next.delete('status')
         return next
       },
       { replace: true },
     )
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter])
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   /** 客户筛选（'none' = 未关联客户）；落地阶段筛选（landStage） */
@@ -147,6 +150,7 @@ export default function Requirements() {
     onSort,
     sortBy,
     sortOrder,
+    setSort,
     refetch,
   } = usePagedQuery<Requirement>({
     key: ['requirements'],
@@ -160,6 +164,20 @@ export default function Requirements() {
     },
     fetcher: (params) => requirementApi.list(params) as any,
     initialPageSize: 15,
+  })
+
+  // 保存的视图 / 列配置：筛选 + 排序 + 显示哪些列
+  const sv = useSavedViews({
+    page: 'requirements',
+    filters: { status: statusFilter, customerId: customerFilter, landStage: landFilter },
+    applyFilters: (f) => {
+      setStatusFilter(f.status || '')
+      setCustomerFilter(f.customerId || '')
+      setLandFilter(f.landStage || '')
+    },
+    sortBy,
+    sortOrder,
+    setSort,
   })
 
   // 同类产品历史报价区间：填预计金额时作参考（不自动填）
@@ -527,6 +545,8 @@ export default function Requirements() {
           onRowDoubleClick={(row) => openDetail(row)}
           pagination={pagination}
           widthStorageKey="requirements"
+          hiddenColumns={sv.hidden}
+          toolbar={(cols) => <SavedViewsBar sv={sv} columns={cols} />}
               onSort={onSort}
           sortKey={sortBy}
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}

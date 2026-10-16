@@ -36,6 +36,7 @@ import {
 import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation, required } from '../hooks/useFormValidation'
 import { usePagedQuery } from '../hooks/usePagedQuery'
+import SavedViewsBar, { useSavedViews } from '../components/SavedViewsBar'
 import { useModuleStats } from '../hooks/useModuleStats'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
 import { usePageActions } from '../contexts/PageActionsContext'
@@ -182,6 +183,7 @@ export default function Customers() {
     onSort,
     sortBy,
     sortOrder,
+    setSort,
     refetch,
   } = usePagedQuery<Customer>({
     key: ['customers'],
@@ -193,6 +195,20 @@ export default function Customers() {
     },
     fetcher: (params) => customerApi.list(params) as any,
     initialPageSize: 15,
+  })
+
+  // 保存的视图 / 列配置：筛选 + 排序 + 显示哪些列
+  const sv = useSavedViews({
+    page: 'customers',
+    filters: { status: statusFilter, customerType: typeFilter, level: levelFilter },
+    applyFilters: (f) => {
+      setStatusFilter(f.status || '')
+      setTypeFilter(f.customerType || '')
+      setLevelFilter(f.level || '')
+    },
+    sortBy,
+    sortOrder,
+    setSort,
   })
 
   const detailQuery = useQuery({
@@ -634,6 +650,8 @@ export default function Customers() {
           onRowDoubleClick={(row) => navigate(`/customers/${row.id}`)}
           pagination={pagination}
           widthStorageKey="customers"
+          hiddenColumns={sv.hidden}
+          toolbar={(cols) => <SavedViewsBar sv={sv} columns={cols} />}
               onSort={onSort}
           sortKey={sortBy}
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}

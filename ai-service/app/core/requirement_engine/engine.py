@@ -1,10 +1,17 @@
 """缺失推断 + 补问草稿生成 + 引擎主流程。
 
-引擎主流程：多源解析 → 大类识别 → 加载模板 → 字段抽取 → 缺失推断 → 整体置信度 → 输出需求卡。
+引擎主流程：多源解析 → 确定模板 → 字段抽取 → 缺失推断 → 整体置信度 → 输出需求卡。
+
+确定模板（优先级从高到低）：
+  1. 需求已选产品类型 → 用「需求模板」页里该类型的字段（后端随请求传 template）；
+  2. 没选 → 在全部需求模板里按资料内容判定（后端传 candidates），判定出的类型回给后端自动填上；
+  3. 都没有 → 内置 5 个设备大类兜底。
 """
 from __future__ import annotations
 
-from app.core.requirement_engine.param_templates import get_template, infer_category, FieldDef
+from app.core.requirement_engine.param_templates import (
+    get_template, infer_category, infer_category_among, fielddefs_from_template, FieldDef,
+)
 from app.core.requirement_engine.requirement_card import RequirementCard, FieldValue, MissingField
 from app.core.requirement_engine.source_parsers import SourceChunk
 
@@ -24,6 +31,8 @@ def detect_missing(fields: list[FieldValue],
             if fdef.options:
                 options_text = f"，可选项：{' / '.join(fdef.options)}"
             hint = f"影响选型/报价，需向客户确认{fdef.label}{unit_text}{options_text}"
+            if fdef.hint and not fdef.options:
+                hint += f"（{fdef.hint}）"
             sev = "high"
             if fdef.default:
                 hint = f"默认 {fdef.label}={fdef.default}{unit_text}，请确认是否一致"
@@ -47,30 +56,68 @@ def overall_confidence(fields: list[FieldValue],
     return sum(scores) / len(scores)
 
 
-async def run_engine(chunks: list[SourceChunk]) -> RequirementCard:
-    """需求结构化引擎主流程。"""
+def _pick_template(all_text: str,
+                   template: dict | None,
+                   candidates: list[dict] | None,
+                   ) -> tuple[str | None, float, list[FieldDef] | None, str | None, str]:
+    """返回 (产品类型, 置信度, 字段定义, 来源, 依据)。"""
+    if template and template.get("fields"):
+        defs = fielddefs_from_template(template["fields"])
+        if defs:
+            return template.get("category"), 1.0, defs, "user", "需求已选产品类型"
+    usable = [c for c in (candidates or []) if c.get("category") and c.get("fields")]
+    if usable:
+        cat, conf, why = infer_category_among(all_text, [c["category"] for c in usable])
+        if cat:
+            hit = next(c for c in usable if c["category"] == cat)
+            defs = fielddefs_from_template(hit["fields"])
+            if defs:
+                return cat, conf, defs, "inferred", (f"资料中出现：{why}" if why else "")
+    category, cat_conf = infer_category(all_text)
+    defs = get_template(category) if category else None
+    return category, cat_conf, defs, ("builtin" if defs else None), ""
+
+
+async def run_engine(chunks: list[SourceChunk],
+                     template: dict | None = None,
+                     candidates: list[dict] | None = None) -> RequirementCard:
+    """需求结构化引擎主流程。
+
+    template:   {"category": "零部件/联轴器/常规联轴器", "fields": [需求模板字段...]}，需求已选产品类型时传
+    candidates: [{"category": ..., "fields": [...]}, ...]，需求没选产品类型时传全部需求模板
+    """
     card = RequirementCard()
 
     all_text = "\n".join(c.raw_text for c in chunks)
-    category, cat_conf = infer_category(all_text)
+    category, cat_conf, defs, source, reason = _pick_template(all_text, template, candidates)
     card.product_category = category
     card.category_confidence = cat_conf
+    card.template_category = category if source in ("user", "inferred") else None
+    card.template_source = source
+    card.category_reason = reason
 
-    template = get_template(category) if category else None
-    if not template:
-        card.notes = (f"无法识别产品大类（置信{cat_conf:.0%}），"
-                      "请人工指定大类后重新解析。")
+    if not defs:
+        card.notes = (f"无法识别产品类型（置信{cat_conf:.0%}），"
+                      "请在需求上选择产品类型后重新识别。")
         card.sources = [c.to_dict() for c in chunks]
         return card
 
     from app.core.requirement_engine.extractor import extract_fields
-    fields, llm_used, summary = await extract_fields(chunks, template, category)
+    fields, llm_used, summary = await extract_fields(chunks, defs, category or "")
+    # 把模板上的分组 / 必填带到结果上：参数表按组显示，完整度与缺失项按必填项算
+    fmap = {f.key: f for f in defs}
+    for fv in fields:
+        fd = fmap.get(fv.key)
+        if fd:
+            fv.group = fd.group
+            fv.required_for_match = fd.required_for_match
+            fv.required_for_quote = fd.required_for_quote
     card.fields = fields
     card.llm_used = llm_used
     card.summary = summary
 
-    card.missing = detect_missing(fields, template)
-    card.overall_confidence = overall_confidence(fields, template)
+    card.missing = detect_missing(fields, defs)
+    card.overall_confidence = overall_confidence(fields, defs)
 
     card.sources = [c.to_dict() for c in chunks]
     if not llm_used:

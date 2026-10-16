@@ -48,6 +48,13 @@ export class SystemController {
     return this.systemService.getDashboardStats(user as any, scope === 'mine' ? 'mine' : 'all');
   }
 
+  /** 业务结果指标：报价响应天数、需求→签约周期、赢单率、丢单原因、回款及时率；scope=mine 只算本人负责的 */
+  @Get('cycle-metrics')
+  async cycleMetrics(@CurrentUser() user: CurrentUserType, @Query('scope') scope?: string, @Query('days') days?: string) {
+    const d = Math.max(0, Math.min(3650, Number(days) || 180));
+    return this.systemService.getCycleMetrics(scope === 'mine' ? user?.userId : undefined, d);
+  }
+
   /** 各业务列表页顶部统计卡片（客户/需求/方案/报价/合同/项目） */
   @Get('module-stats')
   async moduleStats() {

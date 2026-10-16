@@ -28,11 +28,21 @@ class SourceInput(BaseModel):
     raw_text: str = Field(..., max_length=500_000)
 
 
+class TemplateInput(BaseModel):
+    """「需求模板」页维护的一个产品类型及其字段（key/label/unit/type/section/required/remark/options）。"""
+    category: str = Field(..., max_length=200)
+    fields: List[Dict[str, Any]] = Field(default_factory=list, max_length=500)
+
+
 class StructureRequest(BaseModel):
     title: str = Field(default="", max_length=500)
     description: str = Field(default="", max_length=50_000)
     sources: List[SourceInput] = Field(default_factory=list)
     category_override: Optional[str] = Field(default=None, max_length=100)
+    # 需求已选产品类型：按该类型的模板识别
+    template: Optional[TemplateInput] = None
+    # 需求没选产品类型：在这些模板里按资料内容判定（判定结果回给后端自动填上）
+    candidates: List[TemplateInput] = Field(default_factory=list, max_length=300)
 
 
 class FollowupRequest(BaseModel):
@@ -67,7 +77,11 @@ async def structure_requirement(request: StructureRequest):
     if not chunks:
         return {"card": RequirementCard().to_dict(), "error": "无有效文本输入"}
 
-    card = await run_engine(chunks)
+    card = await run_engine(
+        chunks,
+        template=request.template.model_dump() if request.template else None,
+        candidates=[c.model_dump() for c in request.candidates],
+    )
     # summary = LLM 产出的需求摘要（业务内容）；digest = 一行解析诊断（字段绿黄红、缺失数）
     return {"card": card.to_dict(), "summary": card.summary, "digest": card.summary_line()}
 

@@ -12,6 +12,7 @@ import { quotationApi, customerApi, proposalApi, productApi } from '../api/servi
 import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation, required } from '../hooks/useFormValidation'
 import { usePagedQuery } from '../hooks/usePagedQuery'
+import SavedViewsBar, { useSavedViews } from '../components/SavedViewsBar'
 import { useModuleStats } from '../hooks/useModuleStats'
 import { useRegisterPageAssistant } from '../contexts/PageAssistantContext'
 import { usePageActions } from '../contexts/PageActionsContext'
@@ -134,12 +135,26 @@ export default function Quotations() {
     onSort,
     sortBy,
     sortOrder,
+    setSort,
     refetch,
   } = usePagedQuery<Quotation>({
     key: ['quotations'],
     filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined, owner: owner || undefined },
     fetcher: (params) => quotationApi.list(params) as any,
     initialPageSize: 15,
+  })
+
+  // 保存的视图 / 列配置：筛选 + 排序 + 显示哪些列
+  const sv = useSavedViews({
+    page: 'quotations',
+    filters: { status: statusFilter, customerId: customerFilter },
+    applyFilters: (f) => {
+      setStatusFilter(f.status || '')
+      setCustomerFilter(f.customerId || '')
+    },
+    sortBy,
+    sortOrder,
+    setSort,
   })
 
   const detailQuery = useQuery({
@@ -634,6 +649,8 @@ export default function Quotations() {
           onRowDoubleClick={(row) => openDetail(row)}
           pagination={pagination}
           widthStorageKey="quotations"
+          hiddenColumns={sv.hidden}
+          toolbar={(cols) => <SavedViewsBar sv={sv} columns={cols} />}
               onSort={onSort}
           sortKey={sortBy}
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}

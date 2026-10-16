@@ -1,6 +1,10 @@
 """参数模板：定义各产品大类"该抽哪些字段"。
 
-一期内置模板，二期改为 DB 驱动（对应 PRD param_template 表）。
+两套来源，优先级从高到低：
+  1. 业务人员在「需求模板」页维护的模板（后端随请求传入，见 fielddefs_from_template）——
+     需求已选产品类型就用该类型的模板；没选就在全部模板里按资料内容判定（infer_category_among）；
+  2. 下方内置的 5 个设备大类（矫直/剪切/辊涂/开收卷/液压锁紧），只在后端没传模板时兜底。
+原内置的「燃油输送装置」不是博亚产品线，已移除。
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -19,6 +23,9 @@ class FieldDef:
     required_for_quote: bool = False
     default: Any = None
     validation: dict | None = None
+    # 需求模板里的分组（如「来料信息」「设备信息」）与填写说明（如「min~max」「冷轧/拉矫/辊涂线」）
+    group: str | None = None
+    hint: str | None = None
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}
@@ -55,17 +62,6 @@ HYDRAULIC_LOCKING = [
              aliases=["交货期", "交货时间", "交付", "到货"]),
     FieldDef("temperature", "工况温度", "string",
              aliases=["温度", "环境温度", "工作温度"]),
-]
-
-FUEL_TRANSPORT = [
-    FieldDef("flow_rate", "流量", "number", unit="m³/h",
-             aliases=["流量", "排量"], required_for_match=True),
-    FieldDef("head", "扬程", "number", unit="m", aliases=["扬程"]),
-    FieldDef("medium", "介质", "enum",
-             options=["汽油", "柴油", "航空煤油"],
-             required_for_match=True),
-    FieldDef("quantity", "数量", "number", unit="台",
-             required_for_quote=True),
 ]
 
 # ============================================================
@@ -763,7 +759,6 @@ WINDER_UNWINDER = [
 
 TEMPLATES: dict[str, list[FieldDef]] = {
     "液压锁紧装置": HYDRAULIC_LOCKING,
-    "燃油输送装置": FUEL_TRANSPORT,
     "矫直设备": STRAIGHTENING,
     "剪切设备": SHEARING,
     "辊涂设备": ROLLER_COATING,
@@ -777,8 +772,62 @@ def get_template(category: str) -> list[FieldDef] | None:
     return TEMPLATES.get(category)
 
 
+# 内置大类的关键词权重：专有词 3、行业常用词 2、泛词 1
+BUILTIN_KEYWORDS: dict[str, dict[str, int]] = {
+    "液压锁紧装置": {
+        "液压锁": 3, "锁紧器": 3, "锁紧装置": 3, "液压缸锁": 3,
+        "锁紧": 2, "液压夹": 2, "抱闸": 2, "安全锁": 2,
+    },
+    "矫直设备": {
+        "拉弯矫": 3, "矫直机": 3, "矫直机组": 3, "矫直段": 3,
+        "辊式矫直": 3, "连续拉弯矫": 3, "张力矫直": 3,
+        "拉弯矫直": 3, "矫直线": 3, "straightener": 3, "leveler": 3,
+        "矫直": 2, "平整机": 2, "延伸率": 2, "张力辊": 2,
+        "平整": 1, "板形": 1, "平直度": 1,
+    },
+    "剪切设备": {
+        "纵剪": 3, "横剪": 3, "剪切机组": 3, "圆盘剪": 3,
+        "飞剪": 3, "切边线": 3, "刀箱": 3, "碎边": 3,
+        "slitting": 3, "shearing": 3, "剪切线": 3,
+        "剪切": 2, "剪切段": 2, "废边": 2, "切边宽度": 2,
+        "剪切精度": 2, "剪切毛刺": 2, "剪机": 1,
+    },
+    "辊涂设备": {
+        "辊涂": 3, "化涂": 3, "涂覆机": 3, "涂层机": 3,
+        "涂头": 3, "辊涂机": 3, "涂覆段": 3, "涂辊": 3,
+        "涂覆辊": 3, "coating": 2, "涂覆": 2,
+        "彩涂": 1, "两辊式": 1, "三辊式": 1,
+    },
+    "开收卷设备": {
+        "开卷机": 3, "收卷机": 3, "卷取机": 3, "卷筒胀缩": 3,
+        "钳口": 3, "扩径": 3, "错层": 3, "塔形": 3,
+        "uncoiler": 3, "recoiler": 3, "winder": 3,
+        "开卷": 2, "收卷": 2, "卷取": 2, "卷筒": 2,
+        "上开卷": 2, "下开卷": 2, "套筒": 2,
+    },
+}
+
+
+def _builtin_scores(text: str) -> tuple[dict[str, int], dict[str, int]]:
+    """各内置大类的关键词总分与命中个数（英文关键词不区分大小写）。"""
+    scores: dict[str, int] = {}
+    hits: dict[str, int] = {}
+    low = text.lower()
+    for cat, kws in BUILTIN_KEYWORDS.items():
+        total = 0
+        cnt = 0
+        for kw, w in kws.items():
+            if kw in text or kw in low:
+                total += w
+                cnt += 1
+        if total > 0:
+            scores[cat] = total
+            hits[cat] = cnt
+    return scores, hits
+
+
 def infer_category(text: str) -> tuple[str | None, float]:
-    """从文本粗判产品大类（加权评分版）。
+    """从文本粗判内置产品大类（加权评分版）。
 
     每个关键词有权重 1-3：专有词（如"矫直机"）权重 3，
     行业常用词（如"平整"）权重 2，泛词（如"板形"）权重 1。
@@ -786,62 +835,11 @@ def infer_category(text: str) -> tuple[str | None, float]:
 
     返回 (category, confidence)。无法判断返回 (None, 0)。
     """
-    keyword_weights: dict[str, dict[str, int]] = {
-        "液压锁紧装置": {
-            "液压锁": 3, "锁紧器": 3, "锁紧装置": 3, "液压缸锁": 3,
-            "锁紧": 2, "液压夹": 2, "抱闸": 2, "安全锁": 2,
-        },
-        "燃油输送装置": {
-            "燃油": 3, "加油车": 3, "燃油输送": 3, "航空煤油": 3,
-            "输油": 2, "油泵": 2, "柴油": 2,
-        },
-        "矫直设备": {
-            "拉弯矫": 3, "矫直机": 3, "矫直机组": 3, "矫直段": 3,
-            "辊式矫直": 3, "连续拉弯矫": 3, "张力矫直": 3,
-            "拉弯矫直": 3, "矫直线": 3, "straightener": 3, "leveler": 3,
-            "矫直": 2, "平整机": 2, "延伸率": 2, "张力辊": 2,
-            "平整": 1, "板形": 1, "平直度": 1,
-        },
-        "剪切设备": {
-            "纵剪": 3, "横剪": 3, "剪切机组": 3, "圆盘剪": 3,
-            "飞剪": 3, "切边线": 3, "刀箱": 3, "碎边": 3,
-            "slitting": 3, "shearing": 3, "剪切线": 3,
-            "剪切": 2, "剪切段": 2, "废边": 2, "切边宽度": 2,
-            "剪切精度": 2, "剪切毛刺": 2, "剪机": 1,
-        },
-        "辊涂设备": {
-            "辊涂": 3, "化涂": 3, "涂覆机": 3, "涂层机": 3,
-            "涂头": 3, "辊涂机": 3, "涂覆段": 3, "涂辊": 3,
-            "涂覆辊": 3, "coating": 2, "涂覆": 2,
-            "彩涂": 1, "两辊式": 1, "三辊式": 1,
-        },
-        "开收卷设备": {
-            "开卷机": 3, "收卷机": 3, "卷取机": 3, "卷筒胀缩": 3,
-            "钳口": 3, "扩径": 3, "错层": 3, "塔形": 3,
-            "uncoiler": 3, "recoiler": 3, "winder": 3,
-            "开卷": 2, "收卷": 2, "卷取": 2, "卷筒": 2,
-            "上开卷": 2, "下开卷": 2, "套筒": 2,
-        },
-    }
-
-    scores: dict[str, int] = {}
-    hit_counts: dict[str, int] = {}
-    for cat, kws in keyword_weights.items():
-        total = 0
-        cnt = 0
-        for kw, w in kws.items():
-            if kw in text:
-                total += w
-                cnt += 1
-        if total > 0:
-            scores[cat] = total
-            hit_counts[cat] = cnt
-
+    scores, hit_counts = _builtin_scores(text)
     if not scores:
         return None, 0.0
 
     best = max(scores, key=scores.get)
-    best_score = scores[best]
     best_hits = hit_counts[best]
 
     # 置信度：基础 0.5 + 每个命中关键词加 0.08（上限 0.92）
@@ -853,3 +851,176 @@ def infer_category(text: str) -> tuple[str | None, float]:
         conf *= 0.7
 
     return best, round(conf, 2)
+
+
+# ============================================================
+# 需求模板（数据库维护）驱动
+# ============================================================
+
+# 需求模板的字段类型 → 引擎抽取类型
+_TYPE_MAP = {
+    "number": "number",
+    "select": "enum",
+    "multiselect": "string",
+    "range": "string",
+    "textarea": "text",
+    "text": "string",
+    "checkbox": "string",
+    "date": "string",
+}
+
+
+def fielddefs_from_template(fields: list[dict]) -> list[FieldDef]:
+    """把「需求模板」页维护的字段（key/label/unit/type/section/required/remark/options）转成引擎字段定义。
+
+    · required → 影响选型/报价的必填项：识别不到就进缺失清单、生成补问
+    · section → 分组（参数表按组显示）；remark → 填写说明（喂给大模型，也用于补问提示）
+    · select 有选项 → 枚举（大模型只能在选项里选）；range 填「最小~最大」
+    """
+    defs: list[FieldDef] = []
+    seen: set[str] = set()
+    for f in fields or []:
+        key = str(f.get("key") or "").strip()
+        label = str(f.get("label") or "").strip()
+        if not key or not label or key in seen:
+            continue
+        seen.add(key)
+        raw_type = str(f.get("type") or "text")
+        ftype = _TYPE_MAP.get(raw_type, "string")
+        options = [str(o) for o in (f.get("options") or []) if str(o).strip()] or None
+        if ftype == "enum" and not options:
+            ftype = "string"
+        hint = str(f.get("remark") or "").strip() or None
+        if raw_type == "range":
+            hint = (f"{hint}；" if hint else "") + "按「最小~最大」填写"
+        if raw_type == "multiselect" and options:
+            hint = (f"{hint}；" if hint else "") + "可多选，用顿号分隔：" + " / ".join(options)
+        required = bool(f.get("required"))
+        defs.append(FieldDef(
+            key=key,
+            label=label,
+            type=ftype,
+            unit=(str(f.get("unit") or "").strip() or None),
+            options=options if ftype == "enum" else None,
+            required_for_match=required,
+            required_for_quote=required,
+            group=(str(f.get("section") or "").strip() or None),
+            hint=hint,
+        ))
+    return defs
+
+
+# 产品类型名里的修饰前缀：去掉后剩下的才是产品本体（常规联轴器 → 联轴器、液压横剪 → 横剪）
+_MODIFIERS = ("常规", "特殊", "高强", "中厚板", "智驱", "组合", "液压", "滚筒", "球头", "非标", "轧机")
+
+# 海外客户的资料多是英文：常见产品名的英文写法 → 中文本体
+_EN_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "拉弯矫": ("tension leveller", "tension leveler", "tension levelling", "tension leveling", "stretch bend"),
+    "多辊矫": ("roller leveller", "roller leveler", "multi-roll", "multi roll leveler"),
+    "直头机": ("head straightener", "flattener"),
+    "圆盘剪": ("side trimmer", "side trim", "disc shear", "circle shear", "rotary shear"),
+    "碎边剪": ("scrap chopper", "scrap cutter", "edge chopper"),
+    "废边卷": ("scrap winder", "scrap baller", "scrap reel"),
+    "飞剪": ("flying shear",),
+    "横剪": ("crop shear",),
+    "横切线": ("cut to length", "cut-to-length", "ctl line"),
+    "分切线": ("slitting line", "slitter"),
+    "切边线": ("trimming line", "side trimming line"),
+    "拉矫线": ("tension leveling line", "tension levelling line"),
+    "准备线": ("preparation line", "recoiling line", "inspection line"),
+    "开卷机": ("uncoiler", "decoiler", "pay-off reel", "pay off reel", "payoff reel"),
+    "收卷机": ("recoiler", "tension reel", "coiler"),
+    "联轴器": ("coupling",),
+    "辊涂机": ("roll coater", "roller coater"),
+    "化涂机": ("chem coater", "chemical coater"),
+    "卷筒": ("mandrel",),
+    "支承辊": ("backup roll", "back-up roll"),
+    "工作辊": ("work roll",),
+    "中间辊": ("intermediate roll",),
+    "背衬轴承": ("backing bearing",),
+    "连铸轴承": ("caster bearing", "continuous casting bearing"),
+    "旋转接头": ("rotary joint", "rotary union"),
+    "液压螺母": ("hydraulic nut",),
+    "纠偏装置": ("edge position control", "center position control", "steering unit"),
+    "夹送装置": ("pinch roll",),
+    "精冲机": ("fine blanking",),
+    "高压清洗头": ("high pressure cleaning", "descaling nozzle"),
+    "螺旋辊": ("spiral roll", "helical roll"),
+    "胶辊": ("rubber roll",),
+    "圆盘刀": ("slitter knife", "slitting knife", "circular knife"),
+    "横剪刀": ("shear blade",),
+    "碎边刀": ("chopper knife",),
+    "缝合机模具": ("stitcher", "stitching"),
+    "多辊减速箱": ("gearbox", "gear box"),
+}
+
+
+def _segment_terms(part: str) -> list[str]:
+    """一个产品名的可匹配写法：原名、去修饰前缀后的本体、英文写法。"""
+    out = [part]
+    for m in _MODIFIERS:
+        if part.startswith(m) and len(part) - len(m) >= 2:
+            out.append(part[len(m):])
+    for zh in list(out):
+        out.extend(_EN_SYNONYMS.get(zh, ()))
+    return list(dict.fromkeys(out))
+
+
+def _match_len(text: str, low: str, part: str) -> int:
+    """该产品名在资料里能匹配到的最长写法的长度（英文按 1/3 折算，与中文字数大致可比）；没匹配到为 0。"""
+    best = 0
+    for t in _segment_terms(part):
+        if t.isascii():
+            if t in low:
+                best = max(best, max(2, len(t) // 3))
+        elif t in text:
+            best = max(best, len(t))
+    return best
+
+
+def infer_category_among(text: str, categories: list[str]) -> tuple[str | None, float, str]:
+    """在「需求模板」的全部产品类型里判定资料属于哪一个。返回 (类型路径, 置信度, 依据)。
+
+    打分（全部可解释）：
+      · 末级名称（按「+」拆开的每一项）在资料里出现：+ 匹配长度 × 3；组合类型缺一项 −2
+      · 中间各级名称出现：+ 匹配长度
+      · 中间级恰好是内置大类（如「矫直设备」）：+ 内置关键词得分（矫直机/延伸率/leveler…）
+    并列时优先「常规」类型、再优先组成项少的（只提到圆盘剪就不选「圆盘剪+碎边剪」）。
+    """
+    if not categories:
+        return None, 0.0, ""
+    low = text.lower()
+    builtin, _ = _builtin_scores(text)
+    scored: list[tuple[float, int, int, str, str]] = []
+    for cat in categories:
+        segs = [s.strip() for s in cat.split("/") if s.strip()]
+        if not segs:
+            continue
+        parts = [p.strip() for p in segs[-1].split("+") if p.strip()]
+        score = 0.0
+        why: list[str] = []
+        for part in parts:
+            m = _match_len(text, low, part)
+            if m:
+                score += m * 3
+                why.append(part)
+            elif len(parts) > 1:
+                score -= 2
+        for mid in segs[:-1]:
+            m = _match_len(text, low, mid)
+            if m:
+                score += m
+            if mid in builtin:
+                score += builtin[mid]
+                why.append(f"{mid}关键词")
+        prefer = 1 if segs[-1].startswith("常规") else 0
+        scored.append((score, prefer, -len(parts), cat, "、".join(why)))
+    scored.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+    if not scored or scored[0][0] <= 0:
+        return None, 0.0, ""
+    best = scored[0]
+    conf = min(0.5 + 0.03 * best[0], 0.95)
+    if len(scored) > 1 and best[0] - scored[1][0] <= 2:
+        # 与第二名分差很小（如 常规联轴器 / 特殊联轴器 只靠「联轴器」区分不开）：降置信，提示人确认
+        conf *= 0.75
+    return best[3], round(conf, 2), best[4]

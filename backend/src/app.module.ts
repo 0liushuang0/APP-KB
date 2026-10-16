@@ -53,6 +53,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { NumberingModule } from './modules/numbering/numbering.module';
 import { JobLockModule } from './common/services/job-lock.module';
+import { SavedViewsModule } from './modules/saved-views/saved-views.module';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { JobLockModule } from './common/services/job-lock.module';
     RecycleBinModule,
     MetricsModule,
     OpsHealthModule,
+    SavedViewsModule,
   ],
   providers: [
     {

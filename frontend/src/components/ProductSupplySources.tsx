@@ -110,7 +110,7 @@ export default function ProductSupplySources({ productId }: { productId: string 
     <div className="bg-surface rounded-xl border border-border shadow-card p-5 mb-4">
       <h3 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
         <Truck size={16} className="text-accent-500" /> 采购来源
-        <span className="text-xs text-muted font-normal">({mapped.length})</span>
+        <span className="text-caption text-muted font-normal">({mapped.length})</span>
       </h3>
       <p className="text-caption text-muted mb-3">
         关联供应管理里的供应产品后，报价选这个产品会自动带出成本（有询价取最近一次，否则取目录价中值；多家取最高），毛利随之算出。

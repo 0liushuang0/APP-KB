@@ -29,9 +29,14 @@ async def extract_with_llm(chunks: list[SourceChunk],
     优先走 GLM-5.2 function calling（结构化输出，比强制 JSON 文本可靠）；
     未开启工具调用或模型未调工具时，降级到原"强制 JSON + 正则兜底"路径。
     """
+    # 只带非空属性：需求模板动辄六七十个字段，空键会把提示词撑长一倍
     field_defs = [
-        {"key": f.key, "label": f.label, "type": f.type,
-         "unit": f.unit, "options": f.options, "aliases": f.aliases}
+        {k: v for k, v in {
+            "key": f.key, "label": f.label, "type": f.type,
+            "unit": f.unit, "options": f.options, "aliases": f.aliases,
+            "group": f.group, "hint": f.hint,
+            "required": (f.required_for_match or f.required_for_quote) or None,
+        }.items() if v}
         for f in template
     ]
     source_blob = "\n\n".join(
@@ -96,7 +101,9 @@ async def extract_with_llm(chunks: list[SourceChunk],
         "1) 只依据资料原文抽取，每个值必须给 evidence（source_id + 原文片段 span）。\n"
         "2) 数值归一化到模板指定单位（吨/mm/MPa 等），填入 normalized。\n"
         "3) enum 字段必须命中 options，否则不要输出该字段。\n"
-        "4) 不确定的字段 confidence < 0.6，找不到的字段不要输出。\n"
+        "4) 不确定的字段 confidence < 0.6，找不到的字段不要输出。"
+        "字段的 hint 是填写说明（如「按最小~最大填写」「可多选」），按说明的格式给 value；"
+        "英文资料照样抽取，value 保留原文数值与单位。\n"
         f"{summary_rule}\n"
         "6) 必须调用 submit_extraction 工具提交结果，不要输出普通文本。"
     )
@@ -236,7 +243,7 @@ def extract_with_rules(chunks: list[SourceChunk],
                         found_span = hits[0][0]
                         found_sid = sid
                         conf_base = src_conf
-            elif fdef.type == "string":
+            elif fdef.type in ("string", "text"):
                 for alias in aliases:
                     pattern = (rf"{re.escape(alias)}[:：\s]{{0,3}}"
                                rf"([^\n,，;；。]{{1,40}})")

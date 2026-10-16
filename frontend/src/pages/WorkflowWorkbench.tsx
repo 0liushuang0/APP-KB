@@ -15,6 +15,7 @@ import StatCards, { compactMoney } from '../components/StatCards'
 import Timeline, { type TimelineItem } from '../components/Timeline'
 import SystemHealthPanel from '../components/SystemHealthPanel'
 import MonthlyBars from '../components/charts/MonthlyBars'
+import BusinessResultsCard from '../components/BusinessResultsCard'
 
 /**
  * 业务概览（首页）。
@@ -250,12 +251,20 @@ export default function WorkflowWorkbench() {
               ))}
             </ul>
           )}
-          <p className="mt-2 text-caption text-muted">只统计真实发生的次数，不做工时估算</p>
+          <p className="mt-2 text-caption text-muted">
+            只统计真实发生的次数，不做工时估算 ·{' '}
+            <button type="button" className="text-accent-600 hover:underline" onClick={() => navigate('/reports/weekly')}>
+              每周一自动出周报
+            </button>
+          </p>
         </div>
       </div>
 
       {/* ── KPI（统一口径） ── */}
       <StatCards items={kpiCards} />
+
+      {/* ── 业务结果：报价响应、需求→签约、赢单率、回款及时率 ── */}
+      <BusinessResultsCard scope={scope} />
 
       {/* ── 系统健康 ── */}
       <SystemHealthPanel />

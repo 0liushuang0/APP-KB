@@ -665,6 +665,17 @@ export const aiIndexApi = {
       .then((res) => res.data),
 }
 
+/** 周报：每周一 8:30 自动生成并推送站内通知 */
+export const reportApi = {
+  listWeekly: () => apiClient.get<any[]>('/reports/weekly').then((res) => res.data),
+  getWeekly: (id: string) => apiClient.get<any>(`/reports/weekly/${id}`).then((res) => res.data),
+  /** 预览本周至今（不保存、不推送） */
+  previewWeekly: (scope: 'personal' | 'company') =>
+    apiClient.get<any>('/reports/weekly/preview', { params: { scope }, timeout: 60_000 }).then((res) => res.data),
+  /** 管理员手动生成上周周报 */
+  generateWeekly: (notify: boolean) => apiClient.post<any>('/reports/weekly/generate', { notify }, { timeout: 120_000 }).then((res) => res.data),
+}
+
 export const systemApi = {
   info: () => apiClient.get('/system/info').then((res) => res.data),
   /** scope=mine：「我的今天」只数我负责的 */
@@ -677,6 +688,9 @@ export const systemApi = {
   /** 运行健康摘要（CPU/内存/磁盘/连接池/备份新鲜度/AI 可达） */
   healthSummary: () => apiClient.get<any>('/metrics/summary').then((res) => res.data),
   todos: () => apiClient.get<any>('/system/todos').then((res) => res.data),
+  /** 业务结果指标：报价响应天数、需求→签约周期、赢单率、丢单原因、回款及时率 */
+  cycleMetrics: (scope: 'mine' | 'all' = 'all', days = 180) =>
+    apiClient.get<any>('/system/cycle-metrics', { params: { scope, days } }).then((res) => res.data),
   import: (data: FormData) =>
     apiClient
       .post<{ type: string; total: number; imported: number; errors: Array<{ row: number; message: string }> }>(

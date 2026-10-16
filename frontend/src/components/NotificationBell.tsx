@@ -5,7 +5,7 @@ import { Bell, CheckCheck } from 'lucide-react'
 import { notificationApi, type AppNotification } from '../api/services'
 
 const TYPE_ICON: Record<string, string> = {
-  approval: '📋', document: '📄', ai: '🤖', system: '⚙️', warranty: '🛡️',
+  approval: '📋', document: '📄', ai: '🤖', system: '⚙️', warranty: '🛡️', report: '📊',
 }
 
 /**

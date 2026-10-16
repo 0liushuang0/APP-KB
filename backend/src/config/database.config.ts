@@ -47,6 +47,8 @@ import { ContractPayment } from '../modules/contracts/entities/contract-payment.
 import { Notification } from '../modules/notifications/entities/notification.entity';
 import { AfterSalesTicket } from '../modules/after-sales/entities/ticket.entity';
 import { WorkTask } from '../modules/work-tasks/entities/work-task.entity';
+import { WeeklyReport } from '../modules/system/weekly-report.entity';
+import { SavedView } from '../modules/saved-views/saved-view.entity';
 
 const entities = [
   User,
@@ -106,6 +108,8 @@ const entities = [
   AfterSalesTicket,
   Material,
   WorkTask,
+  WeeklyReport,
+  SavedView,
 ];
 
 export default registerAs(

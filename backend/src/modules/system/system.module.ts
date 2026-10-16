@@ -18,6 +18,10 @@ import { Requirement } from '../requirements/entities/requirement.entity';
 import { Contract } from '../contracts/entities/contract.entity';
 import { AiCallLog } from '../ai/entities/ai-call-log.entity';
 import { AuditLog } from '../audit-logs/entities/audit-log.entity';
+import { WeeklyReport } from './weekly-report.entity';
+import { WeeklyReportService } from './weekly-report.service';
+import { ReportsController } from './reports.controller';
+import { PermissionService } from '../../common/services/permission.service';
 
 @Module({
   imports: [
@@ -38,10 +42,11 @@ import { AuditLog } from '../audit-logs/entities/audit-log.entity';
       Contract,
       AiCallLog,
       AuditLog,
+      WeeklyReport,
     ]),
   ],
-  controllers: [SystemController],
-  providers: [SystemService],
+  controllers: [SystemController, ReportsController],
+  providers: [SystemService, WeeklyReportService, PermissionService],
   exports: [SystemService],
 })
 export class SystemModule {}

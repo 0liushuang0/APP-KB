@@ -77,6 +77,12 @@ export function usePagedQuery<T>({
     setPageSize,
     sortBy,
     sortOrder,
+    /** 直接设置排序（套用「保存的视图」时用） */
+    setSort: (by?: string, order?: 'ASC' | 'DESC') => {
+      setSortBy(by)
+      setSortOrder(by ? order : undefined)
+      setPage(1)
+    },
     /** 直接摊给 <DataTable onSort={...} sortKey sortDirection /> */
     onSort: (k: string, dir: 'asc' | 'desc' | null) => {
       setSortBy(dir ? k : undefined)

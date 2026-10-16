@@ -47,6 +47,7 @@ const AuditLogs = lazy(() => import('../pages/AuditLogs'))
 const BudgetConfig = lazy(() => import('../pages/settings/BudgetConfig'))
 const HelpCenter = lazy(() => import('../pages/HelpCenter'))
 const Notifications = lazy(() => import('../pages/Notifications'))
+const WeeklyReport = lazy(() => import('../pages/WeeklyReport'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -136,6 +137,7 @@ export default function AppRouter() {
           <Route path="approvals" element={<Approvals />} />
           <Route path="help" element={<HelpCenter />} />
           <Route path="notifications" element={<Notifications />} />
+          <Route path="reports/weekly" element={<WeeklyReport />} />
 
           {/* 产品管理 */}
           <Route path="products" element={<Products />} />

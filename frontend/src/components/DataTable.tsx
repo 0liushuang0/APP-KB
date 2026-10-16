@@ -56,10 +56,14 @@ interface DataTableProps<T> {
    * 传了才启用拖拽调宽 —— 不同页面的列不一样，宽度不能混用一份记录。
    */
   widthStorageKey?: string
+  /** 隐藏的列（列配置 / 保存的视图）；按 column.key */
+  hiddenColumns?: string[]
+  /** 表格上方的工具条（如「保存的视图 / 列」），拿到全部列定义；空列表时也显示，便于切回 */
+  toolbar?: (columns: Array<{ key: string; title: string }>) => React.ReactNode
 }
 
 export default function DataTable<T>({
-  columns,
+  columns: allColumns,
   data,
   loading = false,
   rowKey,
@@ -76,7 +80,11 @@ export default function DataTable<T>({
   selectedKeys,
   widthStorageKey,
   onSelectionChange,
+  hiddenColumns,
+  toolbar,
 }: DataTableProps<T>) {
+  const bar = toolbar ? toolbar(allColumns.map((c) => ({ key: c.key, title: c.title }))) : null
+  const columns = hiddenColumns?.length ? allColumns.filter((c) => !hiddenColumns.includes(c.key)) : allColumns
   /*
    * 列宽拖拽。
    *
@@ -164,12 +172,14 @@ export default function DataTable<T>({
   }
 
   if (!loading && data.length === 0) {
-    return <>{emptyState ?? <EmptyState action={emptyAction} />}</>
+    return <>{bar}{emptyState ?? <EmptyState action={emptyAction} />}</>
   }
 
   const skeletonRows = 5
 
   return (
+    <>
+    {bar}
     <div className="eo-card overflow-hidden">
       <div className="overflow-x-auto">
         {/*
@@ -370,5 +380,6 @@ export default function DataTable<T>({
         </div>
       )}
     </div>
+    </>
   )
 }

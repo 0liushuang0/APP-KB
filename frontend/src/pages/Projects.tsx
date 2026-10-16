@@ -10,6 +10,7 @@ import { projectApi, userApi } from '../api/services'
 import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation, required } from '../hooks/useFormValidation'
 import { usePagedQuery } from '../hooks/usePagedQuery'
+import SavedViewsBar, { useSavedViews } from '../components/SavedViewsBar'
 import { useModuleStats } from '../hooks/useModuleStats'
 import { usePageActions } from '../contexts/PageActionsContext'
 import StatCards from '../components/StatCards'
@@ -136,12 +137,27 @@ export default function Projects() {
     onSort,
     sortBy,
     sortOrder,
+    setSort,
     refetch,
   } = usePagedQuery<Project>({
     key: ['projects'],
     filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, dealStage: dealFilter || undefined, focus: focus || undefined, owner: owner || undefined },
     fetcher: (params) => projectApi.list(params) as any,
     initialPageSize: 15,
+  })
+
+  // 保存的视图 / 列配置：筛选 + 排序 + 显示哪些列
+  const sv = useSavedViews({
+    page: 'projects',
+    filters: { status: statusFilter, customerId: customerFilter, dealStage: dealFilter },
+    applyFilters: (f) => {
+      setStatusFilter(f.status || '')
+      setCustomerFilter(f.customerId || '')
+      setDealFilter(f.dealStage || '')
+    },
+    sortBy,
+    sortOrder,
+    setSort,
   })
 
   useRegisterPageAssistant({
@@ -586,6 +602,8 @@ export default function Projects() {
           onRowDoubleClick={(row) => openDetail(row)}
           pagination={pagination}
           widthStorageKey="projects"
+          hiddenColumns={sv.hidden}
+          toolbar={(cols) => <SavedViewsBar sv={sv} columns={cols} />}
           onSort={onSort}
           sortKey={sortBy}
           sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}

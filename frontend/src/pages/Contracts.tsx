@@ -7,6 +7,7 @@ import { Truck, Eye, Pencil, Trash2, ScrollText, DollarSign, FolderKanban, FileS
 import { contractApi, quotationApi, systemApi } from '../api/services'
 import { usePageActions } from '../contexts/PageActionsContext'
 import { usePagedQuery } from '../hooks/usePagedQuery'
+import SavedViewsBar, { useSavedViews } from '../components/SavedViewsBar'
 import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation, required } from '../hooks/useFormValidation'
 import { useModuleStats } from '../hooks/useModuleStats'
@@ -69,10 +70,23 @@ export default function Contracts() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { focus, setFocus, owner } = useFocus()
-  const { list, isLoading, isError, error, refetch, onSort, sortBy, sortOrder, pagination } = usePagedQuery<Contract>({
+  const { list, isLoading, isError, error, refetch, onSort, sortBy, sortOrder, setSort, pagination } = usePagedQuery<Contract>({
     key: ['contracts'],
     filters: { keyword: debouncedSearch || undefined, status: statusFilter || undefined, customerId: customerFilter || undefined, focus: focus || undefined, owner: owner || undefined },
     fetcher: (params) => contractApi.list(params) as any,
+  })
+
+  // 保存的视图 / 列配置：筛选 + 排序 + 显示哪些列
+  const sv = useSavedViews({
+    page: 'contracts',
+    filters: { status: statusFilter, customerId: customerFilter },
+    applyFilters: (f) => {
+      setStatusFilter(f.status || '')
+      setCustomerFilter(f.customerId || '')
+    },
+    sortBy,
+    sortOrder,
+    setSort,
   })
 
   useRegisterPageAssistant({
@@ -380,6 +394,8 @@ export default function Contracts() {
         sortKey={sortBy}
         sortDirection={sortOrder === 'ASC' ? 'asc' : sortOrder === 'DESC' ? 'desc' : null}
         widthStorageKey="contracts"
+        hiddenColumns={sv.hidden}
+        toolbar={(cols) => <SavedViewsBar sv={sv} columns={cols} />}
         actions={(row) => (
           <div className="flex items-center gap-1">
             <AttachmentBadge counts={(row as any).attachmentCounts} onClick={() => openEdit(row as Contract)} />
