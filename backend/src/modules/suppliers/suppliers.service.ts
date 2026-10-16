@@ -112,6 +112,11 @@ export class SuppliersService {
   /** 供应商 + 能力明细 + 审批流一起落库 */
   async create(dto: CreateSupplierDto, user: CurrentUser): Promise<Supplier> {
     const { capabilities, ...data } = dto;
+    // 重名拦截：厂家名册同名会让设备配套的 datalist 提示出现两条，无从选择
+    if (data.name?.trim()) {
+      const dup = await this.supplierRepository.findOne({ where: { name: data.name.trim() } });
+      if (dup) throw new BadRequestException(`已存在同名供应商「${data.name.trim()}」（${dup.code || dup.id.slice(0, 8)}），请勿重复创建`);
+    }
     const skipApproval = this.permissionService.skipApproval();
 
     return this.tx.run(
@@ -149,12 +154,51 @@ export class SuppliersService {
     );
   }
 
+
+  /**
+   * 供应商改名 → 同步 equipment_bom / spare_parts_bom 里 suppliers 数组的旧名。
+   * 这两份配置以 JSON 存 system_configs，引用的是厂家名字符串；
+   * 只做数组元素级替换（读→改→写），避免字符串全文替换误伤备注等文本。
+   */
+  private async renameInBomConfigs(from: string, to: string): Promise<void> {
+    const mgr = this.supplierRepository.manager;
+    for (const key of ['equipment_bom', 'spare_parts_bom']) {
+      try {
+        const row = await mgr.query('SELECT value FROM system_configs WHERE key = $1', [key]);
+        if (!row?.length || !row[0].value) continue;
+        const bom = JSON.parse(row[0].value);
+        let touched = 0;
+        for (const equip of Object.keys(bom)) {
+          bom[equip] = (bom[equip] || []).map((item: any) => {
+            if (item && Array.isArray(item.suppliers)) {
+              const before = item.suppliers.length;
+              item.suppliers = item.suppliers.map((n: string) => (n === from ? to : n));
+              if (item.suppliers.length === before && item.suppliers.includes(to)) touched++;
+            }
+            return item;
+          });
+        }
+        if (touched || JSON.stringify(bom) !== row[0].value) {
+          await mgr.query('UPDATE system_configs SET value = $1 WHERE key = $2', [JSON.stringify(bom), key]);
+        }
+      } catch (err) {
+        console.warn(`同步 ${key} 供应商改名失败：`, (err as Error).message);
+      }
+    }
+  }
+
   async update(id: string, dto: UpdateSupplierDto, user: CurrentUser): Promise<Supplier> {
     const supplier = await this.findOne(id, user);
     if (!this.permissionService.canManage(user, this.toSubject(supplier))) {
       throw new BadRequestException('无权修改该供应商');
     }
     const { capabilities, ...data } = dto;
+    // 改名：拦重名 + 同步设备配套/备件配置里的引用（否则配套表里仍是旧名，两边对不上）
+    if (data.name?.trim() && data.name.trim() !== supplier.name) {
+      const dup = await this.supplierRepository.findOne({ where: { name: data.name.trim() } });
+      if (dup) throw new BadRequestException(`已存在同名供应商「${data.name.trim()}」，请勿重复创建`);
+      await this.renameInBomConfigs(supplier.name, data.name.trim());
+    }
     /*
      * 编号留空要存 NULL，不能存空串。
      * 空串在数据库看来是个**具体的值**，第二家留空的供应商就撞唯一约束了 ——

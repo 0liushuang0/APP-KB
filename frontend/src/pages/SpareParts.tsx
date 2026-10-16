@@ -245,7 +245,44 @@ export default function SpareParts() {
     }
   }
   const removeSupplier = (row: SpareRow, name: string) => {
-    setCell(row.key, { suppliers: row.suppliers.filter((s) => s !== name) })
+    const nextRows = rows.map((r) => (r.key === row.key ? { ...r, suppliers: r.suppliers.filter((s) => s !== name) } : r))
+    setRows(nextRows)
+    void cleanupBareSupplier(name, nextRows)
+  }
+
+  /** × 掉后：两份配置都无引用且名册为裸记录 → 自动移出供应管理（同设备配套） */
+  const cleanupBareSupplier = async (name: string, currentRows?: SpareRow[]) => {
+    try {
+      const stillUsed = Object.entries(spareBom || {}).some(([equip, items]) => {
+        const list = equip === equipment ? (currentRows as any) : items
+        return (Array.isArray(list) ? list : []).some((it: any) => Array.isArray(it?.suppliers) && it.suppliers.includes(name))
+      })
+      if (stillUsed) return
+      const eqRaw: any = await systemConfigApi.get('equipment_bom')
+      const eqParsed = typeof eqRaw === 'string' ? JSON.parse(eqRaw) : JSON.parse(eqRaw?.value || eqRaw?.data?.value || '{}')
+      const eqUsed = Object.values(eqParsed || {}).some((items: any) =>
+        (Array.isArray(items) ? items : []).some((it: any) => Array.isArray(it?.suppliers) && it.suppliers.includes(name)),
+      )
+      if (eqUsed) return
+      const list: any = await supplierApi.list({ keyword: name, pageSize: 10 })
+      const hit = toList<any>(list).find((x) => x.name === name)
+      if (!hit) return
+      const bare = !(hit.productCategories || []).length && !hit.contactName && !hit.phone && !hit.email
+      if (!bare) return
+      await supplierApi.remove(hit.id)
+      queryClient.invalidateQueries({ queryKey: ['spare-parts-suppliers'] })
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+      toast.info(`「${name}」已不再被引用，且名册里无资料，已同步移出供应管理`)
+    } catch {
+      /* 清理失败不打扰用户 */
+    }
+  }
+
+  /** 组内添加：新行直接落在本专业组 */
+  const addRowInGroup = (profession: string) => {
+    const r: SpareRow = { ...newSpare('', typeFilter || '调试备件'), profession: profession as SpareRow['profession'] }
+    setExportSelected((s2) => new Set(s2).add(r.key))
+    setRows((prev) => [...prev, r])
   }
 
   const candidatesOf = (part: string) => {
@@ -488,6 +525,7 @@ export default function SpareParts() {
                     removeSupplier={removeSupplier}
                     dragState={{ dragOverKey, setDragOver: setDragOverKey, drop: onDropRow, dragRef: dragKeyRef }}
                     groupNaming={{ displayName, editingGroup, setEditingGroup, rename: renameProfession }}
+                    addRowInGroup={addRowInGroup}
                   />
                 ))}
                 {!visibleRows.length && (
@@ -511,7 +549,7 @@ export default function SpareParts() {
 
 /** 专业分组渲染（拆出主组件避免单函数过长） */
 function GroupFragment({
-  profession, items, exportSelected, setExportSelected, setCell, setRows, candidatesOf, addSupplier, removeSupplier, dragState, groupNaming,
+  profession, items, exportSelected, setExportSelected, setCell, setRows, candidatesOf, addSupplier, removeSupplier, dragState, groupNaming, addRowInGroup,
 }: any) {
   return (
     <>
@@ -527,6 +565,13 @@ function GroupFragment({
             aria-label={`改名 ${profession}组`}
           >
             <Pencil size={11} />
+          </button>
+          <button
+            onClick={() => addRowInGroup(profession)}
+            className="ml-2 text-xs text-accent-600 hover:text-accent-700 inline-flex items-center gap-0.5"
+            title={`在${groupNaming.displayName(profession)}组内添加备件行`}
+          >
+            <Plus size={12} /> 组内添加
           </button>
           {groupNaming.editingGroup === profession && (
             <span className="inline-flex items-center gap-1 ml-2">
