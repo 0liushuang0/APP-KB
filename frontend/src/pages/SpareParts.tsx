@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, Download, Package, GripVertical, Pencil, Copy, FileSpreadsheet, FileText, Tags, AlertTriangle, Wrench } from 'lucide-react'
+import { Plus, Trash2, Download, Package, GripVertical, Pencil, Copy, FileSpreadsheet, FileText, Tags, AlertTriangle, Wrench, Save, Settings2, LayoutGrid, ListChecks, CircleAlert, BadgeAlert } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
 import { groupByProfession, resolveProfession, moveItem, type ProfessionDef } from '../utils/profession'
 import { useProfessions } from '../hooks/useProfessions'
@@ -17,10 +17,15 @@ import {
   useSupplierPool,
 } from '../hooks/useSupplyData'
 import ProfessionManager from '../components/ProfessionManager'
+import EquipmentManagerModal from '../components/EquipmentManagerModal'
 import { exportSheetsToExcel, exportSectionsToWordDocx, stamp } from '../utils/export-sheet'
+import { deleteRowWithUndo } from '../utils/rowUndo'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
 import PageLoader from '../components/PageLoader'
+import StatCards from '../components/StatCards'
+import ToolbarDivider from '../components/ToolbarDivider'
+import SupplierCandidateInput from '../components/SupplierCandidateInput'
 
 /**
  * 备件管理：按设备维护备件清单（供应管理第 4 个页签）。
@@ -85,6 +90,8 @@ export default function SpareParts() {
   /** 从其他设备复制备件的弹窗 */
   const [copyOpen, setCopyOpen] = useState(false)
   const [copySource, setCopySource] = useState('')
+  /** 管理设备清单（改名/删除，与设备配套共用的 EquipmentManagerModal） */
+  const [manageOpen, setManageOpen] = useState(false)
   /** 拖拽排序（同设备配套：拖动手柄，目标行接收 drop） */
   const dragKeyRef = useRef<string | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
@@ -153,6 +160,8 @@ export default function SpareParts() {
   const bomRef = useRef<StoredSpareBom | undefined>(undefined)
   useEffect(() => { bomRef.current = spareBom as StoredSpareBom | undefined }, [spareBom])
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** "已自动保存"提示（设备配套页有、这里原来没有——保没保存全靠猜） */
+  const [autoSaved, setAutoSaved] = useState(false)
   const equipmentBomRef = useRef(equipmentBom)
   useEffect(() => { equipmentBomRef.current = equipmentBom }, [equipmentBom])
   const persistCurrent = async (rs: SpareRow[], equip: string) => {
@@ -179,6 +188,8 @@ export default function SpareParts() {
     timerRef.current = setTimeout(async () => {
       if (skipNextSaveRef.current) return
       await persistCurrent(rows, equipment)
+      setAutoSaved(true)
+      setTimeout(() => setAutoSaved(false), 1500)
     }, 600)
     return () => {
       if (timerRef.current) {
@@ -232,8 +243,8 @@ export default function SpareParts() {
 
   const candidatesOf = (part: string) => rankCandidates(part, supplierPool || [], equipmentBom, spareBom)
 
-  const addCustomEquipment = async () => {
-    const name = customEquip.trim()
+  const addCustomEquipment = async (nameOverride?: string) => {
+    const name = (nameOverride ?? customEquip).trim()
     if (!name) return
     if (equipmentNames.includes(name)) {
       setEquipment(name)
@@ -280,6 +291,31 @@ export default function SpareParts() {
     () => (typeFilter ? rows.filter((r) => r.spareType === typeFilter) : rows),
     [rows, typeFilter],
   )
+
+  /** 全部设备合计（不只是当前这台），与设备配套同一套统计卡片口径 */
+  const allStats = useMemo(() => {
+    let totalParts = 0, selected = 0
+    const offSet = new Set<string>()
+    for (const items of Object.values(spareBom || {})) {
+      for (const it of Array.isArray(items) ? items : []) {
+        // 备件数据从不存裸字符串行（与设备配套不同，没有出厂默认模板），这里只是共用了同一个宽松的 StoredBom 类型
+        if (typeof it === 'string') continue
+        const row = toSpareRow(it)
+        if (!row.part.trim()) continue
+        totalParts++
+        if (row.suppliers.length) selected++
+        if (supplierPool) for (const s of row.suppliers) if (!supplierNames.has(s)) offSet.add(s)
+      }
+    }
+    return { totalParts, selected, missing: totalParts - selected, offCount: offSet.size }
+  }, [spareBom, supplierPool, supplierNames])
+  const statCards = [
+    { label: '设备总数', value: equipmentNames.length, icon: LayoutGrid },
+    { label: '备件行（全部设备）', value: allStats.totalParts, icon: ListChecks },
+    { label: '已选型', value: allStats.selected, icon: ListChecks },
+    { label: '未选供应商', value: allStats.missing, icon: CircleAlert, alert: allStats.missing > 0 },
+    { label: '厂家不在名册', value: allStats.offCount, icon: BadgeAlert, alert: allStats.offCount > 0 },
+  ]
 
   /** 勾选且有效的行（各导出入口共用） */
   const selectedFilled = () => visibleRows.filter((r) => exportSelected.has(r.key) && r.part.trim())
@@ -350,6 +386,9 @@ export default function SpareParts() {
 
   return (
     <div className="space-y-4">
+      {/* 统计卡片：全部设备合计，与供应管理其它页签同一套组件 */}
+      <StatCards loading={!spareBom} skeletonCount={5} items={statCards} />
+
       {/* 设备选择 + 筛选 + 操作 */}
       <div className="eo-card p-4 flex flex-wrap items-end gap-3">
         <div>
@@ -376,7 +415,7 @@ export default function SpareParts() {
               className="eo-input !w-40 !py-1.5 !text-sm"
             />
           </div>
-          <Button variant="secondary" size="sm" className="!py-1.5" onClick={addCustomEquipment}>使用</Button>
+          <Button variant="secondary" size="sm" className="!py-1.5" onClick={() => addCustomEquipment()}>使用</Button>
         </div>
         <div>
           <label className="block eo-label mb-1.5">备件类型</label>
@@ -393,6 +432,9 @@ export default function SpareParts() {
           </select>
         </div>
         <div className="flex-1" />
+        <span className="text-caption text-muted self-center h-5 flex items-center" aria-live="polite">
+          {autoSaved ? '✓ 已自动保存' : ''}
+        </span>
         <Button
           variant="secondary"
           size="sm"
@@ -406,9 +448,25 @@ export default function SpareParts() {
         <Button variant="secondary" size="sm" className="!py-1.5" onClick={() => { setCopySource(''); setCopyOpen(true) }} title="把其他设备的备件清单复制到当前设备，再做局部修改">
           <Copy size={13} className="mr-0.5" /> 从其他设备复制
         </Button>
+        <Button variant="secondary" size="sm" className="!py-1.5" onClick={() => setManageOpen(true)} title="设备清单改名 / 删除 / 新增（与设备配套共用）">
+          <Settings2 size={13} className="mr-0.5" /> 管理设备
+        </Button>
         <Button variant="secondary" size="sm" className="!py-1.5" onClick={() => setProfessionMgrOpen(true)} title="专业分类新增 / 改名 / 删除 / 调顺序 / 改自动归类关键词（与设备配套共用）">
           <Tags size={13} className="mr-0.5" /> 管理分类
         </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="!py-1.5"
+          onClick={async () => {
+            const stripped = rows.map((r) => ({ ...r }))
+            await persistBom({ ...(bomRef.current || {}), [equipment]: stripped })
+          }}
+          title="内容已自动保存，此按钮为立即保存兜底"
+        >
+          <Save size={13} className="mr-0.5" /> 立即保存
+        </Button>
+        <ToolbarDivider />
         <Button size="sm" className="!py-1.5" onClick={exportExcel} title="全部勾选行导出为一个 Excel（含专业/备件类型列）">
           <FileSpreadsheet size={13} className="mr-0.5" /> 导出 Excel
         </Button>
@@ -525,13 +583,22 @@ export default function SpareParts() {
         </p>
       </div>
       <ProfessionManager open={professionMgrOpen} onClose={() => setProfessionMgrOpen(false)} />
+
+      {/* 设备管理：改名 / 删除 / 新增（与设备配套共用的组件，此前只能切回设备配套页才能操作） */}
+      <EquipmentManagerModal
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        onAddNew={(name) => addCustomEquipment(name)}
+        onRenamed={(from, to) => { if (equipment === from) setEquipment(to) }}
+        onDeleted={(name) => { if (equipment === name) setEquipment(equipmentNames.find((n) => n !== name) || '') }}
+      />
     </div>
   )
 }
 
 /** 专业分组渲染（拆出主组件避免单函数过长） */
 function GroupFragment({
-  profession, items, exportSelected, setExportSelected, setCell, setRows, candidatesOf, addSupplier, removeSupplier, dragState, groupNaming, addRowInGroup,
+  profession, items, rows, exportSelected, setExportSelected, setCell, setRows, candidatesOf, addSupplier, removeSupplier, dragState, groupNaming, addRowInGroup,
 }: any) {
   return (
     <>
@@ -574,7 +641,11 @@ function GroupFragment({
         </td>
       </tr>
       {items.map((r: SpareRow, i: number) => {
-        const { cat, usedCount, list } = candidatesOf(r.part)
+        const { cat, usedCount, sameCatCount, list } = candidatesOf(r.part)
+        const candidateGroups = [
+          { label: '同名配件用过', items: list.slice(0, usedCount) },
+          { label: cat && sameCatCount ? `同品类「${cat}」` : '其他候选', items: list.slice(usedCount) },
+        ].map((g) => ({ ...g, items: g.items.map((s: any) => ({ id: s.id, name: s.name, hint: [s.contactName, s.phone].filter(Boolean).join(' · ') })) }))
         const professions: ProfessionDef[] = groupNaming.professions
         const known: Set<string> | null = groupNaming.supplierNames
         return (
@@ -625,6 +696,9 @@ function GroupFragment({
                 className="eo-input !py-1 !text-sm !border-transparent hover:!border-border focus:!border-accent-400 !w-44"
                 placeholder="备件名称"
               />
+              {rows.filter((x: SpareRow) => x.part.trim() && x.part.trim() === r.part.trim()).length > 1 && (
+                <span className="text-caption text-warning-fg block leading-3" title="同名备件出现多次，请确认是否重复录入">⚠ 重名</span>
+              )}
             </td>
             <td className="py-1.5 pr-2">
               {/* 专业分类：全手动指定（不自动归类），默认第一组 */}
@@ -674,29 +748,11 @@ function GroupFragment({
                     </button>
                   </span>
                 ))}
-                <input
-                  list={`spare-sup-${r.key}`}
-                  className="eo-input !py-0.5 !text-caption !border-transparent hover:!border-border focus:!border-accent-400 flex-1 min-w-28"
+                <SupplierCandidateInput
+                  groups={candidateGroups}
                   placeholder={r.suppliers.length ? '继续添加…' : usedCount ? '提示同名配件用过的厂家' : cat ? `按「${cat}」提示厂家` : '输入提示厂家'}
-                  onKeyDown={(e: any) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      const v = e.target.value.trim()
-                      if (v) { addSupplier(r, v); e.target.value = '' }
-                    }
-                  }}
-                  onBlur={(e: any) => {
-                    const v = e.target.value.trim()
-                    if (v) { addSupplier(r, v); e.target.value = '' }
-                  }}
+                  onPick={(v) => addSupplier(r, v)}
                 />
-                <datalist id={`spare-sup-${r.key}`}>
-                  {list.slice(0, 100).map((s: any) => (
-                    <option key={s.id} value={s.name}>
-                      {[s.contactName, s.phone].filter(Boolean).join(' · ')}
-                    </option>
-                  ))}
-                </datalist>
               </div>
             </td>
             <td className="py-1.5 pr-2">
@@ -704,9 +760,9 @@ function GroupFragment({
             </td>
             <td className="py-1.5">
               <button
-                onClick={() => setRows((prev: SpareRow[]) => prev.filter((x) => x.key !== r.key))}
+                onClick={() => deleteRowWithUndo(rows, r.key, setRows, r.part)}
                 className="text-muted hover:text-danger-fg p-1"
-                title="删除该行"
+                title="删除该行（5 秒内可在提示里撤销）"
                 aria-label="删除行"
               >
                 <Trash2 size={14} />

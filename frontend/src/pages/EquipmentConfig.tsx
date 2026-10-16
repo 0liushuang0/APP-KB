@@ -2,27 +2,29 @@ import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil, GripVertical, Copy, FileSpreadsheet, FileText, Tags, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Download, Save, Wrench, Settings2, Pencil, GripVertical, Copy, FileSpreadsheet, FileText, Tags, AlertTriangle, LayoutGrid, ListChecks, CircleAlert, BadgeAlert } from 'lucide-react'
 import { supplierApi, systemConfigApi } from '../api/services'
 import { groupByProfession, resolveProfession, moveItem } from '../utils/profession'
 import { useProfessions } from '../hooks/useProfessions'
 import {
   DEFAULT_EQUIPMENT_BOM,
-  QK_SPARE_BOM,
   cleanupAutoCreatedSupplier,
   markAutoCreated,
   rankCandidates,
-  readConfigJson,
   useEquipmentBom,
   useSpareBom,
   useSupplierPool,
 } from '../hooks/useSupplyData'
 import ProfessionManager from '../components/ProfessionManager'
+import EquipmentManagerModal from '../components/EquipmentManagerModal'
 import { exportSheetsToExcel, exportSectionsToWordDocx, stamp } from '../utils/export-sheet'
+import { deleteRowWithUndo } from '../utils/rowUndo'
 import Button from '../components/Button'
 import Modal from '../components/Modal'
-import ConfirmDialog from '../components/ConfirmDialog'
 import PageLoader from '../components/PageLoader'
+import StatCards from '../components/StatCards'
+import ToolbarDivider from '../components/ToolbarDivider'
+import SupplierCandidateInput from '../components/SupplierCandidateInput'
 
 /**
  * 设备配套选型表：设备 → 配件清单 → 每个配件选供应商 → 导出对照表。
@@ -93,8 +95,6 @@ export default function EquipmentConfig() {
   /** 导出行勾选（默认全选；载入/增删行时自动补齐新行） */
   const [exportSelected, setExportSelected] = useState<Set<string>>(new Set())
   const [manageOpen, setManageOpen] = useState(false)
-  const [deleteEquip, setDeleteEquip] = useState<string | null>(null)
-  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null)
   /** 专业分类清单（可增删改，设备配套/备件管理共用）与组名编辑态 */
   const { defs: professions, displayName, rename: renameProfession } = useProfessions()
   const [editingGroup, setEditingGroup] = useState<string | null>(null)
@@ -118,9 +118,6 @@ export default function EquipmentConfig() {
       return moveItem(prev, from, to)
     })
   }
-  /** 管理弹窗里各设备名输入框（改名按钮读当前值用） */
-  const nameInputRefs = useRef<Array<HTMLInputElement | null>>([])
-
   // 设备-配件配置 / 备件清单 / 供应商池：与其它页签共用同一份查询（任一处写入，各页签立即同步）
   const { data: bomConfig } = useEquipmentBom()
   const { data: spareBom } = useSpareBom()
@@ -278,8 +275,8 @@ export default function EquipmentConfig() {
   const candidatesOf = (part: string) => rankCandidates(part, supplierPool || [], bomConfig, spareBom)
 
   /** 新增自定义设备：立即持久化空清单，切换/返回不丢 */
-  const addCustomEquipment = async () => {
-    const name = customEquip.trim()
+  const addCustomEquipment = async (nameOverride?: string) => {
+    const name = (nameOverride ?? customEquip).trim()
     if (!name) return
     if (equipmentNames.includes(name)) {
       setEquipment(name)
@@ -298,6 +295,32 @@ export default function EquipmentConfig() {
   const missingSupplierRows = filledRows.filter((r) => !r.suppliers.length)
   const offRoster = supplierPool ? [...new Set(rows.flatMap((r) => r.suppliers).filter((n) => !supplierNames.has(n)))] : []
   const visibleRows = onlyMissing ? rows.filter((r) => !r.suppliers.length) : rows
+
+  /**
+   * 全部设备合计（不只是当前这台）：原来页面只有当前设备的选型进度，看不到整体概况，
+   * 跟供应商页顶部的统计卡片不一样，切到这个页签会有种"从仪表盘掉进 Excel"的感觉。
+   */
+  const allStats = useMemo(() => {
+    let totalParts = 0, selected = 0
+    const offSet = new Set<string>()
+    for (const items of Object.values(bomConfig || {})) {
+      for (const it of Array.isArray(items) ? items : []) {
+        const row = toConfigRow(it)
+        if (!row.part.trim()) continue
+        totalParts++
+        if (row.suppliers.length) selected++
+        if (supplierPool) for (const s of row.suppliers) if (!supplierNames.has(s)) offSet.add(s)
+      }
+    }
+    return { totalParts, selected, missing: totalParts - selected, offCount: offSet.size }
+  }, [bomConfig, supplierPool, supplierNames])
+  const statCards = [
+    { label: '设备总数', value: equipmentNames.length, icon: LayoutGrid },
+    { label: '配件行（全部设备）', value: allStats.totalParts, icon: ListChecks },
+    { label: '已选型', value: allStats.selected, icon: ListChecks },
+    { label: '未选供应商', value: allStats.missing, icon: CircleAlert, alert: allStats.missing > 0 },
+    { label: '厂家不在名册', value: allStats.offCount, icon: BadgeAlert, alert: allStats.offCount > 0 },
+  ]
 
   /** 勾选且有效的行（各导出入口共用） */
   const selectedFilled = () =>
@@ -370,91 +393,16 @@ export default function EquipmentConfig() {
     toast.success(`已从「${source}」复制 ${rekeyed.length} 行配件，可直接局部修改`)
   }
 
-  /**
-   * 设备改名同步到备件清单：备件按设备名分组，原来这边改了名，备件管理里就多出一个
-   * 旧名设备（备件挂在旧名下），售后按设备带备件也对不上。
-   */
-  const syncSpareRenames = async (edits: Array<{ from: string; to: string }>) => {
-    const spare = await readConfigJson<Record<string, unknown[]>>('spare_parts_bom')
-    if (!spare || !edits.some((e) => Object.prototype.hasOwnProperty.call(spare, e.from))) return 0
-    const next: Record<string, unknown[]> = {}
-    let moved = 0
-    for (const [k, v] of Object.entries(spare)) {
-      const e = edits.find((x) => x.from === k)
-      if (e) moved++
-      const to = e ? e.to : k
-      next[to] = [...(next[to] || []), ...(Array.isArray(v) ? v : [])]
-    }
-    await systemConfigApi.set({ key: 'spare_parts_bom', value: JSON.stringify(next), category: 'supplier', description: '备件清单（按设备，含专业/备件类型/供应商）' })
-    queryClient.invalidateQueries({ queryKey: QK_SPARE_BOM })
-    return moved
-  }
-
   // ── 设备管理：改名 / 删除 ──
-  // 列表直接用实时 equipmentNames（改名/删除后弹窗内同步刷新，不做打开时快照）
+  // 改名/删除同步到备件清单/外协配置的逻辑，抽成了三个页签共用的 EquipmentManagerModal + useEquipmentRoster
+  // （此前只有这个页签能改名/删设备，且外协那一份清单完全没跟着同步）。
   const openManage = () => setManageOpen(true)
-
-  const renameEquipment = async (from: string, to: string) => {
-    const name = to.trim()
-    if (!name || name === from) { setRenaming(null); return }
-    if (equipmentNames.includes(name) && name !== from) {
-      toast.error(`已有同名设备「${name}」`)
-      return
-    }
-    const bom = { ...(bomConfig as StoredBom) }
-    bom[name] = bom[from] ?? DEFAULT_EQUIPMENT_BOM[from] ?? []
-    delete bom[from]
-    await persistBom(bom)
-    const moved = await syncSpareRenames([{ from, to: name }]).catch(() => 0)
-    if (equipment === from) setEquipment(name)
-    setRenaming(null)
-    toast.success(`已改名：${from} → ${name}${moved ? '（备件清单同步改名）' : ''}`)
-  }
-
-  const removeEquipment = async () => {
-    if (!deleteEquip) return
-    const bom = { ...(bomConfig as StoredBom) }
-    delete bom[deleteEquip]
-    await persistBom(bom)
-    setDeleteEquip(null)
-    if (equipment === deleteEquip) setEquipment(equipmentNames.find((n) => n !== deleteEquip) || '')
-    toast.success(`已删除设备「${deleteEquip}」`)
-  }
-
-  /**
-   * 管理弹窗「保存修改」：按输入框当前值批量改名（一次写库）。
-   * 名称未变的原样保留；改名会把该设备的配件与选型带到新名下。
-   */
-  const saveManageEdits = async () => {
-    const names = equipmentNames
-    const edits: Array<{ from: string; to: string }> = []
-    names.forEach((name, i) => {
-      const v = nameInputRefs.current[i]?.value?.trim()
-      if (v && v !== name) edits.push({ from: name, to: v })
-    })
-    if (!edits.length) {
-      toast.info('没有修改需要保存')
-      return
-    }
-    const toNames = edits.map((e) => e.to)
-    if (new Set([...toNames, ...names.filter((n) => !edits.some((e) => e.from === n))]).size !== names.length) {
-      toast.error('改名后出现重名，请调整')
-      return
-    }
-    const bom: StoredBom = {}
-    names.forEach((name, i) => {
-      const v = nameInputRefs.current[i]?.value?.trim() || name
-      bom[v] = (bomConfig as StoredBom)?.[name] ?? DEFAULT_EQUIPMENT_BOM[name] ?? []
-    })
-    await persistBom(bom)
-    await syncSpareRenames(edits).catch(() => 0)
-    const cur = edits.find((e) => e.from === equipment)
-    if (cur) setEquipment(cur.to)
-    toast.success(`已保存 ${edits.length} 项改名：${edits.map((e) => `${e.from}→${e.to}`).join('、')}`)
-  }
 
   return (
     <div className="space-y-4">
+      {/* 统计卡片：全部设备合计，与供应管理其它页签同一套组件、同一种"先看全局"的开场 */}
+      <StatCards loading={!bomConfig} skeletonCount={5} items={statCards} />
+
       {/* 设备选择 + 操作 */}
       <div className="eo-card p-4 flex flex-wrap items-end gap-3">
         <div>
@@ -481,7 +429,7 @@ export default function EquipmentConfig() {
               className="eo-input !w-40 !py-1.5 !text-sm"
             />
           </div>
-          <Button variant="secondary" size="sm" className="!py-1.5" onClick={addCustomEquipment}>使用</Button>
+          <Button variant="secondary" size="sm" className="!py-1.5" onClick={() => addCustomEquipment()}>使用</Button>
         </div>
         <div className="flex-1" />
         <span className="text-caption text-muted self-center h-5 flex items-center" aria-live="polite">
@@ -502,6 +450,7 @@ export default function EquipmentConfig() {
         }} title="内容已自动保存，此按钮为立即保存兜底">
           <Save size={13} className="mr-0.5" /> 立即保存
         </Button>
+        <ToolbarDivider />
         <Button size="sm" className="!py-1.5" onClick={exportExcel} title="全部勾选行导出为一个 Excel（含专业列）">
           <FileSpreadsheet size={13} className="mr-0.5" /> 导出 Excel{rows.length > 0 ? ` (${[...exportSelected].filter((k) => rows.some((r) => r.key === k)).length}/${rows.length})` : ''}
         </Button>
@@ -652,7 +601,11 @@ export default function EquipmentConfig() {
                       </td>
                     </tr>
                     {g.items.map((r, i) => {
-                  const { cat, usedCount, list } = candidatesOf(r.part)
+                  const { cat, usedCount, sameCatCount, list } = candidatesOf(r.part)
+                  const candidateGroups = [
+                    { label: '同名配件用过', items: list.slice(0, usedCount) },
+                    { label: cat && sameCatCount ? `同品类「${cat}」` : '其他候选', items: list.slice(usedCount) },
+                  ].map((g) => ({ ...g, items: g.items.map((s: any) => ({ id: s.id, name: s.name, hint: [s.contactName, s.phone].filter(Boolean).join(' · ') })) }))
                   return (
                     <tr
                       key={r.key}
@@ -743,29 +696,11 @@ export default function EquipmentConfig() {
                               </button>
                             </span>
                           ))}
-                          <input
-                            list={`equip-sup-${r.key}`}
-                            className="eo-input !py-0.5 !text-caption !border-transparent hover:!border-border focus:!border-accent-400 flex-1 min-w-28"
+                          <SupplierCandidateInput
+                            groups={candidateGroups}
                             placeholder={r.suppliers.length ? '继续添加…' : usedCount ? '提示同名配件用过的厂家' : cat ? `按「${cat}」提示厂家` : '输入提示厂家'}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault()
-                                const v = (e.target as HTMLInputElement).value.trim()
-                                if (v) { addSupplier(r, v); (e.target as HTMLInputElement).value = '' }
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const v = e.target.value.trim()
-                              if (v) { addSupplier(r, v); e.target.value = '' }
-                            }}
+                            onPick={(v) => addSupplier(r, v)}
                           />
-                          <datalist id={`equip-sup-${r.key}`}>
-                            {list.slice(0, 100).map((s) => (
-                              <option key={s.id} value={s.name}>
-                                {[s.contactName, s.phone].filter(Boolean).join(' · ')}
-                              </option>
-                            ))}
-                          </datalist>
                         </div>
                       </td>
                       <td className="py-1.5 pr-2">
@@ -773,9 +708,9 @@ export default function EquipmentConfig() {
                       </td>
                       <td className="py-1.5">
                         <button
-                          onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
+                          onClick={() => deleteRowWithUndo(rows, r.key, setRows, r.part)}
                           className="text-muted hover:text-danger-fg p-1"
-                          title="删除该行"
+                          title="删除该行（5 秒内可在提示里撤销）"
                           aria-label="删除行"
                         >
                           <Trash2 size={14} />
@@ -809,91 +744,13 @@ export default function EquipmentConfig() {
 
       <ProfessionManager open={professionMgrOpen} onClose={() => setProfessionMgrOpen(false)} />
 
-      {/* 设备管理弹窗：改名 / 删除 / 新增 */}
-      <Modal
+      {/* 设备管理：改名 / 删除 / 新增（三个页签共用的组件，行为与备件管理/外协加工一致） */}
+      <EquipmentManagerModal
         open={manageOpen}
         onClose={() => setManageOpen(false)}
-        title={`管理设备清单（${equipmentNames.length}）`}
-        size="sm"
-        cancelText="关闭"
-        onConfirm={saveManageEdits}
-        confirmText="保存修改"
-        confirmVariant="primary"
-      >
-        <div className="space-y-1.5 max-h-80 overflow-y-auto">
-          {equipmentNames.map((m, i) => (
-            <div key={m + i} className="flex items-center gap-2">
-              <span className="text-muted text-caption w-6 text-right tabular-nums">{i + 1}</span>
-              <input
-                ref={(el) => { nameInputRefs.current[i] = el }}
-                defaultValue={m}
-                className="eo-input !py-1 !text-sm flex-1"
-                aria-label={`设备名 ${m}`}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const v = nameInputRefs.current[i]?.value?.trim()
-                    if (v && v !== m) setRenaming({ from: m, to: v })
-                  }
-                }}
-              />
-              <button
-                onClick={() => {
-                  const v = nameInputRefs.current[i]?.value?.trim()
-                  if (!v) { toast.warning("设备名不能为空"); return }
-                  if (v === m) { toast.info("名称未变化"); return }
-                  setRenaming({ from: m, to: v })
-                }}
-                className="text-muted hover:text-accent-600 p-1 shrink-0"
-                title={`把「${m}」改名为输入框中的新名称`}
-                aria-label={`改名 ${m}`}
-              >
-                <Pencil size={15} />
-              </button>
-              <button
-                onClick={() => setDeleteEquip(m)}
-                className="text-muted hover:text-danger-fg p-1 shrink-0"
-                title={`删除「${m}」`}
-                aria-label={`删除 ${m}`}
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-divider">
-          <input
-            value={customEquip}
-            onChange={(e) => setCustomEquip(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addCustomEquipment()}
-            placeholder="新增设备名，回车添加"
-            className="eo-input !py-1 !text-sm flex-1"
-          />
-          <Button size="sm" className="!py-1" onClick={addCustomEquipment}>
-            <Plus size={13} className="mr-0.5" /> 添加
-          </Button>
-        </div>
-        <p className="text-caption text-muted mt-2">在输入框修改名称后点「保存修改」生效（单个改名也可点行尾铅笔或回车）；删除只清掉该设备的选型记录，不影响供应管理数据。内置 7 类设备删错后可通过自定义设备名重建。</p>
-      </Modal>
-
-      <ConfirmDialog
-        open={!!deleteEquip}
-        onClose={() => setDeleteEquip(null)}
-        onConfirm={removeEquipment}
-        title="删除设备"
-        message={<>确定删除设备「{deleteEquip}」吗？</>}
-        detail={`其配件与供应商选型记录将一并清除，此操作不可恢复。${deleteEquip && (spareBom?.[deleteEquip] || []).length ? `备件管理里该设备的 ${(spareBom?.[deleteEquip] || []).length} 行备件保留不动。` : ''}`}
-        loading={false}
-      />
-
-      <ConfirmDialog
-        open={!!renaming}
-        onClose={() => setRenaming(null)}
-        onConfirm={() => renaming && renameEquipment(renaming.from, renaming.to)}
-        title="确认改名"
-        confirmText="改名"
-        danger={false}
-        message={<>把设备「{renaming?.from}」改名为「{renaming?.to}」？</>}
-        detail="其配件与选型记录保留，仅名称变化。"
+        onAddNew={(name) => addCustomEquipment(name)}
+        onRenamed={(from, to) => { if (equipment === from) setEquipment(to) }}
+        onDeleted={(name) => { if (equipment === name) setEquipment(equipmentNames.find((n) => n !== name) || '') }}
       />
     </div>
   )
